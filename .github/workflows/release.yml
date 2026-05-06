@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RELEASE_BODY: |
     ## 下载建议
 
@@ -261,6 +262,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Verify and publish updater metadata aliases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -276,82 +280,7 @@ jobs:
           gh release download "$VERSION" \
             --repo "${{ github.repository }}" \
             --pattern '*.sig'
-
-          APP_VERSION="${VERSION#v}"
-          BASE_URL="https://github.com/${{ github.repository }}/releases/download/$VERSION"
-          NOTES="$(jq -r '.notes // ""' latest.json)"
-          PUB_DATE="$(jq -r '.pub_date // ""' latest.json)"
-          read_sig() {
-            tr -d '\r\n' < "$1.sig"
-          }
-
-          DARWIN_ARM_SIG="$(read_sig 'Douyin.Downloader_aarch64.app.tar.gz')"
-          DARWIN_X64_SIG="$(read_sig 'Douyin.Downloader_x64.app.tar.gz')"
-          WINDOWS_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_x64-setup.exe")"
-          WINDOWS_PORTABLE_SIG="$(read_sig "Douyin-Downloader_${APP_VERSION}_x64_portable.exe")"
-          LINUX_APPIMAGE_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_amd64.AppImage")"
-          LINUX_DEB_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_amd64.deb")"
-          LINUX_RPM_ASSET="Douyin.Downloader-${APP_VERSION}-1.x86_64.rpm"
-          LINUX_RPM_SIG="$(read_sig "$LINUX_RPM_ASSET")"
-
-          jq -n \
-            --arg version "$APP_VERSION" \
-            --arg notes "$NOTES" \
-            --arg pub_date "$PUB_DATE" \
-            --arg darwin_arm_sig "$DARWIN_ARM_SIG" \
-            --arg darwin_arm_url "$BASE_URL/Douyin.Downloader_aarch64.app.tar.gz" \
-            --arg darwin_x64_sig "$DARWIN_X64_SIG" \
-            --arg darwin_x64_url "$BASE_URL/Douyin.Downloader_x64.app.tar.gz" \
-            --arg windows_sig "$WINDOWS_SIG" \
-            --arg windows_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_x64-setup.exe" \
-            --arg windows_portable_sig "$WINDOWS_PORTABLE_SIG" \
-            --arg windows_portable_url "$BASE_URL/Douyin-Downloader_${APP_VERSION}_x64_portable.exe" \
-            --arg linux_appimage_sig "$LINUX_APPIMAGE_SIG" \
-            --arg linux_appimage_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_amd64.AppImage" \
-            --arg linux_deb_sig "$LINUX_DEB_SIG" \
-            --arg linux_deb_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_amd64.deb" \
-            --arg linux_rpm_sig "$LINUX_RPM_SIG" \
-            --arg linux_rpm_url "$BASE_URL/$LINUX_RPM_ASSET" \
-            '{
-              version: $version,
-              notes: $notes,
-              pub_date: $pub_date,
-              platforms: {
-                "darwin-aarch64": { signature: $darwin_arm_sig, url: $darwin_arm_url },
-                "darwin-aarch64-app": { signature: $darwin_arm_sig, url: $darwin_arm_url },
-                "darwin-x86_64": { signature: $darwin_x64_sig, url: $darwin_x64_url },
-                "darwin-x86_64-app": { signature: $darwin_x64_sig, url: $darwin_x64_url },
-                "windows-x86_64": { signature: $windows_sig, url: $windows_url },
-                "windows-x86_64-nsis": { signature: $windows_sig, url: $windows_url },
-                "windows-x86_64-portable": { signature: $windows_portable_sig, url: $windows_portable_url },
-                "linux-x86_64": { signature: $linux_appimage_sig, url: $linux_appimage_url },
-                "linux-x86_64-appimage": { signature: $linux_appimage_sig, url: $linux_appimage_url },
-                "linux-x86_64-deb": { signature: $linux_deb_sig, url: $linux_deb_url },
-                "linux-x86_64-rpm": { signature: $linux_rpm_sig, url: $linux_rpm_url }
-              }
-            }' > latest.fixed.json
-
-          mv latest.fixed.json latest.json
-
-          jq -e --arg version "$APP_VERSION" '
-            .version == $version and
-            (.platforms["darwin-aarch64"].signature | length > 0) and
-            (.platforms["darwin-aarch64"].url | length > 0) and
-            (.platforms["darwin-x86_64"].signature | length > 0) and
-            (.platforms["darwin-x86_64"].url | length > 0) and
-            (.platforms["windows-x86_64"].signature | length > 0) and
-            (.platforms["windows-x86_64"].url | length > 0) and
-            (.platforms["windows-x86_64-portable"].signature | length > 0) and
-            (.platforms["windows-x86_64-portable"].url | length > 0) and
-            (.platforms["linux-x86_64"].signature | length > 0) and
-            (.platforms["linux-x86_64"].url | length > 0) and
-            (.platforms["linux-x86_64-rpm"].signature | length > 0) and
-            (.platforms["linux-x86_64-rpm"].url | length > 0)
-          ' latest.json
-
-          for target in darwin windows linux; do
-            cp latest.json "$target.json"
-          done
+          node scripts/finalize-updater-metadata.mjs
 
           gh release upload "$VERSION" latest.json darwin.json windows.json linux.json \
             --repo "${{ github.repository }}" \

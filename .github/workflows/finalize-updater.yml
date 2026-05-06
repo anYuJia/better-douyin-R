@@ -1,0 +1,56 @@
+name: Finalize Updater Metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to finalize, for example v0.0.9'
+        required: true
+        type: string
+
+concurrency:
+  group: finalize-updater-${{ inputs.version }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  finalize-updater:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release metadata and signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          gh release download "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --pattern latest.json \
+            --output latest.json
+
+          gh release download "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --pattern '*.sig'
+
+      - name: Generate updater metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/finalize-updater-metadata.mjs
+
+      - name: Upload updater metadata aliases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release upload "$VERSION" latest.json darwin.json windows.json linux.json \
+            --repo "${{ github.repository }}" \
+            --clobber

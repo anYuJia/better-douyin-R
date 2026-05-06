@@ -20,15 +20,22 @@ Recommended order:
 
 ## Hashes
 
-Download the release assets and compute hashes:
+Download the release assets:
 
 ```bash
 VERSION=v0.0.9
 gh release download "$VERSION" --pattern 'Douyin.Downloader_*' --pattern 'Douyin-Downloader_*'
-shasum -a 256 Douyin.Downloader_*.dmg Douyin.Downloader_*_x64-setup.exe Douyin-Downloader_*_x64_portable.exe
 ```
 
-Use the hash values to replace placeholders in:
+Then generate version-pinned manifests:
+
+```bash
+VERSION=v0.0.9 node scripts/generate-package-manifests.mjs
+```
+
+The script computes SHA-256 hashes and writes files under `generated/<version>/`.
+
+The templates with placeholders are:
 
 - `homebrew/douyin-downloader.rb`
 - `scoop/douyin-downloader.json`
