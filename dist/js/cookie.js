@@ -12,7 +12,7 @@ function checkCookieStatusOnStartup() {
     updateCookieOnboardingState(validation);
     updateCookieValidationUI(validation);
 
-    console.log(validation.isValid ? '[cookie] Cookie有效' : '[cookie] Cookie无效或未设置，显示首页引导');
+    _log(validation.isValid ? '[cookie] Cookie有效' : '[cookie] Cookie无效或未设置，显示首页引导');
 }
 
 function updateCookieOnboardingState(validation) {

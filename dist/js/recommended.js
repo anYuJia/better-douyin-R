@@ -2,7 +2,7 @@
 // RECOMMENDED FEED - 推荐视频流 (抖音风格全屏播放)
 // ═══════════════════════════════════════════════
 
-console.log('[recommended.js] 文件已加载');
+_log('[recommended.js] 文件已加载');
 
 let recommendedVideos = [];
 let recommendedCursor = 0;
@@ -34,6 +34,7 @@ const UNIFIED_IMAGE_DURATION_MS = 1500;
 const UNIFIED_WHEEL_THROTTLE_MS = 1000;  // 1秒内只允许切换一个视频
 const PLAYER_VIDEO_MAX_AUTO_RETRIES = 1;
 const PLAYER_VIDEO_BUFFERING_DELAY_MS = 450;
+const PLAYER_VIDEO_LOAD_TIMEOUT_MS = 18000;
 
 function getRecommendedFeedInlineStatusHtml(text, tone) {
     const iconHtml = tone === 'loading'
@@ -161,7 +162,8 @@ function appendPlayerRetryParam(url, attempt) {
 }
 
 function getMediaErrorInfo(videoEl, fallbackTitle) {
-    if (!videoEl || !videoEl.getAttribute('src')) {
+    const src = videoEl ? (videoEl.getAttribute('src') || '') : '';
+    if (!videoEl || !src) {
         return {
             title: '没有可用播放地址',
             message: '当前作品没有返回可播放的视频地址，可以重试刷新详情或切换下一个作品。'
@@ -197,9 +199,15 @@ function getMediaErrorInfo(videoEl, fallbackTitle) {
         };
     }
     if (code === 4) {
+        if (src.indexOf('/api/media/proxy?') !== -1 || src.indexOf('127.0.0.1:39143') !== -1) {
+            return {
+                title: '播放地址无法读取',
+                message: '本地媒体代理没有取到可播放数据，常见原因是播放地址过期、Cookie 失效、平台拒绝或网络超时。'
+            };
+        }
         return {
             title: '播放地址不可用',
-            message: '播放链接可能已过期、被平台拒绝，或当前格式不被系统播放器支持。'
+            message: '播放链接可能已过期、被平台拒绝、跨域受限，或当前格式不被系统播放器支持。'
         };
     }
 
@@ -281,11 +289,18 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
     videoEl.dataset.baseSrc = baseSrc;
     videoEl.dataset.autoRetryCount = videoEl.dataset.autoRetryCount || '0';
     let bufferingTimer = null;
+    let loadTimeoutTimer = null;
 
     const clearBufferingTimer = () => {
         if (bufferingTimer) {
             clearTimeout(bufferingTimer);
             bufferingTimer = null;
+        }
+    };
+    const clearLoadTimeoutTimer = () => {
+        if (loadTimeoutTimer) {
+            clearTimeout(loadTimeoutTimer);
+            loadTimeoutTimer = null;
         }
     };
 
@@ -297,8 +312,37 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
         });
     };
 
+    const scheduleLoadTimeout = () => {
+        clearLoadTimeoutTimer();
+        loadTimeoutTimer = setTimeout(() => {
+            if (!slide.isConnected || videoEl.dataset.disposed === 'true' || videoEl.readyState >= 1) return;
+
+            const retryCount = parseInt(videoEl.dataset.autoRetryCount || '0', 10);
+            if (retryCount < PLAYER_VIDEO_MAX_AUTO_RETRIES && shouldAutoRetryVideo(videoEl)) {
+                videoEl.dataset.autoRetryCount = String(retryCount + 1);
+                reloadVideoElement(false);
+                return;
+            }
+
+            setSlidePlayerStatus(slide, {
+                state: 'error',
+                title: '视频加载超时',
+                message: '当前网络响应较慢，或播放地址已经失效。请检查网络后重试。',
+                onRetry: function() {
+                    videoEl.dataset.autoRetryCount = '0';
+                    if (options && typeof options.onRetry === 'function') {
+                        options.onRetry();
+                    } else {
+                        reloadVideoElement(true);
+                    }
+                }
+            });
+        }, PLAYER_VIDEO_LOAD_TIMEOUT_MS);
+    };
+
     const reloadVideoElement = (manual) => {
         clearBufferingTimer();
+        clearLoadTimeoutTimer();
         const retryBaseSrc = videoEl.dataset.baseSrc || videoEl.getAttribute('src') || '';
         if (!retryBaseSrc) {
             const info = getMediaErrorInfo(videoEl, '没有可用播放地址');
@@ -316,6 +360,7 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
         const retryAttempt = Date.now();
         videoEl.src = appendPlayerRetryParam(retryBaseSrc, retryAttempt);
         videoEl.load();
+        scheduleLoadTimeout();
         if (manual) {
             videoEl.play().catch(() => {});
         }
@@ -323,6 +368,7 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
 
     const handleFinalError = () => {
         clearBufferingTimer();
+        clearLoadTimeoutTimer();
         if (options && typeof options.onFinalError === 'function') {
             options.onFinalError(videoEl);
         }
@@ -344,6 +390,7 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
 
     videoEl.addEventListener('loadstart', () => {
         showLoading(options && options.loadingTitle ? options.loadingTitle : '正在加载视频...');
+        scheduleLoadTimeout();
     });
     videoEl.addEventListener('waiting', () => {
         clearBufferingTimer();
@@ -360,16 +407,22 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
         setSlidePlayerStatus(slide, {
             state: 'buffering',
             title: '连接不稳定，正在等待数据...',
-            message: '如果长时间无响应，可以点击重试。'
+            message: '如果长时间无响应，可以点击重试。',
+            onRetry: function() {
+                videoEl.dataset.autoRetryCount = '0';
+                reloadVideoElement(true);
+            }
         });
     });
     ['loadedmetadata', 'canplay', 'playing'].forEach(eventName => {
         videoEl.addEventListener(eventName, () => {
             clearBufferingTimer();
+            clearLoadTimeoutTimer();
             clearSlidePlayerStatus(slide);
         });
     });
     videoEl.addEventListener('error', () => {
+        clearLoadTimeoutTimer();
         if (videoEl.dataset.disposed === 'true' || !slide.isConnected) {
             return;
         }
@@ -385,9 +438,11 @@ function setupPlayerVideoLoadState(videoEl, slide, options) {
     });
 
     if (videoEl.readyState >= 1) {
+        clearLoadTimeoutTimer();
         clearSlidePlayerStatus(slide);
     } else {
         showLoading(options && options.loadingTitle ? options.loadingTitle : '正在加载视频...');
+        scheduleLoadTimeout();
     }
 }
 
@@ -459,13 +514,13 @@ function restoreRecommendedReturnState() {
 }
 
 async function showRecommendedFeed() {
-    console.log('[showRecommendedFeed] 显示推荐视频界面');
+    _log('[showRecommendedFeed] 显示推荐视频界面');
     const currentSection = document.getElementById('recommendedFeedSection');
     const isAlreadyVisible = currentSection && window.getComputedStyle(currentSection).display !== 'none';
 
     // 防止重复点击：检查是否正在初始化或加载中
     if (isInitializing) {
-        console.log('[showRecommendedFeed] 正在初始化中，跳过重复请求');
+        _log('[showRecommendedFeed] 正在初始化中，跳过重复请求');
         showToast('正在加载中，请稍候...', 'info');
         return;
     }
@@ -493,12 +548,12 @@ async function showRecommendedFeed() {
         // 显示推荐视频区域
         const section = document.getElementById('recommendedFeedSection');
         revealSectionById('recommendedFeedSection');
-        console.log('[showRecommendedFeed] 区域显示状态:', section.style.display);
+        _log('[showRecommendedFeed] 区域显示状态:', section.style.display);
         ensureRecommendedFeedAutoLoad();
 
         // 如果已经有数据，直接显示，不需要重新加载
         if (recommendedVideos.length > 0) {
-            console.log('[showRecommendedFeed] 使用已缓存的推荐视频数据，数量:', recommendedVideos.length);
+            _log('[showRecommendedFeed] 使用已缓存的推荐视频数据，数量:', recommendedVideos.length);
             // 清空并重新显示所有视频
             document.getElementById('recommendedFeedList').textContent = '';
             displayRecommendedVideos(recommendedVideos);
@@ -513,12 +568,12 @@ async function showRecommendedFeed() {
         updateRecommendedLoadIndicator('loading', '正在获取视频中...');
 
         if (isLoadingMore) {
-            console.log('[showRecommendedFeed] 后台加载中，先显示推荐区域');
+            _log('[showRecommendedFeed] 后台加载中，先显示推荐区域');
             return;
         }
 
         // 如果没有数据，加载视频
-        console.log('[showRecommendedFeed] 无缓存数据，开始加载');
+        _log('[showRecommendedFeed] 无缓存数据，开始加载');
         resetRecommendedFeedCache();
         await loadRecommendedFeed(INITIAL_LOAD_COUNT);
     } finally {
@@ -537,14 +592,14 @@ function closeRecommendedFeed() {
 async function loadRecommendedFeed(count = LOAD_MORE_COUNT) {
     // 防止重复加载
     if (isLoadingMore) {
-        console.log('[loadRecommendedFeed] 正在加载中，跳过');
+        _log('[loadRecommendedFeed] 正在加载中，跳过');
         return;
     }
 
     try {
         const hadVideosBeforeLoad = recommendedVideos.length > 0;
         isLoadingMore = true;
-        console.log('[loadRecommendedFeed] 开始请求 API, count:', count);
+        _log('[loadRecommendedFeed] 开始请求 API, count:', count);
         updateStatus('working', '加载中...');
         updateRecommendedLoadIndicator(
             'loading',
@@ -561,7 +616,7 @@ async function loadRecommendedFeed(count = LOAD_MORE_COUNT) {
         });
 
         const data = await response.json();
-        console.log('[loadRecommendedFeed] API 响应:', data.success, '视频数:', data.videos?.length);
+        _log('[loadRecommendedFeed] API 响应:', data.success, '视频数:', data.videos?.length);
 
         if (data.success) {
             const previousCount = recommendedVideos.length;
@@ -571,7 +626,7 @@ async function loadRecommendedFeed(count = LOAD_MORE_COUNT) {
             recommendedCursor = data.cursor;
             hasMoreRecommended = data.has_more;
 
-            console.log(
+            _log(
                 '[loadRecommendedFeed] 总视频数:',
                 recommendedVideos.length,
                 '新增:',
@@ -582,7 +637,7 @@ async function loadRecommendedFeed(count = LOAD_MORE_COUNT) {
 
             // 如果播放器打开，更新播放器状态中的视频列表引用
             if (unifiedPlayerState.isOpen && unifiedPlayerState.source === 'recommended') {
-                console.log('[loadRecommendedFeed] 播放器打开中，视频列表已自动更新，新总数:', unifiedPlayerState.videos.length);
+                _log('[loadRecommendedFeed] 播放器打开中，视频列表已自动更新，新总数:', unifiedPlayerState.videos.length);
             }
 
             // 只有在推荐视频界面可见时才显示卡片
@@ -613,7 +668,7 @@ async function loadRecommendedFeed(count = LOAD_MORE_COUNT) {
                     }, 0);
                 }
             } else {
-                console.log('[loadRecommendedFeed] 界面不可见或播放器模式，数据已缓存');
+                _log('[loadRecommendedFeed] 界面不可见或播放器模式，数据已缓存');
             }
 
             updateStatus('ready', '就绪');
@@ -1367,9 +1422,9 @@ async function preloadUnifiedMusicSource(musicPlayerEl, musicUrl, filename, dura
 // ═══════════════════════════════════════════════
 
 function openFullscreenPlayer(awemeId) {
-    console.log('[openFullscreenPlayer] 打开播放器, awemeId:', awemeId);
+    _log('[openFullscreenPlayer] 打开播放器, awemeId:', awemeId);
     const index = recommendedVideos.findIndex(v => v.aweme_id === awemeId);
-    console.log('[openFullscreenPlayer] 找到索引:', index, '总视频数:', recommendedVideos.length);
+    _log('[openFullscreenPlayer] 找到索引:', index, '总视频数:', recommendedVideos.length);
 
     if (index === -1) {
         console.error('[openFullscreenPlayer] 未找到视频');
@@ -1380,7 +1435,7 @@ function openFullscreenPlayer(awemeId) {
     isPlayerOpen = true;
 
     const player = document.getElementById('fullscreenPlayer');
-    console.log('[openFullscreenPlayer] 播放器元素:', player);
+    _log('[openFullscreenPlayer] 播放器元素:', player);
     player.style.display = 'flex';
 
     renderCurrentVideo();
@@ -1418,22 +1473,22 @@ function syncListWithLoadedVideos() {
     const existingCardCount = container.children.length;
     const loadedVideoCount = recommendedVideos.length;
 
-    console.log('[syncListWithLoadedVideos] 列表现有卡片:', existingCardCount, '已加载视频:', loadedVideoCount);
+    _log('[syncListWithLoadedVideos] 列表现有卡片:', existingCardCount, '已加载视频:', loadedVideoCount);
 
     if (loadedVideoCount > existingCardCount) {
         // 添加缺失的视频卡片
         const missingVideos = recommendedVideos.slice(existingCardCount);
-        console.log('[syncListWithLoadedVideos] 添加缺失视频:', missingVideos.length, '个');
+        _log('[syncListWithLoadedVideos] 添加缺失视频:', missingVideos.length, '个');
         displayRecommendedVideos(missingVideos);
     }
 }
 
 function renderCurrentVideo() {
-    console.log('[renderCurrentVideo] 开始渲染, 当前索引:', currentPlayerIndex);
+    _log('[renderCurrentVideo] 开始渲染, 当前索引:', currentPlayerIndex);
 
     // 先停止并清理当前视频
     if (currentVideoElement) {
-        console.log('[renderCurrentVideo] 清理旧视频');
+        _log('[renderCurrentVideo] 清理旧视频');
         currentVideoElement.pause();
         currentVideoElement.src = '';
         currentVideoElement.load();
@@ -1456,7 +1511,7 @@ function renderCurrentVideo() {
         return;
     }
 
-    console.log(`[renderCurrentVideo] 渲染视频 ${currentPlayerIndex}:`, video.aweme_id);
+    _log(`[renderCurrentVideo] 渲染视频 ${currentPlayerIndex}:`, video.aweme_id);
     const slide = createVideoSlide(video, currentPlayerIndex);
     wrapper.appendChild(slide);
 
@@ -1480,7 +1535,7 @@ function createVideoSlide(video, index) {
     const videoData = video.video || {};
     const posterUrl = videoData.cover || videoData.dynamic_cover || '';
 
-    console.log(`[createVideoSlide] 视频 ${index}:`, {
+    _log(`[createVideoSlide] 视频 ${index}:`, {
         aweme_id: video.aweme_id,
         posterUrl: posterUrl ? posterUrl.substring(0, 80) + '...' : '无',
         playAddr: videoData.play_addr ? videoData.play_addr.substring(0, 80) + '...' : '无'
@@ -1513,15 +1568,15 @@ function createVideoSlide(video, index) {
 
     videoEl.onclick = () => toggleVideoPlay(videoEl);
     videoEl.onloadedmetadata = () => {
-        console.log(`[createVideoSlide] 视频 ${index} 元数据已加载, duration: ${videoEl.duration}`);
+        _log(`[createVideoSlide] 视频 ${index} 元数据已加载, duration: ${videoEl.duration}`);
     };
 
     videoEl.onloadeddata = () => {
-        console.log(`[createVideoSlide] 视频 ${index} 数据已加载`);
+        _log(`[createVideoSlide] 视频 ${index} 数据已加载`);
     };
 
     videoEl.oncanplay = () => {
-        console.log(`[createVideoSlide] 视频 ${index} 可以播放`);
+        _log(`[createVideoSlide] 视频 ${index} 可以播放`);
     };
 
     slide.appendChild(videoEl);
@@ -1554,19 +1609,19 @@ function createVideoSlide(video, index) {
         });
     }
 
-    console.log(`[createVideoSlide] 视频 ${index} 元素已添加到slide`);
-    console.log(`[createVideoSlide] slide内容:`, slide.innerHTML.substring(0, 200));
+    _log(`[createVideoSlide] 视频 ${index} 元素已添加到slide`);
+    _log(`[createVideoSlide] slide内容:`, slide.innerHTML.substring(0, 200));
 
     return slide;
 }
 
 function updatePlayerPosition() {
     // 现在只有一个slide，不需要位置更新
-    console.log('[updatePlayerPosition] 单个slide，无需位置更新');
+    _log('[updatePlayerPosition] 单个slide，无需位置更新');
 }
 
 function playCurrentVideo() {
-    console.log('[playCurrentVideo] 尝试播放视频，索引:', currentPlayerIndex);
+    _log('[playCurrentVideo] 尝试播放视频，索引:', currentPlayerIndex);
     const currentSlide = document.querySelector(`.video-slide[data-index="${currentPlayerIndex}"]`);
     if (!currentSlide) {
         console.error('[playCurrentVideo] 未找到当前幻灯片');
@@ -1579,17 +1634,17 @@ function playCurrentVideo() {
         return;
     }
 
-    console.log('[playCurrentVideo] 视频src:', video.src ? video.src.substring(0, 100) : '无');
-    console.log('[playCurrentVideo] 视频readyState:', video.readyState);
+    _log('[playCurrentVideo] 视频src:', video.src ? video.src.substring(0, 100) : '无');
+    _log('[playCurrentVideo] 视频readyState:', video.readyState);
 
     // 更新当前视频元素引用
     currentVideoElement = video;
 
     // 如果视频还没加载好，等待加载
     if (video.readyState < 1) {
-        console.log('[playCurrentVideo] 视频元数据未加载，等待...');
+        _log('[playCurrentVideo] 视频元数据未加载，等待...');
         video.addEventListener('loadedmetadata', () => {
-            console.log('[playCurrentVideo] 视频元数据加载完成，开始播放');
+            _log('[playCurrentVideo] 视频元数据加载完成，开始播放');
             startVideoPlayback(video, currentSlide);
         }, { once: true });
 
@@ -1602,31 +1657,31 @@ function playCurrentVideo() {
 }
 
 function startVideoPlayback(video, slide) {
-    console.log('[startVideoPlayback] 开始播放');
-    console.log('[startVideoPlayback] video元素:', video);
-    console.log('[startVideoPlayback] slide元素:', slide);
+    _log('[startVideoPlayback] 开始播放');
+    _log('[startVideoPlayback] video元素:', video);
+    _log('[startVideoPlayback] slide元素:', slide);
 
     const poster = slide.querySelector('.video-poster');
-    console.log('[startVideoPlayback] 封面元素:', poster);
+    _log('[startVideoPlayback] 封面元素:', poster);
     if (poster) {
-        console.log('[startVideoPlayback] 封面当前display:', poster.style.display);
+        _log('[startVideoPlayback] 封面当前display:', poster.style.display);
     }
 
     video.play().then(() => {
-        console.log('[playCurrentVideo] 播放成功');
+        _log('[playCurrentVideo] 播放成功');
         // 播放成功，隐藏封面
         video.classList.add('playing');
         if (poster) {
             poster.style.display = 'none';
-            console.log('[startVideoPlayback] 封面已隐藏，新display:', poster.style.display);
+            _log('[startVideoPlayback] 封面已隐藏，新display:', poster.style.display);
         }
 
         // 检查视频状态
-        console.log('[startVideoPlayback] 视频paused:', video.paused);
-        console.log('[startVideoPlayback] 视频currentTime:', video.currentTime);
-        console.log('[startVideoPlayback] 视频duration:', video.duration);
-        console.log('[startVideoPlayback] 视频videoWidth:', video.videoWidth);
-        console.log('[startVideoPlayback] 视频videoHeight:', video.videoHeight);
+        _log('[startVideoPlayback] 视频paused:', video.paused);
+        _log('[startVideoPlayback] 视频currentTime:', video.currentTime);
+        _log('[startVideoPlayback] 视频duration:', video.duration);
+        _log('[startVideoPlayback] 视频videoWidth:', video.videoWidth);
+        _log('[startVideoPlayback] 视频videoHeight:', video.videoHeight);
 
         // 设置进度条更新
         setupVideoProgress(video);
@@ -1740,11 +1795,11 @@ function formatVideoTime(seconds) {
 function checkAndLoadMore() {
     // 计算剩余视频数量
     const remainingVideos = recommendedVideos.length - currentPlayerIndex - 1;
-    console.log('[checkAndLoadMore] 剩余视频数量:', remainingVideos, '当前索引:', currentPlayerIndex, '总数:', recommendedVideos.length);
+    _log('[checkAndLoadMore] 剩余视频数量:', remainingVideos, '当前索引:', currentPlayerIndex, '总数:', recommendedVideos.length);
 
     // 如果剩余视频少于阈值，预加载更多
     if (remainingVideos < PRELOAD_THRESHOLD && hasMoreRecommended && !isLoadingMore) {
-        console.log('[checkAndLoadMore] 剩余视频不足，开始预加载');
+        _log('[checkAndLoadMore] 剩余视频不足，开始预加载');
         loadRecommendedFeedAndSyncList();
     }
 }
@@ -1760,7 +1815,7 @@ async function loadRecommendedFeedAndSyncList() {
     // 如果在播放器模式，需要同步更新列表页面
     if (isPlayerOpen && recommendedVideos.length > previousCount) {
         const newVideos = recommendedVideos.slice(previousCount);
-        console.log('[loadRecommendedFeedAndSyncList] 同步更新列表，新增:', newVideos.length, '个视频');
+        _log('[loadRecommendedFeedAndSyncList] 同步更新列表，新增:', newVideos.length, '个视频');
         displayRecommendedVideos(newVideos);
     }
 }
@@ -1849,7 +1904,7 @@ function handleTouchEnd(e) {
 function handleSwipe() {
     // 防止切换过程中重复触发
     if (isTransitioning) {
-        console.log('[handleSwipe] 正在切换中，忽略');
+        _log('[handleSwipe] 正在切换中，忽略');
         return;
     }
 
@@ -1927,14 +1982,14 @@ function handleKeyDown(e) {
 }
 
 function playNextVideo() {
-    console.log('[playNextVideo] 当前索引:', currentPlayerIndex, '总数:', recommendedVideos.length);
+    _log('[playNextVideo] 当前索引:', currentPlayerIndex, '总数:', recommendedVideos.length);
 
     if (currentPlayerIndex < recommendedVideos.length - 1) {
         currentPlayerIndex++;
-        console.log('[playNextVideo] 切换到下一个视频，新索引:', currentPlayerIndex);
+        _log('[playNextVideo] 切换到下一个视频，新索引:', currentPlayerIndex);
         renderCurrentVideo();
     } else if (hasMoreRecommended) {
-        console.log('[playNextVideo] 到达底部，加载更多视频');
+        _log('[playNextVideo] 到达底部，加载更多视频');
         showToast('加载更多视频...', 'info');
 
         // 异步加载，加载成功后自动切换并同步列表
@@ -1943,7 +1998,7 @@ function playNextVideo() {
             // 同步更新列表页面
             if (recommendedVideos.length > previousCount) {
                 const newVideos = recommendedVideos.slice(previousCount);
-                console.log('[playNextVideo] 同步更新列表，新增:', newVideos.length, '个视频');
+                _log('[playNextVideo] 同步更新列表，新增:', newVideos.length, '个视频');
                 displayRecommendedVideos(newVideos);
             }
 
@@ -1956,19 +2011,19 @@ function playNextVideo() {
             }
         });
     } else {
-        console.log('[playNextVideo] 已经是最后一个视频');
+        _log('[playNextVideo] 已经是最后一个视频');
         showToast('已经是最后一个视频', 'info');
     }
 }
 
 function playPrevVideo() {
-    console.log('[playPrevVideo] 当前索引:', currentPlayerIndex);
+    _log('[playPrevVideo] 当前索引:', currentPlayerIndex);
     if (currentPlayerIndex > 0) {
         currentPlayerIndex--;
-        console.log('[playPrevVideo] 切换到上一个视频，新索引:', currentPlayerIndex);
+        _log('[playPrevVideo] 切换到上一个视频，新索引:', currentPlayerIndex);
         renderCurrentVideo();
     } else {
-        console.log('[playPrevVideo] 已经是第一个视频');
+        _log('[playPrevVideo] 已经是第一个视频');
         showToast('已经是第一个视频', 'info');
     }
 }
@@ -2292,7 +2347,7 @@ function updateUnifiedPlayerInfo() {
 
     const avatarSmallEl = document.getElementById('unifiedAuthorAvatarSmall');
     if (avatarSmallEl) {
-        avatarSmallEl.src = author.avatar_thumb || '/static/default-avatar.svg';
+        avatarSmallEl.src = author.avatar_thumb || '/default-avatar.svg';
     }
 
     const nameEl = document.getElementById('unifiedAuthorName');
@@ -2496,7 +2551,7 @@ function openUnifiedPlayer(awemeId) {
 
     // 如果播放器已经打开，直接切换视频
     if (unifiedPlayerState.isOpen) {
-        console.log('[openUnifiedPlayer] 播放器已打开，直接切换到视频', index);
+        _log('[openUnifiedPlayer] 播放器已打开，直接切换到视频', index);
         unifiedPlayerState.currentIndex = index;
         unifiedPlayerState.currentVideo = recommendedVideos[index];
         unifiedPlayerState.videos = recommendedVideos;
@@ -2629,8 +2684,8 @@ function renderUnifiedCurrentVideo() {
         ? firstMedia.url
         : '';
 
-    console.log('[renderUnifiedCurrentVideo] 视频ID:', video.aweme_id);
-    console.log('[renderUnifiedCurrentVideo] 播放地址:', playAddr);
+    _log('[renderUnifiedCurrentVideo] 视频ID:', video.aweme_id);
+    _log('[renderUnifiedCurrentVideo] 播放地址:', playAddr);
 
     if (firstMedia && !isVideoLikeMedia(firstMedia)) {
         renderCurrentMedia(firstMedia);
@@ -2673,14 +2728,14 @@ function renderUnifiedCurrentVideo() {
     videoEl.playbackRate = unifiedPlayerState.playbackRate;
 
     videoEl.addEventListener('loadedmetadata', () => {
-        console.log('[renderUnifiedCurrentVideo] 视频元数据加载成功, 耗时:', (performance.now() - t_setSrc).toFixed(0), 'ms');
+        _log('[renderUnifiedCurrentVideo] 视频元数据加载成功, 耗时:', (performance.now() - t_setSrc).toFixed(0), 'ms');
         unifiedPlayerState.videoElement = videoEl;
         setupUnifiedVideoProgress(videoEl);
         updateUnifiedMediaProgressUI(0, 0, videoEl.duration || 0);
 
         // 尝试自动播放，如果失败则显示播放按钮
         videoEl.play().catch(e => {
-            console.log('Autoplay prevented, user interaction required:', e);
+            _log('Autoplay prevented, user interaction required:', e);
             // 如果自动播放失败，添加点击播放提示
             const playHint = document.createElement('div');
             playHint.className = 'player-play-hint';
@@ -3132,7 +3187,7 @@ function playNextUnifiedVideo() {
 
     // 当剩余视频不足时，提前加载更多
     if (remaining < PRELOAD_THRESHOLD && unifiedPlayerState.source === 'recommended' && hasMoreRecommended && !isLoadingMore) {
-        console.log('[playNextUnifiedVideo] 自动加载更多视频, 当前剩余:', remaining, '总视频数:', unifiedPlayerState.videos.length);
+        _log('[playNextUnifiedVideo] 自动加载更多视频, 当前剩余:', remaining, '总视频数:', unifiedPlayerState.videos.length);
         loadMoreRecommendedFeed();
     }
 
@@ -3153,7 +3208,7 @@ function playNextUnifiedVideo() {
                     showToast('正在加载更多视频，请稍候...', 'info');
                 }
             } else {
-                console.log('[playNextUnifiedVideo] 最后一个视频，加载更多');
+                _log('[playNextUnifiedVideo] 最后一个视频，加载更多');
                 loadMoreRecommendedFeed();
             }
         } else {

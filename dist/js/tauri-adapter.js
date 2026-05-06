@@ -3,7 +3,8 @@
  */
 
 (function() {
-    console.log('[Tauri Adapter] Script loaded, checking environment...');
+    const debugLog = window.__DY_DEBUG__ ? console.log.bind(console) : () => {};
+    debugLog('[Tauri Adapter] Script loaded, checking environment...');
 
     const adapterState = {
         fetchInstalled: false,
@@ -432,7 +433,7 @@
         };
 
         if (adapterState.mode !== mode) {
-            console.log('[Tauri Adapter] Environment mode:', mode);
+            debugLog('[Tauri Adapter] Environment mode:', mode);
             adapterState.mode = mode;
         }
 
@@ -445,7 +446,7 @@
         if (!adapterState.clientInitPromise) {
             adapterState.clientInitPromise = bridge.core.invoke('init_client')
                 .then(function(result) {
-                    console.log('[Tauri Adapter] Client initialized');
+                    debugLog('[Tauri Adapter] Client initialized');
                     return result;
                 })
                 .catch(function(error) {
@@ -956,7 +957,7 @@
             }
 
             const bridge = updateEnvironmentState();
-            console.log('[Tauri Adapter] API request:', bridge ? 'tauri' : 'web-preview', request.method, request.path);
+            debugLog('[Tauri Adapter] API request:', bridge ? 'tauri' : 'web-preview', request.method, request.path);
 
             try {
                 const result = bridge
@@ -975,7 +976,7 @@
     }
 
     window.io = function() {
-        console.log('[Socket Mock] io() called');
+        debugLog('[Socket Mock] io() called');
         socketId += 1;
 
         const socket = {
@@ -1071,17 +1072,17 @@
         return socket;
     };
 
-    console.log('[Tauri Adapter] window.io defined');
+    debugLog('[Tauri Adapter] window.io defined');
 
     installFetchInterceptor();
     updateEnvironmentState();
 
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('[Tauri Adapter] DOM ready, checking __TAURI__:', typeof window.__TAURI__, 'internals:', typeof window.__TAURI_INTERNALS__);
+        debugLog('[Tauri Adapter] DOM ready, checking __TAURI__:', typeof window.__TAURI__, 'internals:', typeof window.__TAURI_INTERNALS__);
         updateEnvironmentState();
 
         setTimeout(function() {
-            console.log('[Tauri Adapter] After timeout, __TAURI__:', typeof window.__TAURI__, 'internals:', typeof window.__TAURI_INTERNALS__);
+            debugLog('[Tauri Adapter] After timeout, __TAURI__:', typeof window.__TAURI__, 'internals:', typeof window.__TAURI_INTERNALS__);
             updateEnvironmentState();
         }, 100);
     });
