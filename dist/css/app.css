@@ -3268,6 +3268,53 @@ a:hover { color: var(--accent-hover); }
     opacity: 0.6;
 }
 
+#myDownloadsSection .my-downloads-toolbar {
+    row-gap: 10px;
+}
+
+#myDownloadsSection .my-downloads-toolbar .input-group,
+#myDownloadsSection .my-downloads-toolbar .form-select,
+#myDownloadsSection .my-downloads-toolbar .btn {
+    min-height: 34px;
+}
+
+#myDownloadsSection .my-downloads-batch-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#myDownloadsSection .my-downloads-batch-actions .form-check {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 8px 0 1.5em;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+#myDownloadsSection .my-downloads-batch-actions .btn {
+    white-space: nowrap;
+}
+
+@media (max-width: 991.98px) {
+    #myDownloadsSection .my-downloads-batch-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #myDownloadsSection .my-downloads-toolbar__search .input-group {
+        flex-wrap: nowrap;
+    }
+
+    #myDownloadsSection .my-downloads-batch-actions .btn {
+        flex: 1 1 96px;
+    }
+}
+
 /* ═══════════════════════════════════════
    BUTTON ENHANCEMENT
    ═══════════════════════════════════════ */

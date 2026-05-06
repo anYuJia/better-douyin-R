@@ -336,8 +336,8 @@
                     </div>
                     <div class="section-panel-body">
                         <!-- Filter Bar -->
-                        <div class="row mb-3 g-2">
-                            <div class="col-md-4">
+                        <div class="row mb-3 g-2 align-items-center my-downloads-toolbar">
+                            <div class="col-lg-5 col-md-12 my-downloads-toolbar__search">
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                                     <input type="text" class="form-control" id="myDownloadsSearch" placeholder="搜索文件名、作者、路径，支持 author: / ext:" oninput="filterMyDownloads()">
@@ -346,7 +346,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-lg-2 col-md-4 col-6">
                                 <select class="form-select form-select-sm" id="myDownloadsTypeFilter" onchange="filterMyDownloads()">
                                     <option value="all">全部类型</option>
                                     <option value="video">视频</option>
@@ -354,7 +354,7 @@
                                     <option value="audio">音频</option>
                                 </select>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-lg-2 col-md-4 col-6">
                                 <select class="form-select form-select-sm" id="myDownloadsSort" onchange="filterMyDownloads()">
                                     <option value="date_desc">最新优先</option>
                                     <option value="date_asc">最早优先</option>
@@ -364,8 +364,8 @@
                                     <option value="name_desc">名称 Z-A</option>
                                 </select>
                             </div>
-                            <div class="col-md-4">
-                                <div class="d-flex gap-2 align-items-center">
+                            <div class="col-lg-3 col-md-4 col-12">
+                                <div class="my-downloads-batch-actions">
                                     <div class="form-check form-check-inline mb-0">
                                         <input class="form-check-input" type="checkbox" id="myDownloadsSelectAll" onchange="toggleMyDownloadsSelectAll()">
                                         <label class="form-check-label" for="myDownloadsSelectAll">全选</label>

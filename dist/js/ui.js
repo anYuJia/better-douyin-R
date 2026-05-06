@@ -490,7 +490,7 @@ function displayStorageVideos(videos) {
 
         const safeDesc = escapeHtml(video.desc || '无描述');
         const safeAuthor = escapeHtml(video.author?.nickname || '未知作者');
-        const coverSrc = escapeHtml(video.cover || video.cover_url || '/static/placeholder.jpg');
+        const coverSrc = escapeHtml(video.cover || video.cover_url || '/default-cover.svg');
         const aid = escapeHtml(video.aweme_id);
 
         return '<div class="card mb-2" id="storage-card-' + aid + '">'

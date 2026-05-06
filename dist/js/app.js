@@ -634,7 +634,7 @@ function showMultipleUsers(users) {
 }
 
 function createUserCard(user, showDownloadBtn) {
-    var avatarUrl = user.avatar_thumb || user.avatar_larger || '/static/default-avatar.svg';
+    var avatarUrl = user.avatar_thumb || user.avatar_larger || '/default-avatar.svg';
     var nickEscaped = escapeHtml(user.nickname);
     var sigEscaped = escapeHtml(user.signature || '无简介');
     var nickForAttr = nickEscaped.replace(/'/g, "\\'");
@@ -643,7 +643,7 @@ function createUserCard(user, showDownloadBtn) {
         : '<button class="btn btn-primary btn-sm" onclick="selectUser(\'' + user.sec_uid + '\', \'' + nickForAttr + '\')"><i class="bi bi-check"></i> 选择</button>';
     return '<div class="col-md-6 mb-3"><div class="card user-card h-100"><div class="card-body">' +
         '<div class="d-flex align-items-center mb-3">' +
-        '<img src="' + avatarUrl + '" alt="头像" class="rounded-circle me-3" style="width:50px;height:50px;object-fit:cover;" onerror="this.src=\'/static/default-avatar.svg\'">' +
+        '<img src="' + avatarUrl + '" alt="头像" class="rounded-circle me-3" style="width:50px;height:50px;object-fit:cover;" onerror="this.src=\'/default-avatar.svg\'">' +
         '<div class="flex-grow-1"><h6 class="card-title mb-1">' + nickEscaped + '</h6>' +
         '<small class="text-muted">抖音号: ' + (user.unique_id || '未设置') + '</small></div></div>' +
         '<p class="card-text"><small class="text-muted">粉丝: ' + user.follower_count + '</small><br>' +
@@ -689,9 +689,9 @@ function goBackToHome() {
 function showUserDetail(user) {
     hideSectionById('emptyState');
     setBackButtonVisible(true);
-    var avatarUrl = user.avatar_larger || user.avatar_thumb || '/static/default-avatar.svg';
+    var avatarUrl = user.avatar_larger || user.avatar_thumb || '/default-avatar.svg';
     document.getElementById('userAvatar').src = avatarUrl;
-    document.getElementById('userAvatar').onerror = function () { this.src = '/static/default-avatar.svg'; };
+    document.getElementById('userAvatar').onerror = function () { this.src = '/default-avatar.svg'; };
     document.getElementById('userNickname').textContent = user.nickname;
     document.getElementById('userUniqueId').textContent = '@' + (user.unique_id || '未设置');
     document.getElementById('userSignature').textContent = user.signature || '暂无简介';
@@ -816,7 +816,7 @@ function getVideoCardMediaType(video) {
 }
 
 function getVideoCardCover(video) {
-    return video.cover_url || (video.video && video.video.cover) || '/static/default-cover.svg';
+    return video.cover_url || (video.video && video.video.cover) || '/default-cover.svg';
 }
 
 function getVideoCardDuration(video) {
@@ -886,7 +886,7 @@ function createVideoCardElement(video, options) {
     col.className = 'col-md-3 col-sm-6 mb-3';
     col.innerHTML = '<div class="card h-100 video-card" data-aweme-id="' + escapeHtml(video.aweme_id || '') + '">' +
         '<div class="position-relative video-cover-container" onclick="' + openAction + '">' +
-        '<img src="' + coverUrl + '" class="card-img-top video-cover" alt="封面" loading="lazy" onerror="this.src=\'/static/default-cover.svg\'">' +
+        '<img src="' + coverUrl + '" class="card-img-top video-cover" alt="封面" loading="lazy" onerror="this.src=\'/default-cover.svg\'">' +
         '<i class="bi bi-play-circle-fill video-play-icon"></i>' +
         '<div class="video-overlay"><div class="video-stats">' +
         '<div class="stat-item"><i class="bi bi-heart-fill"></i><span>' + formatNumber(stats.diggCount) + '</span></div>' +
@@ -1442,12 +1442,12 @@ function showParseResults(videos) {
                 if (index === 0) addLog('解析的视频已存储到本地: ' + video.aweme_id);
             }
         }
-        var coverUrl = video.cover_url || '/static/default-cover.svg';
-        var avatarUrl = video.author.avatar_thumb || '/static/default-avatar.svg';
+        var coverUrl = video.cover_url || '/default-cover.svg';
+        var avatarUrl = video.author.avatar_thumb || '/default-avatar.svg';
         var h = '<div class="row mb-2 border-bottom pb-2" data-aweme-id="' + video.aweme_id + '">' +
-            '<div class="col-4"><img src="' + coverUrl + '" class="img-fluid rounded" alt="封面" style="max-height:60px;object-fit:cover;" onerror="this.src=\'/static/default-cover.svg\';"></div>' +
+            '<div class="col-4"><img src="' + coverUrl + '" class="img-fluid rounded" alt="封面" style="max-height:60px;object-fit:cover;" onerror="this.src=\'/default-cover.svg\';"></div>' +
             '<div class="col-8"><h6 class="small fw-bold mb-1" style="font-size:0.75rem;">' + escapeHtml(video.desc || '无描述') + '</h6>' +
-            '<p class="text-muted mb-1 small" style="font-size:0.7rem;"><img src="' + avatarUrl + '" class="rounded-circle me-1" width="14" height="14" onerror="this.src=\'/static/default-avatar.svg\';">' +
+            '<p class="text-muted mb-1 small" style="font-size:0.7rem;"><img src="' + avatarUrl + '" class="rounded-circle me-1" width="14" height="14" onerror="this.src=\'/default-avatar.svg\';">' +
             '<span>' + escapeHtml(video.author.nickname || '未知作者') + '</span></p>' +
             '<div class="d-flex justify-content-between text-muted mb-1" style="font-size:0.65rem;">' +
             '<span>' + formatNumber(video.digg_count || 0) + '</span><span>' + formatNumber(video.comment_count || 0) + '</span><span>' + formatNumber(video.share_count || 0) + '</span></div>' +
@@ -1513,9 +1513,9 @@ async function showVideoDetail(awemeId) {
 function renderVideoDetail(video, awemeId) {
     var typeBadge = document.getElementById('videoDetailTypeBadge');
     if (typeBadge) { var tm = { video: '视频', image: '图集', live_photo: 'Live Photo', mixed: '混合' }; typeBadge.textContent = tm[video.media_type || video.raw_media_type] || '作品'; }
-    document.getElementById('videoDetailCover').src = video.cover_url || '/static/default-cover.svg';
+    document.getElementById('videoDetailCover').src = video.cover_url || '/default-cover.svg';
     var author = video.author || {};
-    document.getElementById('videoDetailAuthorAvatar').src = author.avatar_thumb || '/static/default-avatar.svg';
+    document.getElementById('videoDetailAuthorAvatar').src = author.avatar_thumb || '/default-avatar.svg';
     document.getElementById('videoDetailAuthorName').textContent = author.nickname || '未知作者';
     document.getElementById('videoDetailTime').textContent = video.create_time ? new Date(video.create_time * 1000).toLocaleString() : '';
     document.getElementById('videoDetailDesc').textContent = video.desc || '无描述';
@@ -1708,7 +1708,7 @@ function displayLikedAuthors(authors) {
         ac.className = 'col-md-4 col-sm-6 mb-3';
         ac.innerHTML = '<div class="card h-100 author-card"><div class="card-body author-card-body">' +
             '<div class="d-flex align-items-center mb-2">' +
-            '<img src="' + (author.avatar_thumb || '/static/default-avatar.svg') + '" class="rounded-circle me-3" style="width:50px;height:50px;object-fit:cover;" onerror="this.src=\'/static/default-avatar.svg\'">' +
+            '<img src="' + (author.avatar_thumb || '/default-avatar.svg') + '" class="rounded-circle me-3" style="width:50px;height:50px;object-fit:cover;" onerror="this.src=\'/default-avatar.svg\'">' +
             '<div class="flex-grow-1"><h6 class="mb-0 text-truncate">' + escapeHtml(author.nickname) + '</h6>' +
             '<small class="text-muted">@' + (author.unique_id || author.sec_uid) + '</small></div></div>' +
             '<p class="card-text author-desc">' + escapeHtml(author.signature || '暂无签名') + '</p>' +
