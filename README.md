@@ -270,12 +270,12 @@ for file in dist/js/*.js; do node --check "$file"; done
 
 ## Star History
 
-<a href="https://star-history.com/#anYuJia/DY_video_downloader&Date">
-  <img src="https://api.star-history.com/svg?repos=anYuJia/DY_video_downloader&type=Date" width="100%" alt="DY_video_downloader Star History Chart">
+<a href="https://star-history.com/#anYuJia/douyin-downloader-rust&Date">
+  <img src="https://api.star-history.com/svg?repos=anYuJia/douyin-downloader-rust&type=Date" width="100%" alt="douyin-downloader-rust Star History Chart">
 </a>
 
 <p align="center">
-  <a href="https://star-history.com/#anYuJia/DY_video_downloader&Date">https://star-history.com/#anYuJia/DY_video_downloader&Date</a>
+  <a href="https://star-history.com/#anYuJia/douyin-downloader-rust&Date">https://star-history.com/#anYuJia/douyin-downloader-rust&Date</a>
 </p>
 
 ---
