@@ -10,6 +10,20 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RELEASE_BODY: |
+    ## 下载建议
+
+    - Windows 常规安装：下载 `Douyin.Downloader_*_x64-setup.exe`
+    - Windows 便携版：下载 `Douyin-Downloader_*_x64_portable.exe`
+    - macOS Apple Silicon：下载 `Douyin.Downloader_*_aarch64.dmg` 或 `*_macos-arm64_portable.zip`
+    - macOS Intel：下载 `Douyin.Downloader_*_x64.dmg` 或 `*_macos-x64_portable.zip`
+    - Linux Debian/Ubuntu：下载 `Douyin.Downloader_*_amd64.deb`
+    - Linux Fedora/openSUSE/RHEL：下载 `Douyin.Downloader_*_x86_64.rpm`
+    - Linux 通用便携：下载 `Douyin.Downloader_*_amd64.AppImage`
+
+    `.sig` 和 `latest.json` / `windows.json` / `darwin.json` / `linux.json` 主要用于自动更新和签名校验，普通安装通常不需要手动下载。
+
 jobs:
   build-macos:
     strategy:
@@ -50,7 +64,7 @@ jobs:
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
           releaseName: 'Douyin Downloader ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
@@ -111,7 +125,7 @@ jobs:
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
           releaseName: 'Douyin Downloader ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
@@ -231,11 +245,11 @@ jobs:
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
           releaseName: 'Douyin Downloader ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
-          args: --target x86_64-unknown-linux-gnu -b deb -b appimage
+          args: --target x86_64-unknown-linux-gnu -b deb -b rpm -b appimage
 
   finalize-updater:
     runs-on: ubuntu-latest
@@ -277,6 +291,7 @@ jobs:
           WINDOWS_PORTABLE_SIG="$(read_sig "Douyin-Downloader_${APP_VERSION}_x64_portable.exe")"
           LINUX_APPIMAGE_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_amd64.AppImage")"
           LINUX_DEB_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_amd64.deb")"
+          LINUX_RPM_SIG="$(read_sig "Douyin.Downloader_${APP_VERSION}_x86_64.rpm")"
 
           jq -n \
             --arg version "$APP_VERSION" \
@@ -294,6 +309,8 @@ jobs:
             --arg linux_appimage_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_amd64.AppImage" \
             --arg linux_deb_sig "$LINUX_DEB_SIG" \
             --arg linux_deb_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_amd64.deb" \
+            --arg linux_rpm_sig "$LINUX_RPM_SIG" \
+            --arg linux_rpm_url "$BASE_URL/Douyin.Downloader_${APP_VERSION}_x86_64.rpm" \
             '{
               version: $version,
               notes: $notes,
@@ -308,7 +325,8 @@ jobs:
                 "windows-x86_64-portable": { signature: $windows_portable_sig, url: $windows_portable_url },
                 "linux-x86_64": { signature: $linux_appimage_sig, url: $linux_appimage_url },
                 "linux-x86_64-appimage": { signature: $linux_appimage_sig, url: $linux_appimage_url },
-                "linux-x86_64-deb": { signature: $linux_deb_sig, url: $linux_deb_url }
+                "linux-x86_64-deb": { signature: $linux_deb_sig, url: $linux_deb_url },
+                "linux-x86_64-rpm": { signature: $linux_rpm_sig, url: $linux_rpm_url }
               }
             }' > latest.fixed.json
 
@@ -325,7 +343,9 @@ jobs:
             (.platforms["windows-x86_64-portable"].signature | length > 0) and
             (.platforms["windows-x86_64-portable"].url | length > 0) and
             (.platforms["linux-x86_64"].signature | length > 0) and
-            (.platforms["linux-x86_64"].url | length > 0)
+            (.platforms["linux-x86_64"].url | length > 0) and
+            (.platforms["linux-x86_64-rpm"].signature | length > 0) and
+            (.platforms["linux-x86_64-rpm"].url | length > 0)
           ' latest.json
 
           for target in darwin windows linux; do

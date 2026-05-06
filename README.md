@@ -75,7 +75,11 @@
 | Windows | `*_x64_portable.exe` | 便携版，不需要安装 |
 | macOS Apple Silicon | `*_aarch64.dmg` / `*_macos-arm64_portable.zip` | M1/M2/M3 等芯片 |
 | macOS Intel | `*_x64.dmg` / `*_macos-x64_portable.zip` | Intel 芯片 |
-| Linux | `.deb` / `.AppImage` | Debian/Ubuntu 优先用 `.deb`，其他发行版可尝试 `.AppImage` |
+| Linux | `.deb` / `.rpm` / `.AppImage` | Debian/Ubuntu 优先用 `.deb`，Fedora/openSUSE/RHEL 优先用 `.rpm`，其他发行版可尝试 `.AppImage` |
+
+### 包管理器分发
+
+项目已准备 Homebrew Cask、Scoop 和 winget 的分发模板，见 [packaging/package-managers](packaging/package-managers)。这些模板会在正式提交到对应包管理器仓库后提供更方便的安装与更新方式。
 
 ### 首次使用建议
 
