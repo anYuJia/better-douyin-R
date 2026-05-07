@@ -2,11 +2,11 @@
 // TypeScript Type Exports
 // ═══════════════════════════════════════════════
 
-export type ViewType = "home" | "search" | "recommended" | "downloads" | "liked" | "liked-authors" | "settings";
+export type ViewType = "home" | "search" | "link" | "recommended" | "downloads" | "liked" | "liked-authors" | "settings";
 
 export type ThemeMode = "light" | "dark" | "auto";
 
-export type DownloadStatus = "pending" | "downloading" | "completed" | "error" | "paused";
+export type DownloadStatus = "pending" | "downloading" | "completed" | "error" | "paused" | "cancelled";
 
 export interface AppState {
   currentView: ViewType;
@@ -23,6 +23,9 @@ export interface AppState {
   setCommandOpen: (open: boolean) => void;
   commandMode: "search" | "link";
   setCommandMode: (mode: "search" | "link") => void;
+  cookieLoggedIn: boolean;
+  cookieNickname: string;
+  setCookieLoggedIn: (loggedIn: boolean, nickname?: string) => void;
 }
 
 export interface DownloadTask {
@@ -31,9 +34,26 @@ export interface DownloadTask {
   progress: number;
   speed: number;
   status: DownloadStatus;
+  isBatch?: boolean;
+  awemeId?: string;
+  currentAwemeId?: string;
+  currentName?: string;
+  savePath?: string;
+  filePath?: string;
+  mediaType?: string;
+  mediaCount?: number;
+  fileIndex?: number;
+  fileTotal?: number;
+  fileProgress?: number;
+  completedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  etaSeconds?: number;
   totalBytes?: number;
   downloadedBytes?: number;
   startTime?: number;
+  finishedTime?: number;
+  errorMessage?: string;
 }
 
 export interface LogEntry {

@@ -4,9 +4,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { TaskCard } from "@/components/downloads/task-card";
-import { Download, ChevronUp, Trash2, ArrowDown } from "lucide-react";
+import { Download, ChevronUp, Trash2, ArrowDown, FolderOpen } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useDownloads } from "@/hooks/use-downloads";
 
 export function BottomBar() {
   const expanded = useAppStore((s) => s.bottomBarExpanded);
@@ -16,9 +17,23 @@ export function BottomBar() {
   const logs = useLogStore((s) => s.logs);
   const clearLogs = useLogStore((s) => s.clearLogs);
   const [activeTab, setActiveTab] = useState("progress");
+  const {
+    cancelDownload,
+    pauseTask,
+    resumeTask,
+    removeTask,
+    openDownloadsDirectory,
+    openTaskLocation,
+  } = useDownloads();
 
   const tasksList = Object.values(tasks);
   const hasActiveTasks = activeCount > 0;
+  const activeProgress =
+    activeCount > 0
+      ? tasksList
+          .filter((task) => task.status === "downloading" || task.status === "pending" || task.status === "paused")
+          .reduce((sum, task) => sum + (task.progress || 0), 0) / activeCount
+      : 0;
 
   return (
     <motion.div
@@ -43,27 +58,40 @@ export function BottomBar() {
           <AnimatePresence>
             {hasActiveTasks && (
               <motion.div
-                initial={{ opacity: 0, width: 0 }}
+                initial={false}
                 animate={{ opacity: 1, width: 80 }}
                 exit={{ opacity: 0, width: 0 }}
                 className="h-[3px] rounded-full bg-surface overflow-hidden"
               >
-                <div className="h-full bg-accent rounded-full transition-all duration-300" style={{ width: "40%" }} />
+                <div className="h-full bg-accent rounded-full transition-[width] duration-200" style={{ width: `${activeProgress}%` }} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
         <div className="flex items-center gap-2">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="progress">进度</TabsTrigger>
-              <TabsTrigger value="logs">日志</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div onClick={(event) => event.stopPropagation()}>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList>
+                <TabsTrigger value="progress">进度</TabsTrigger>
+                <TabsTrigger value="logs">日志</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void openDownloadsDirectory();
+            }}
+            className="w-7 h-7 rounded-[var(--radius-sm)] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-[background-color,color,transform] duration-[var(--duration-fast)] cursor-pointer"
+            title="打开下载目录"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+          </button>
 
           <motion.button
-            className="w-7 h-7 rounded-[var(--radius-sm)] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all duration-[var(--duration-fast)] cursor-pointer"
+            className="w-7 h-7 rounded-[var(--radius-sm)] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-[background-color,color,transform] duration-[var(--duration-fast)] cursor-pointer"
             animate={{ rotate: expanded ? 180 : 0 }}
             transition={{ duration: 0.2 }}
           >
@@ -90,12 +118,16 @@ export function BottomBar() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1.5 py-1">
-                    <AnimatePresence mode="popLayout">
+                    <AnimatePresence initial={false}>
                       {tasksList.map((task) => (
                         <TaskCard
                           key={task.id}
                           task={task}
-                          onRemove={useDownloadStore.getState().removeTask}
+                          onCancel={cancelDownload}
+                          onPause={pauseTask}
+                          onResume={resumeTask}
+                          onOpen={openTaskLocation}
+                          onRemove={removeTask}
                         />
                       ))}
                     </AnimatePresence>
@@ -110,11 +142,11 @@ export function BottomBar() {
                 <div className="flex items-center gap-1 mb-1">
                   <button
                     onClick={clearLogs}
-                    className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all cursor-pointer"
+                    className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-[background-color,color,transform,opacity] cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
-                  <button className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all cursor-pointer">
+                  <button className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-[background-color,color,transform,opacity] cursor-pointer">
                     <ArrowDown className="w-3 h-3" />
                   </button>
                 </div>

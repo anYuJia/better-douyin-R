@@ -1,27 +1,59 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
-  X,
-  Heart,
-  MessageCircle,
-  Share2,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type TouchEvent as ReactTouchEvent,
+  type WheelEvent as ReactWheelEvent,
+} from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
   Download,
+  Heart,
+  Info,
   Music,
-  ChevronUp,
-  ChevronDown,
-  Play,
   Pause,
+  Play,
+  Star,
+  Volume2,
+  VolumeX,
+  X,
 } from "lucide-react";
-import { cn, formatNumber, formatDuration } from "@/lib/utils";
-import type { VideoItem } from "@/lib/tauri";
+import { cn, formatDuration, formatNumber } from "@/lib/utils";
+import { getVideoDetail, mediaProxyUrl, type VideoInfo } from "@/lib/tauri";
+import {
+  collectVideoMedia,
+  getMediaProxyType,
+  getVideoBgmUrl,
+  isVideoLikeMedia,
+  shouldUseSeparateBgm,
+  type VideoMediaItem,
+} from "@/lib/video-media";
 
 interface FullscreenPlayerProps {
-  videos: VideoItem[];
+  videos: VideoInfo[];
   initialIndex?: number;
   open: boolean;
   onClose: () => void;
-  onDownload?: (video: VideoItem) => void;
+  onDownload?: (video: VideoInfo) => void;
   onLoadMore?: () => void;
+  onShowDetail?: (video: VideoInfo) => void;
+}
+
+const IMAGE_DURATION_SECONDS = 1.5;
+const LOAD_MORE_THRESHOLD = 3;
+const PLAYER_VIDEO_MAX_AUTO_RETRIES = 1;
+const PLAYER_VIDEO_BUFFERING_DELAY_MS = 450;
+const PLAYER_VIDEO_LOAD_TIMEOUT_MS = 18_000;
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+function playerMediaProxyUrl(url: string | null | undefined, mediaType: "video" | "image" | "audio", retryKey = 0): string {
+  const proxied = mediaProxyUrl(url, mediaType);
+  if (!proxied || retryKey <= 0) return proxied;
+  return `${proxied}${proxied.includes("?") ? "&" : "?"}player_retry=${encodeURIComponent(String(retryKey))}`;
 }
 
 export function FullscreenPlayer({
@@ -31,271 +63,1260 @@ export function FullscreenPlayer({
   onClose,
   onDownload,
   onLoadMore,
+  onShowDetail,
 }: FullscreenPlayerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [mediaIndex, setMediaIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [favorited, setFavorited] = useState(false);
+  const [volume, setVolume] = useState(100);
+  const [muted, setMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [openPanel, setOpenPanel] = useState<"volume" | "rate" | "music" | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [showLoadStatus, setShowLoadStatus] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [bgmPlaying, setBgmPlaying] = useState(false);
+  const [videoOverrides, setVideoOverrides] = useState<Record<string, VideoInfo>>({});
   const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const touchStartY = useRef(0);
-  const isWheelLocked = useRef(false);
+  const bgmRef = useRef<HTMLAudioElement>(null);
+  const touchStart = useRef({ x: 0, y: 0 });
+  const wheelLocked = useRef(false);
+  const loadMoreRequestedForLength = useRef(0);
+  const imageAdvanceQueued = useRef(false);
+  const desiredPlayingRef = useRef(true);
+  const mediaSwitchingRef = useRef(false);
+  const mediaSwitchReleaseRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const loadStatusTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const loadTimeoutTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const bufferingTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const autoRetryCountRef = useRef(0);
+  const refreshingDetailRef = useRef(false);
+  const refreshedDetailIdsRef = useRef(new Set<string>());
+  const videoProgressRafRef = useRef<number | null>(null);
+  const preloadedMediaRef = useRef(new Set<string>());
+  const preloadedNodesRef = useRef<Array<HTMLImageElement | HTMLVideoElement>>([]);
 
-  const video = videos[currentIndex];
+  const rawCurrentVideo = videos[currentIndex] || null;
+  const currentVideo = rawCurrentVideo?.aweme_id
+    ? videoOverrides[rawCurrentVideo.aweme_id] || rawCurrentVideo
+    : rawCurrentVideo;
+  const mediaItems = useMemo(
+    () => (currentVideo ? collectVideoMedia(currentVideo) : []),
+    [currentVideo]
+  );
+  const currentMedia = mediaItems[mediaIndex] || mediaItems[0] || null;
+  const currentMediaSrc = currentMedia
+    ? playerMediaProxyUrl(currentMedia.url, getMediaProxyType(currentMedia), reloadKey)
+    : "";
+  const currentPosterSrc = currentMedia?.poster
+    ? playerMediaProxyUrl(currentMedia.poster, "image")
+    : "";
+  const mediaKey = currentMedia
+    ? `${currentVideo?.aweme_id || "video"}-${mediaIndex}-${currentMedia.type}-${currentMedia.url}-${reloadKey}`
+    : "empty";
+  const progressPct = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const hasMultipleMedia = mediaItems.length > 1;
+  const authorAvatar =
+    currentVideo?.author?.avatar_thumb || currentVideo?.author?.avatar_medium || "";
+  const authorName =
+    currentVideo?.author?.nickname || currentVideo?.author?.unique_id || "用户";
+  const likeCount = (currentVideo?.statistics?.digg_count || 0) + (liked ? 1 : 0);
+  const favoriteBaseCount =
+    currentVideo?.statistics?.collect_count || currentVideo?.statistics?.digg_count || 0;
+  const favoriteCount = favoriteBaseCount + (favorited ? 1 : 0);
+  const musicUrl = getVideoBgmUrl(currentVideo);
+  const bgmProxyUrl = musicUrl ? mediaProxyUrl(musicUrl, "audio") : "";
+  const effectiveVolume = muted ? 0 : volume;
 
-  useEffect(() => {
-    if (open) {
-      setCurrentIndex(initialIndex);
-      setPlaying(false);
+  const stopVideoProgressLoop = useCallback(() => {
+    if (videoProgressRafRef.current === null) return;
+    window.cancelAnimationFrame(videoProgressRafRef.current);
+    videoProgressRafRef.current = null;
+  }, []);
+
+  const clearLoadTimers = useCallback(() => {
+    if (loadStatusTimerRef.current) {
+      window.clearTimeout(loadStatusTimerRef.current);
+      loadStatusTimerRef.current = null;
     }
-  }, [open, initialIndex]);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const onTime = () => setCurrentTime(v.currentTime);
-    const onDuration = () => setDuration(v.duration);
-    const onEnded = () => {
-      setPlaying(false);
-      handleNext();
-    };
-    v.addEventListener("timeupdate", onTime);
-    v.addEventListener("loadedmetadata", onDuration);
-    v.addEventListener("ended", onEnded);
-    return () => {
-      v.removeEventListener("timeupdate", onTime);
-      v.removeEventListener("loadedmetadata", onDuration);
-      v.removeEventListener("ended", onEnded);
-    };
-  });
-
-  useEffect(() => {
-    // Auto-play when video changes
-    const v = videoRef.current;
-    if (v && open) {
-      v.currentTime = 0;
-      v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    if (loadTimeoutTimerRef.current) {
+      window.clearTimeout(loadTimeoutTimerRef.current);
+      loadTimeoutTimerRef.current = null;
     }
-  }, [currentIndex, open]);
-
-  // Load more when near end
-  useEffect(() => {
-    if (currentIndex >= videos.length - 3 && onLoadMore) {
-      onLoadMore();
-    }
-  }, [currentIndex, videos.length, onLoadMore]);
-
-  const handleNext = useCallback(() => {
-    if (currentIndex < videos.length - 1) {
-      setCurrentIndex((i) => i + 1);
-    }
-  }, [currentIndex, videos.length]);
-
-  const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
-      setCurrentIndex((i) => i - 1);
-    }
-  }, [currentIndex]);
-
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) {
-      v.play();
-      setPlaying(true);
-    } else {
-      v.pause();
-      setPlaying(false);
+    if (bufferingTimerRef.current) {
+      window.clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
     }
   }, []);
 
-  // Keyboard navigation
+  const startVideoProgressLoop = useCallback(() => {
+    if (videoProgressRafRef.current !== null) return;
+
+    const tick = () => {
+      const node = videoRef.current;
+      if (!node) {
+        videoProgressRafRef.current = null;
+        return;
+      }
+
+      setCurrentTime(node.currentTime || 0);
+      setDuration(node.duration || 0);
+
+      if (!node.paused && !node.ended) {
+        videoProgressRafRef.current = window.requestAnimationFrame(tick);
+      } else {
+        videoProgressRafRef.current = null;
+      }
+    };
+
+    videoProgressRafRef.current = window.requestAnimationFrame(tick);
+  }, []);
+
+  const goToVideo = useCallback((index: number) => {
+    if (index < 0 || index >= videos.length) return;
+    desiredPlayingRef.current = true;
+    mediaSwitchingRef.current = false;
+    setCurrentIndex(index);
+    setMediaIndex(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setPlaying(false);
+    setReloadKey((value) => value + 1);
+  }, [videos.length]);
+
+  const playNextVideo = useCallback(() => {
+    if (currentIndex < videos.length - 1) {
+      goToVideo(currentIndex + 1);
+      return;
+    }
+    onLoadMore?.();
+  }, [currentIndex, goToVideo, onLoadMore, videos.length]);
+
+  const playPrevVideo = useCallback(() => {
+    if (currentIndex > 0) {
+      goToVideo(currentIndex - 1);
+    }
+  }, [currentIndex, goToVideo]);
+
+  const switchToMedia = useCallback((index: number) => {
+    if (mediaItems.length === 0) return;
+    const safeIndex = ((index % mediaItems.length) + mediaItems.length) % mediaItems.length;
+    const shouldKeepPlaying = desiredPlayingRef.current || playing;
+    desiredPlayingRef.current = shouldKeepPlaying;
+    mediaSwitchingRef.current = true;
+    if (mediaSwitchReleaseRef.current) {
+      window.clearTimeout(mediaSwitchReleaseRef.current);
+    }
+    setMediaIndex(safeIndex);
+    setCurrentTime(0);
+    setDuration(0);
+    setPlaying(shouldKeepPlaying);
+    mediaSwitchReleaseRef.current = window.setTimeout(() => {
+      mediaSwitchingRef.current = false;
+    }, 4_000);
+  }, [mediaItems.length, playing]);
+
+  const playNextMedia = useCallback(() => {
+    if (mediaItems.length > 1) {
+      switchToMedia(mediaIndex + 1);
+      return;
+    }
+    playNextVideo();
+  }, [mediaIndex, mediaItems.length, playNextVideo, switchToMedia]);
+
+  const playPrevMedia = useCallback(() => {
+    if (mediaItems.length > 1) {
+      switchToMedia(mediaIndex - 1);
+      return;
+    }
+    playPrevVideo();
+  }, [mediaIndex, mediaItems.length, playPrevVideo, switchToMedia]);
+
+  const advanceMediaSequence = useCallback(() => {
+    if (mediaItems.length === 0) return;
+    desiredPlayingRef.current = true;
+    if (mediaItems.length > 1) {
+      switchToMedia(mediaIndex + 1);
+      return;
+    }
+    imageAdvanceQueued.current = false;
+    setCurrentTime(0);
+    setDuration(IMAGE_DURATION_SECONDS);
+    setPlaying(true);
+    setReloadKey((value) => value + 1);
+  }, [mediaIndex, mediaItems.length, switchToMedia]);
+
+  const togglePlay = useCallback(() => {
+    if (!currentMedia) return;
+    if (!isVideoLikeMedia(currentMedia)) {
+      setPlaying((value) => {
+        desiredPlayingRef.current = !value;
+        return !value;
+      });
+      return;
+    }
+
+    const node = videoRef.current;
+    if (!node) return;
+    if (node.paused) {
+      desiredPlayingRef.current = true;
+      void node.play().then(() => {
+        setPlaying(true);
+        startVideoProgressLoop();
+      }).catch(() => setPlaying(false));
+    } else {
+      desiredPlayingRef.current = false;
+      node.pause();
+      setPlaying(false);
+    }
+  }, [currentMedia, startVideoProgressLoop]);
+
+  const togglePanel = useCallback((panel: "volume" | "rate" | "music", event: ReactMouseEvent) => {
+    event.stopPropagation();
+    setOpenPanel((value) => (value === panel ? null : panel));
+  }, []);
+
+  const toggleMute = useCallback((event: ReactMouseEvent) => {
+    event.stopPropagation();
+    if (muted && volume === 0) {
+      setVolume(50);
+    }
+    setMuted((value) => !value);
+  }, [muted, volume]);
+
+  const handleVolumeChange = useCallback((nextVolume: number) => {
+    const safeVolume = Math.max(0, Math.min(100, nextVolume));
+    setVolume(safeVolume);
+    setMuted(safeVolume === 0);
+  }, []);
+
+  const handlePlaybackRateChange = useCallback((rate: number, event: ReactMouseEvent) => {
+    event.stopPropagation();
+    setPlaybackRate(rate);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+    setOpenPanel(null);
+  }, []);
+
+  const ensureBgmSource = useCallback(() => {
+    const audio = bgmRef.current;
+    if (!audio || !bgmProxyUrl) return null;
+    if (audio.src !== bgmProxyUrl) {
+      audio.src = bgmProxyUrl;
+      audio.loop = true;
+      audio.load();
+    }
+    audio.volume = effectiveVolume / 100;
+    audio.muted = muted || volume === 0;
+    return audio;
+  }, [bgmProxyUrl, effectiveVolume, muted, volume]);
+
+  const playBgm = useCallback(() => {
+    const audio = ensureBgmSource();
+    if (!audio) return;
+    if (!audio.paused) {
+      setBgmPlaying(true);
+      return;
+    }
+    void audio.play().then(() => setBgmPlaying(true)).catch(() => setBgmPlaying(false));
+  }, [ensureBgmSource]);
+
+  const pauseBgm = useCallback(() => {
+    const audio = bgmRef.current;
+    if (!audio) return;
+    audio.pause();
+    setBgmPlaying(false);
+  }, []);
+
+  const toggleBgm = useCallback((event: ReactMouseEvent) => {
+    event.stopPropagation();
+    const audio = ensureBgmSource();
+    if (!audio) return;
+    if (audio.paused) {
+      void audio.play().then(() => setBgmPlaying(true)).catch(() => setBgmPlaying(false));
+    } else {
+      audio.pause();
+      setBgmPlaying(false);
+    }
+  }, [ensureBgmSource]);
+
+  const handleSeek = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (!duration) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const nextTime = Math.max(0, Math.min(duration, ((event.clientX - rect.left) / rect.width) * duration));
+
+    if (currentMedia && isVideoLikeMedia(currentMedia) && videoRef.current) {
+      videoRef.current.currentTime = nextTime;
+    }
+    setCurrentTime(nextTime);
+  }, [currentMedia, duration]);
+
+  const refreshCurrentVideoDetail = useCallback(async () => {
+    const awemeId = currentVideo?.aweme_id;
+    if (!awemeId || refreshingDetailRef.current || refreshedDetailIdsRef.current.has(awemeId)) {
+      return false;
+    }
+
+    refreshingDetailRef.current = true;
+    refreshedDetailIdsRef.current.add(awemeId);
+    setLoadState("loading");
+    setShowLoadStatus(true);
+
+    try {
+      const result = await getVideoDetail(awemeId);
+      if (!result.success || !result.video) {
+        return false;
+      }
+
+      setVideoOverrides((current) => ({
+        ...current,
+        [awemeId]: result.video as VideoInfo,
+      }));
+      setMediaIndex(0);
+      setCurrentTime(0);
+      setDuration(0);
+      setReloadKey((value) => value + 1);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshingDetailRef.current = false;
+    }
+  }, [currentVideo?.aweme_id]);
+
+  const retryCurrentMedia = useCallback((event?: ReactMouseEvent, auto = false) => {
+    event?.stopPropagation();
+    if (!auto && currentVideo?.aweme_id) {
+      refreshedDetailIdsRef.current.delete(currentVideo.aweme_id);
+    }
+    clearLoadTimers();
+    autoRetryCountRef.current = auto ? autoRetryCountRef.current : 0;
+    setLoadState("loading");
+    setShowLoadStatus(true);
+    setCurrentTime(0);
+    setDuration(0);
+    setReloadKey((value) => value + 1);
+  }, [clearLoadTimers, currentVideo?.aweme_id]);
+
+  const markMediaReady = useCallback(() => {
+    clearLoadTimers();
+    setLoadState("ready");
+    setShowLoadStatus(false);
+    mediaSwitchingRef.current = false;
+  }, [clearLoadTimers]);
+
+  const handleMediaFailure = useCallback(async () => {
+    clearLoadTimers();
+    stopVideoProgressLoop();
+    mediaSwitchingRef.current = false;
+
+    const mediaErrorCode = videoRef.current?.error?.code || 0;
+    const canAutoRetry =
+      (typeof navigator === "undefined" || navigator.onLine !== false) &&
+      (mediaErrorCode === 0 || mediaErrorCode === 2 || mediaErrorCode === 4) &&
+      autoRetryCountRef.current < PLAYER_VIDEO_MAX_AUTO_RETRIES;
+
+    if (canAutoRetry) {
+      autoRetryCountRef.current += 1;
+      retryCurrentMedia(undefined, true);
+      return;
+    }
+
+    const refreshed = await refreshCurrentVideoDetail();
+    if (refreshed) return;
+
+    setLoadState("error");
+    setPlaying(false);
+    setShowLoadStatus(true);
+  }, [clearLoadTimers, refreshCurrentVideoDetail, retryCurrentMedia, stopVideoProgressLoop]);
+
+  const scheduleLoadTimeout = useCallback(() => {
+    if (loadTimeoutTimerRef.current) {
+      window.clearTimeout(loadTimeoutTimerRef.current);
+    }
+
+    loadTimeoutTimerRef.current = window.setTimeout(() => {
+      const node = videoRef.current;
+      if (!currentMedia || !isVideoLikeMedia(currentMedia)) return;
+      if (node && node.readyState >= HTMLMediaElement.HAVE_METADATA) return;
+      void handleMediaFailure();
+    }, PLAYER_VIDEO_LOAD_TIMEOUT_MS);
+  }, [currentMedia, handleMediaFailure]);
+
+  const showBufferingSoon = useCallback(() => {
+    if (bufferingTimerRef.current) {
+      window.clearTimeout(bufferingTimerRef.current);
+    }
+    bufferingTimerRef.current = window.setTimeout(() => {
+      const node = videoRef.current;
+      if (node && node.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+      setLoadState("loading");
+      setShowLoadStatus(true);
+    }, PLAYER_VIDEO_BUFFERING_DELAY_MS);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowUp":
-        case "k":
-          handlePrev();
-          break;
-        case "ArrowDown":
-        case "j":
-          handleNext();
-          break;
-        case " ":
-          e.preventDefault();
-          togglePlay();
-          break;
-        case "Escape":
-          onClose();
-          break;
+    const safeIndex = Math.min(Math.max(initialIndex, 0), Math.max(videos.length - 1, 0));
+    desiredPlayingRef.current = true;
+    mediaSwitchingRef.current = false;
+    setCurrentIndex(safeIndex);
+    setMediaIndex(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setPlaying(false);
+    setReloadKey((value) => value + 1);
+  }, [initialIndex, open, videos.length]);
+
+  useEffect(() => {
+    setLiked(false);
+    setFavorited(false);
+    setOpenPanel(null);
+  }, [currentVideo?.aweme_id]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaSwitchReleaseRef.current) {
+        window.clearTimeout(mediaSwitchReleaseRef.current);
+      }
+      clearLoadTimers();
+      stopVideoProgressLoop();
+      pauseBgm();
+    };
+  }, [clearLoadTimers, pauseBgm, stopVideoProgressLoop]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || videos.length === 0) return;
+    if (currentIndex >= videos.length) {
+      goToVideo(videos.length - 1);
+    }
+  }, [currentIndex, goToVideo, open, videos.length]);
+
+  useEffect(() => {
+    if (mediaIndex < mediaItems.length) return;
+    setMediaIndex(0);
+  }, [mediaIndex, mediaItems.length]);
+
+  useEffect(() => {
+    autoRetryCountRef.current = 0;
+  }, [currentMedia?.url, currentVideo?.aweme_id, mediaIndex]);
+
+  useEffect(() => {
+    imageAdvanceQueued.current = false;
+    setShowLoadStatus(false);
+    clearLoadTimers();
+
+    const nextPlaying = currentMedia
+      ? currentMedia.type === "image"
+        ? desiredPlayingRef.current
+        : desiredPlayingRef.current
+      : false;
+
+    setCurrentTime(0);
+    setDuration(currentMedia?.type === "image" ? IMAGE_DURATION_SECONDS : 0);
+    setLoadState(currentMedia ? (isVideoLikeMedia(currentMedia) ? "loading" : "ready") : "error");
+    setPlaying(Boolean(nextPlaying));
+
+    if (!currentMedia || !shouldUseSeparateBgm(currentMedia)) {
+      pauseBgm();
+    } else if (desiredPlayingRef.current && musicUrl) {
+      playBgm();
+    }
+
+    if (currentMedia && isVideoLikeMedia(currentMedia)) {
+      loadStatusTimerRef.current = window.setTimeout(() => {
+        setShowLoadStatus(true);
+      }, PLAYER_VIDEO_BUFFERING_DELAY_MS);
+      scheduleLoadTimeout();
+    }
+  }, [clearLoadTimers, currentMedia, mediaKey, musicUrl, pauseBgm, playBgm, scheduleLoadTimeout]);
+
+  useEffect(() => {
+    if (!open || !currentVideo || mediaItems.length > 0) return;
+    void refreshCurrentVideoDetail().then((refreshed) => {
+      if (refreshed) return;
+      setLoadState("error");
+      setShowLoadStatus(true);
+    });
+  }, [currentVideo, mediaItems.length, open, refreshCurrentVideoDetail]);
+
+  useEffect(() => {
+    if (!open || !onLoadMore || videos.length === 0) return;
+    const remaining = videos.length - currentIndex - 1;
+    if (remaining > LOAD_MORE_THRESHOLD) return;
+    if (loadMoreRequestedForLength.current === videos.length) return;
+    loadMoreRequestedForLength.current = videos.length;
+    onLoadMore();
+  }, [currentIndex, onLoadMore, open, videos.length]);
+
+  useEffect(() => {
+    preloadedMediaRef.current.clear();
+    preloadedNodesRef.current = [];
+  }, [currentVideo?.aweme_id]);
+
+  useEffect(() => {
+    if (!open || mediaItems.length <= 1) return;
+
+    const candidateIndexes = [mediaIndex + 1, mediaIndex - 1]
+      .map((index) => ((index % mediaItems.length) + mediaItems.length) % mediaItems.length);
+
+    for (const index of candidateIndexes) {
+      const media = mediaItems[index];
+      if (!media) continue;
+
+      const proxiedUrl = mediaProxyUrl(media.url, getMediaProxyType(media));
+      const key = `${media.type}::${proxiedUrl}`;
+      if (!proxiedUrl || preloadedMediaRef.current.has(key)) continue;
+      preloadedMediaRef.current.add(key);
+
+      if (media.type === "image") {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = proxiedUrl;
+        preloadedNodesRef.current.push(image);
+      } else {
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.muted = true;
+        video.playsInline = true;
+        video.src = proxiedUrl;
+        video.load();
+        preloadedNodesRef.current.push(video);
+      }
+
+      if (preloadedNodesRef.current.length > 8) {
+        const removed = preloadedNodesRef.current.shift();
+        if (removed instanceof HTMLVideoElement) {
+          removed.removeAttribute("src");
+          removed.load();
+        }
+      }
+    }
+  }, [mediaIndex, mediaItems, open]);
+
+  useEffect(() => {
+    if (!open || !currentMedia || !isVideoLikeMedia(currentMedia)) return;
+    const timeout = window.setTimeout(() => {
+      const node = videoRef.current;
+      if (!node) return;
+      node.currentTime = 0;
+      if (!desiredPlayingRef.current) return;
+      void node.play().then(() => {
+        setPlaying(true);
+        startVideoProgressLoop();
+      }).catch(() => setPlaying(false));
+    }, 40);
+    return () => window.clearTimeout(timeout);
+  }, [currentMedia, mediaKey, open, startVideoProgressLoop]);
+
+  useEffect(() => {
+    const wantsBgm =
+      open &&
+      currentMedia &&
+      shouldUseSeparateBgm(currentMedia) &&
+      Boolean(musicUrl) &&
+      desiredPlayingRef.current &&
+      (playing || mediaSwitchingRef.current || loadState === "loading" || currentMedia.type === "image");
+
+    if (wantsBgm) {
+      playBgm();
+      return;
+    }
+
+    if (!mediaSwitchingRef.current) {
+      pauseBgm();
+    }
+  }, [currentMedia, loadState, musicUrl, open, pauseBgm, playBgm, playing]);
+
+  useEffect(() => {
+    const audio = bgmRef.current;
+    if (!audio) return;
+
+    const handlePlay = () => setBgmPlaying(true);
+    const handlePause = () => setBgmPlaying(false);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("ended", handlePause);
+    audio.addEventListener("emptied", handlePause);
+    return () => {
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("ended", handlePause);
+      audio.removeEventListener("emptied", handlePause);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextVolume = effectiveVolume / 100;
+    const video = videoRef.current;
+    if (video) {
+      video.volume = nextVolume;
+      video.muted = muted || volume === 0;
+      video.playbackRate = playbackRate;
+    }
+
+    const audio = bgmRef.current;
+    if (audio) {
+      audio.volume = nextVolume;
+      audio.muted = muted || volume === 0;
+    }
+  }, [effectiveVolume, mediaKey, muted, playbackRate, volume]);
+
+  useEffect(() => {
+    stopVideoProgressLoop();
+    return stopVideoProgressLoop;
+  }, [mediaKey, stopVideoProgressLoop]);
+
+  useEffect(() => {
+    if (!open || currentMedia?.type !== "image" || !playing) return;
+
+    let frame = 0;
+    let last = performance.now();
+    const tick = (timestamp: number) => {
+      const delta = Math.max(0, timestamp - last) / 1000;
+      last = timestamp;
+
+      setCurrentTime((value) => {
+        const next = Math.min(IMAGE_DURATION_SECONDS, value + delta);
+        if (next >= IMAGE_DURATION_SECONDS && !imageAdvanceQueued.current) {
+          imageAdvanceQueued.current = true;
+          window.setTimeout(advanceMediaSequence, 0);
+        }
+        return next;
+      });
+
+      if (!imageAdvanceQueued.current) {
+        frame = window.requestAnimationFrame(tick);
+      }
+    };
+
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [advanceMediaSequence, currentMedia?.type, mediaKey, open, playing]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowUp" || event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        playPrevVideo();
+      }
+      if (event.key === "ArrowDown" || event.key.toLowerCase() === "j") {
+        event.preventDefault();
+        playNextVideo();
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        playPrevMedia();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        playNextMedia();
+      }
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlay();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [open, handleNext, handlePrev, togglePlay, onClose]);
+  }, [open, onClose, playNextMedia, playNextVideo, playPrevMedia, playPrevVideo, togglePlay]);
 
-  // Wheel navigation
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (isWheelLocked.current) return;
-      isWheelLocked.current = true;
-      setTimeout(() => { isWheelLocked.current = false; }, 500);
+  const handleWheel = useCallback((event: ReactWheelEvent) => {
+    event.preventDefault();
+    if (wheelLocked.current) return;
+    wheelLocked.current = true;
+    window.setTimeout(() => {
+      wheelLocked.current = false;
+    }, 420);
 
-      if (e.deltaY > 30) handleNext();
-      else if (e.deltaY < -30) handlePrev();
-    },
-    [handleNext, handlePrev]
-  );
+    if (event.deltaY > 20) playNextVideo();
+    if (event.deltaY < -20) playPrevVideo();
+  }, [playNextVideo, playPrevVideo]);
 
-  // Touch navigation
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartY.current = e.touches[0].clientY;
+  const handleTouchStart = (event: ReactTouchEvent) => {
+    touchStart.current = {
+      x: event.touches[0]?.clientX || 0,
+      y: event.touches[0]?.clientY || 0,
+    };
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const deltaY = touchStartY.current - e.changedTouches[0].clientY;
-    if (deltaY > 80) handleNext();
-    else if (deltaY < -80) handlePrev();
+  const handleTouchEnd = (event: ReactTouchEvent) => {
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const deltaX = touchStart.current.x - touch.clientX;
+    const deltaY = touchStart.current.y - touch.clientY;
+
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 54) {
+      if (deltaX > 0) playNextMedia();
+      else playPrevMedia();
+      return;
+    }
+
+    if (Math.abs(deltaY) > 64) {
+      if (deltaY > 0) playNextVideo();
+      else playPrevVideo();
+    }
   };
-
-  const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  if (!open || !video) return null;
 
   return (
     <AnimatePresence>
-      <motion.div
-        ref={containerRef}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] bg-black flex flex-col overflow-hidden"
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* Header */}
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-black/60 to-transparent">
-          <button
-            onClick={onClose}
-            className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-all"
+      {open && currentVideo && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[9999] flex flex-col overflow-hidden bg-black text-white"
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div
+            className="absolute inset-x-0 top-0 z-30 flex items-center bg-gradient-to-b from-black/70 to-transparent px-5 py-4"
+            onClick={(event) => event.stopPropagation()}
           >
-            <X className="w-5 h-5" />
-          </button>
-          <span className="text-white text-[0.8rem] font-medium">
-            {currentIndex + 1}/{videos.length}
-          </span>
-        </div>
+            <button
+              onClick={onClose}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-[background-color,transform] hover:bg-white/20 active:scale-[0.96]"
+              aria-label="关闭播放器"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-        {/* Video */}
-        <div className="flex-1 flex items-center justify-center relative" onClick={togglePlay}>
-          <video
-            ref={videoRef}
-            src={video.video_url}
-            className="max-w-full max-h-full object-contain"
-          />
-          {!playing && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-16 h-16 rounded-full bg-white/15 backdrop-blur-md flex items-center justify-center">
-                <Play className="w-7 h-7 text-white fill-white ml-1" />
+          <div className="relative flex min-h-0 flex-1 items-center justify-center" onClick={togglePlay}>
+            <motion.div
+              key={mediaKey}
+              initial={false}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
+              className="absolute inset-0 flex items-center justify-center"
+            >
+              {currentMedia && isVideoLikeMedia(currentMedia) && (
+                <video
+                  ref={videoRef}
+                  src={currentMediaSrc}
+                  poster={currentPosterSrc}
+                  className="h-full max-h-full w-full max-w-full object-contain"
+                  loop={!hasMultipleMedia}
+                  playsInline
+                  preload="metadata"
+                  onLoadStart={scheduleLoadTimeout}
+                  onWaiting={showBufferingSoon}
+                  onStalled={showBufferingSoon}
+                  onLoadedMetadata={(event) => {
+                    setDuration(event.currentTarget.duration || 0);
+                    event.currentTarget.volume = effectiveVolume / 100;
+                    event.currentTarget.muted = muted || volume === 0;
+                    event.currentTarget.playbackRate = playbackRate;
+                    markMediaReady();
+                  }}
+                  onCanPlay={(event) => {
+                    markMediaReady();
+                    if (!shouldUseSeparateBgm(currentMedia)) {
+                      pauseBgm();
+                    } else if (desiredPlayingRef.current && musicUrl) {
+                      playBgm();
+                    }
+                    if (desiredPlayingRef.current && event.currentTarget.paused) {
+                      void event.currentTarget.play().then(() => {
+                        setPlaying(true);
+                        startVideoProgressLoop();
+                      }).catch(() => setPlaying(false));
+                    } else if (desiredPlayingRef.current) {
+                      setPlaying(true);
+                      startVideoProgressLoop();
+                    }
+                  }}
+                  onPlay={() => {
+                    desiredPlayingRef.current = true;
+                    setPlaying(true);
+                    startVideoProgressLoop();
+                  }}
+                  onPause={() => {
+                    stopVideoProgressLoop();
+                    if (!mediaSwitchingRef.current) {
+                      setPlaying(false);
+                      desiredPlayingRef.current = false;
+                    }
+                  }}
+                  onEnded={() => {
+                    stopVideoProgressLoop();
+                    advanceMediaSequence();
+                  }}
+                  onError={() => {
+                    void handleMediaFailure();
+                  }}
+                />
+              )}
+
+              {currentMedia?.type === "image" && (
+                <img
+                  src={currentMediaSrc}
+                  alt={currentVideo.desc || "图片"}
+                  className="max-h-full max-w-full object-contain"
+                  onLoad={() => {
+                    markMediaReady();
+                    if (desiredPlayingRef.current && musicUrl) {
+                      playBgm();
+                    }
+                  }}
+                  onError={() => {
+                    void handleMediaFailure();
+                  }}
+                />
+              )}
+
+              {!currentMedia && (
+                <PlayerStatus
+                  title="没有可播放的媒体"
+                  message="当前作品没有返回视频或图片地址。"
+                  onRetry={retryCurrentMedia}
+                  state="error"
+                />
+              )}
+            </motion.div>
+
+            {loadState === "loading" && showLoadStatus && currentMedia && isVideoLikeMedia(currentMedia) && (
+              <PlayerStatus title="正在加载媒体..." message="正在通过本地代理拉取播放地址" />
+            )}
+            {loadState === "error" && currentMedia && (
+              <PlayerStatus
+                title="媒体加载失败"
+                message="可以重试，或打开详情复制原始媒体链接。"
+                state="error"
+                onRetry={retryCurrentMedia}
+              />
+            )}
+
+            {!playing && loadState === "ready" && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/15 shadow-[0_18px_52px_rgba(0,0,0,0.4)] backdrop-blur-md">
+                  <Play className="ml-1 h-8 w-8 fill-white" />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Sidebar (TikTok-style) */}
-        <div className="absolute right-4 bottom-32 z-20 flex flex-col items-center gap-5">
-          <div className="w-12 h-12 rounded-full bg-accent overflow-hidden border-2 border-white shadow-md">
-            {video.author_avatar && (
-              <img src={video.author_avatar} alt="" className="w-full h-full object-cover" />
             )}
           </div>
 
-          <SidebarButton
-            icon={Heart}
-            count={video.digg_count}
-          />
-          <SidebarButton
-            icon={MessageCircle}
-            count={video.comment_count}
-          />
-          <SidebarButton
-            icon={Share2}
-            count={video.share_count}
-          />
-
-          <button
-            onClick={() => onDownload?.(video)}
-            className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 cursor-pointer transition-all"
+          <div
+            className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 pb-1 pt-24 text-white"
+            onClick={(event) => event.stopPropagation()}
           >
-            <Download className="w-5 h-5" />
-          </button>
-        </div>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full border-2 border-white/30 bg-white/10">
+                  {authorAvatar ? (
+                    <img
+                      src={mediaProxyUrl(authorAvatar, "image")}
+                      alt={authorName}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-accent text-[0.72rem] font-bold text-white">
+                      {authorName.slice(0, 1)}
+                    </div>
+                  )}
+                </div>
+                <span className="truncate text-[0.88rem] font-semibold drop-shadow-md">@{authorName}</span>
+              </div>
 
-        {/* Bottom Info */}
-        <div className="absolute left-4 right-20 bottom-20 z-20">
-          <div className="text-white text-[15px] font-semibold mb-1.5 drop-shadow-md">
-            @{video.author_nickname}
-          </div>
-          <div className="text-white/90 text-[13px] mb-2 line-clamp-2 drop-shadow-md">
-            {video.desc}
-          </div>
-          {video.music_title && (
-            <div className="flex items-center gap-2 text-white/70 text-[12px]">
-              <Music className="w-3 h-3 animate-spin" style={{ animationDuration: "3s" }} />
-              <span className="truncate">{video.music_title}</span>
+              <div className="flex min-w-0 max-w-[66vw] items-center gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <InlinePlayerButton
+                  label="点赞"
+                  count={likeCount}
+                  active={liked}
+                  activeClassName="fill-accent text-accent"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setLiked((value) => !value);
+                  }}
+                >
+                  <Heart className={cn("h-4 w-4", liked && "fill-accent text-accent")} />
+                </InlinePlayerButton>
+
+                <InlinePlayerButton
+                  label="收藏"
+                  count={favoriteCount}
+                  active={favorited}
+                  activeClassName="fill-warning text-warning"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setFavorited((value) => !value);
+                  }}
+                >
+                  <Star className={cn("h-4 w-4", favorited && "fill-warning text-warning")} />
+                </InlinePlayerButton>
+
+                <div className="relative shrink-0">
+                  <PlayerIconButton
+                    label="音量"
+                    onClick={(event) => togglePanel("volume", event)}
+                    active={openPanel === "volume"}
+                  >
+                    {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </PlayerIconButton>
+                  <AnimatePresence>
+                    {openPanel === "volume" && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.16 }}
+                        className="absolute bottom-9 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#141414]/95 px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+                        onClick={(event) => event.stopPropagation()}
+                        onWheel={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={toggleMute}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white transition-colors hover:text-white/70"
+                          aria-label={muted ? "取消静音" : "静音"}
+                        >
+                          {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                        </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={effectiveVolume}
+                          onChange={(event) => handleVolumeChange(Number(event.currentTarget.value))}
+                          className="h-1 w-[100px] cursor-pointer accent-accent"
+                          aria-label="音量"
+                        />
+                        <span className="min-w-9 text-center text-[0.78rem] font-medium tabular-nums text-white/90">
+                          {effectiveVolume}
+                        </span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="relative shrink-0">
+                  <PlayerIconButton
+                    label="倍速"
+                    onClick={(event) => togglePanel("rate", event)}
+                    active={openPanel === "rate"}
+                  >
+                    <span className="text-[0.78rem] font-semibold tabular-nums">{playbackRate}x</span>
+                  </PlayerIconButton>
+                  <AnimatePresence>
+                    {openPanel === "rate" && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.16 }}
+                        className="absolute bottom-9 left-1/2 z-40 flex max-w-[200px] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-xl bg-[#141414]/95 p-2 shadow-[0_4px_16px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {PLAYBACK_RATES.map((rate) => (
+                          <button
+                            key={rate}
+                            type="button"
+                            onClick={(event) => handlePlaybackRateChange(rate, event)}
+                            className={cn(
+                              "rounded-lg px-2.5 py-1.5 text-[0.72rem] font-medium text-white/70 transition-colors hover:bg-white/12 hover:text-white",
+                              rate === playbackRate && "bg-accent/20 text-accent"
+                            )}
+                          >
+                            {rate}x
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <PlayerIconButton
+                  label="下载作品"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDownload?.(currentVideo);
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                </PlayerIconButton>
+
+                <div className="relative shrink-0">
+                  <PlayerIconButton
+                    label="背景音乐"
+                    onClick={(event) => togglePanel("music", event)}
+                    active={openPanel === "music"}
+                  >
+                    <Music className="h-4 w-4" />
+                  </PlayerIconButton>
+                  <AnimatePresence>
+                    {openPanel === "music" && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        transition={{ duration: 0.16 }}
+                        className="absolute bottom-9 right-0 z-40 w-[min(260px,calc(100vw-24px))] rounded-xl bg-[#141414]/95 p-2 shadow-[0_4px_16px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+                        onClick={(event) => event.stopPropagation()}
+                        onWheel={(event) => event.stopPropagation()}
+                      >
+                        <div className="mb-2 min-w-0">
+                          <div className="truncate text-[0.78rem] font-medium text-white">
+                            {currentVideo.music?.title || "暂无背景音乐"}
+                          </div>
+                          {currentVideo.music?.author && (
+                            <div className="truncate text-[0.68rem] text-white/45">
+                              {currentVideo.music.author}
+                            </div>
+                          )}
+                        </div>
+                        {musicUrl ? (
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={toggleBgm}
+                              className="flex h-8 items-center justify-center gap-1 rounded-md bg-accent/18 text-[0.72rem] font-semibold text-accent transition-colors hover:bg-accent/25"
+                            >
+                              {bgmPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                              {bgmPlaying ? "暂停 BGM" : "播放 BGM"}
+                            </button>
+                            <a
+                              href={bgmProxyUrl}
+                              download
+                              className="flex h-8 items-center justify-center gap-1 rounded-md bg-white/[0.08] text-[0.72rem] font-semibold text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              下载
+                            </a>
+                          </div>
+                        ) : (
+                          <div className="rounded-md bg-white/[0.06] px-2 py-2 text-[0.72rem] text-white/55">
+                            当前作品没有返回音频地址
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {onShowDetail && (
+                  <PlayerIconButton
+                    label="查看详情"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onShowDetail(currentVideo);
+                    }}
+                  >
+                    <Info className="h-4 w-4" />
+                  </PlayerIconButton>
+                )}
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Progress Bar */}
-        <div className="absolute bottom-12 left-0 right-20 px-4 z-20">
-          <div className="relative w-full h-[3px] bg-white/15 rounded-full cursor-pointer group hover:h-[5px] transition-all">
-            <div
-              className="absolute left-0 top-0 h-full bg-white/50 rounded-full transition-[width] duration-100"
-              style={{ width: `${progressPct}%` }}
-            />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-              style={{ left: `calc(${progressPct}% - 6px)` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <span className="text-white/40 text-[10px] font-mono">{formatDuration(currentTime)}</span>
-            <span className="text-white/40 text-[10px] font-mono">{formatDuration(duration)}</span>
-          </div>
-        </div>
+            <div className="mt-1.5">
+              <ProgressBar
+                duration={duration}
+                currentTime={currentTime}
+                progressPct={progressPct}
+                mediaItems={mediaItems}
+                mediaIndex={mediaIndex}
+                onSeek={handleSeek}
+                onSelectMedia={switchToMedia}
+              />
 
-        {/* Nav Hint */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-0.5 text-white/40 text-[11px]">
-          <ChevronUp className="w-4 h-4" />
-          <span>上下滑动切换</span>
-        </div>
-      </motion.div>
+              <p className="mt-1.5 line-clamp-2 text-[0.82rem] leading-[1.3] text-white/90 drop-shadow-md">
+                {currentVideo.desc || "无描述"}
+              </p>
+            </div>
+          </div>
+
+          <audio ref={bgmRef} className="hidden" />
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }
 
-function SidebarButton({ icon: Icon, count }: { icon: React.ElementType; count?: number }) {
-  const [active, setActive] = useState(false);
+function ProgressBar({
+  duration,
+  currentTime,
+  progressPct,
+  mediaItems,
+  mediaIndex,
+  onSeek,
+  onSelectMedia,
+}: {
+  duration: number;
+  currentTime: number;
+  progressPct: number;
+  mediaItems: VideoMediaItem[];
+  mediaIndex: number;
+  onSeek: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onSelectMedia: (index: number) => void;
+}) {
+  if (mediaItems.length > 1) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {mediaItems.map((item, index) => {
+            const fill = index < mediaIndex ? 100 : index === mediaIndex ? progressPct : 0;
+            return (
+              <button
+                key={`${item.type}-${item.url}-${index}`}
+                className="relative h-1.5 min-w-[18px] flex-1 overflow-hidden rounded-full bg-white/18"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectMedia(index);
+                }}
+                aria-label={`切换到第 ${index + 1} 个媒体`}
+              >
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-white/90 to-accent transition-none"
+                  style={{ width: `${fill}%` }}
+                />
+              </button>
+            );
+          })}
+        </div>
+        <TimeLabel currentTime={currentTime} duration={duration} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center gap-1">
-      <button
-        onClick={() => setActive(!active)}
-        className="w-12 h-12 rounded-full flex items-center justify-center cursor-pointer transition-all"
+    <div className="flex items-center gap-3">
+      <div
+        className="group relative h-[3px] flex-1 cursor-pointer rounded-full bg-white/20 transition-[height,background-color] hover:h-[5px] hover:bg-white/30"
+        onClick={onSeek}
       >
-        <Icon
-          className={cn(
-            "w-7 h-7 drop-shadow-md transition-colors",
-            active ? "text-accent fill-accent" : "text-white"
-          )}
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-accent transition-none"
+          style={{ width: `${progressPct}%` }}
         />
+        <div
+          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white opacity-0 shadow-md transition-opacity group-hover:opacity-100"
+          style={{ left: `calc(${progressPct}% - 6px)` }}
+        />
+      </div>
+      <TimeLabel currentTime={currentTime} duration={duration} />
+    </div>
+  );
+}
+
+function TimeLabel({ currentTime, duration }: { currentTime: number; duration: number }) {
+  return (
+    <div className="shrink-0 text-[0.68rem] font-medium tabular-nums text-white/72">
+      {formatDuration(currentTime)} / {formatDuration(duration)}
+    </div>
+  );
+}
+
+function InlinePlayerButton({
+  children,
+  label,
+  count,
+  active,
+  activeClassName,
+  onClick,
+}: {
+  children: ReactNode;
+  label: string;
+  count: number;
+  active?: boolean;
+  activeClassName?: string;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-white transition-[background-color,transform,color] hover:scale-[1.08] hover:bg-white/10 active:scale-95",
+          active && activeClassName
+        )}
+        aria-label={label}
+        title={label}
+      >
+        {children}
       </button>
-      {count !== undefined && (
-        <span className="text-white/60 text-[11px] font-medium drop-shadow-md">
-          {formatNumber(count)}
-        </span>
+      <span className="text-[0.78rem] font-medium tabular-nums text-white/85 drop-shadow-md">
+        {formatNumber(count)}
+      </span>
+    </div>
+  );
+}
+
+function PlayerIconButton({
+  children,
+  label,
+  active,
+  onClick,
+}: {
+  children: ReactNode;
+  label: string;
+  active?: boolean;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full bg-transparent text-white transition-[background-color,transform,color] hover:scale-[1.08] hover:bg-white/10 active:scale-95",
+        active && "bg-white/10"
+      )}
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PlayerStatus({
+  title,
+  message,
+  state = "loading",
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  state?: "loading" | "error";
+  onRetry?: (event: ReactMouseEvent) => void;
+}) {
+  return (
+    <div className="absolute left-1/2 top-1/2 z-20 flex w-[min(360px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2 rounded-[14px] border border-white/12 bg-black/45 px-5 py-4 text-center backdrop-blur-xl">
+      <div
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-full",
+          state === "error" ? "bg-warning-soft text-warning" : "bg-white/10 text-white"
+        )}
+      >
+        {state === "error" ? <Info className="h-5 w-5" /> : <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/25 border-t-white" />}
+      </div>
+      <div className="text-[0.9rem] font-semibold">{title}</div>
+      <div className="text-[0.78rem] leading-relaxed text-white/68">{message}</div>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-1 h-8 rounded-[8px] border border-white/16 bg-white/10 px-3 text-[0.78rem] text-white transition-colors hover:bg-white/18"
+        >
+          重试
+        </button>
       )}
     </div>
   );

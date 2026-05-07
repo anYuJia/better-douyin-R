@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import type { HistoryItem } from "@/lib/tauri";
+import { getHistory, clearHistory as apiClearHistory, deleteHistory as apiDeleteHistory } from "@/lib/tauri";
 import { useLogStore } from "@/stores/app-store";
 
 // ═══════════════════════════════════════════════
@@ -23,8 +24,8 @@ export function useHistory() {
   const loadHistory = useCallback(async () => {
     setState((s) => ({ ...s, loading: true }));
     try {
-      // const items = await invoke("get_history")
-      setState((s) => ({ ...s, loading: false, items: [] }));
+      const items = await getHistory();
+      setState((s) => ({ ...s, loading: false, items: items || [] }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "加载历史失败";
       setState((s) => ({ ...s, loading: false, error: msg }));
@@ -32,9 +33,9 @@ export function useHistory() {
     }
   }, [addLog]);
 
-  const clearHistory = useCallback(async () => {
+  const clearAll = useCallback(async () => {
     try {
-      // await invoke("clear_history")
+      await apiClearHistory();
       setState((s) => ({ ...s, items: [] }));
       addLog("下载历史已清空", "info");
     } catch (e) {
@@ -43,9 +44,19 @@ export function useHistory() {
     }
   }, [addLog]);
 
+  const deleteItem = useCallback(async (id: string) => {
+    try {
+      await apiDeleteHistory(id);
+      setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id && i.aweme_id !== id) }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "删除失败";
+      addLog(msg, "error");
+    }
+  }, [addLog]);
+
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
-  return { ...state, loadHistory, clearHistory };
+  return { ...state, loadHistory, clearAll, deleteItem };
 }

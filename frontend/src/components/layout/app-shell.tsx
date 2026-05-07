@@ -5,9 +5,11 @@ import { CommandPopover } from "./command-popover";
 import { Hero } from "@/components/home/hero";
 import { VideoGrid } from "@/components/search/video-grid";
 import { UserDetail } from "@/components/search/user-detail";
+import { LinkView } from "@/components/link/link-view";
 import { RecommendedFeed } from "@/components/recommended/feed";
 import { DownloadsView } from "@/components/downloads/downloads-view";
-import { SettingsSheet } from "@/components/settings/settings-sheet";
+import { SettingsView } from "@/components/settings/settings-view";
+import { LikedView } from "@/components/liked/liked-view";
 import { AnimatePresence, motion } from "framer-motion";
 import { easeConfig } from "@/lib/utils";
 
@@ -23,7 +25,7 @@ export function AppShell() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 relative">
         <div className="flex-1 overflow-y-auto">
-          <AnimatePresence mode="wait">
+          <AnimatePresence initial={false}>
             {renderView(currentView)}
           </AnimatePresence>
         </div>
@@ -34,21 +36,17 @@ export function AppShell() {
       <AnimatePresence>
         {commandOpen && <CommandPopover />}
       </AnimatePresence>
-
-      {/* Settings Sheet */}
-      <SettingsSheet />
     </div>
   );
 }
 
 function renderView(view: string) {
   const variants = {
-    initial: { opacity: 0, y: 8 },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -4 },
+    initial: { y: 6 },
+    animate: { y: 0 },
   };
 
-  const transition = { duration: 0.2, ease: easeConfig };
+  const transition = { duration: 0.16, ease: easeConfig };
 
   switch (view) {
     case "home":
@@ -62,6 +60,12 @@ function renderView(view: string) {
         <motion.div key="search" {...variants} transition={transition} className="p-6">
           <UserDetail />
           <VideoGrid />
+        </motion.div>
+      );
+    case "link":
+      return (
+        <motion.div key="link" {...variants} transition={transition} className="p-6">
+          <LinkView />
         </motion.div>
       );
     case "recommended":
@@ -79,7 +83,13 @@ function renderView(view: string) {
     case "liked":
       return (
         <motion.div key="liked" {...variants} transition={transition} className="p-6">
-          <RecommendedFeed />
+          <LikedView />
+        </motion.div>
+      );
+    case "settings":
+      return (
+        <motion.div key="settings" {...variants} transition={transition}>
+          <SettingsView />
         </motion.div>
       );
     default:

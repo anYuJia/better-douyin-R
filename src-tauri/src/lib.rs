@@ -18,7 +18,9 @@ use cookie::{
 use downloader::{Downloader, DownloaderEvent};
 use history::HistoryManager;
 use media_utils::*;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -1002,17 +1004,43 @@ async fn download_video(
         .unwrap_or("")
         .trim()
         .to_string();
+    if author_name.is_empty() {
+        author_name = video
+            .get("author")
+            .and_then(|value| value.get("nickname"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
     let mut cover = video
         .get("cover_url")
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .trim()
         .to_string();
+    if cover.is_empty() {
+        cover = video
+            .get("video")
+            .and_then(|value| value.get("cover"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
+    if cover.is_empty() {
+        cover = video
+            .get("video")
+            .and_then(|value| value.get("origin_cover"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
     let mut media_urls = parse_download_media_items(&video, &raw_media_type);
     let mut media_type = media_type_from_payload_or_items(&raw_media_type, &media_urls);
 
-    if (media_urls.is_empty() || desc.is_empty() || author_name.is_empty()) && !aweme_id.is_empty()
-    {
+    if (media_urls.is_empty() || desc.is_empty() || cover.is_empty()) && !aweme_id.is_empty() {
         if let Ok(client) = get_client(&state).await {
             if let Ok(fresh_video) = client.get_video_detail(&aweme_id).await {
                 if desc.is_empty() {
@@ -1033,11 +1061,27 @@ async fn download_video(
     }
 
     if media_urls.is_empty() {
+        log::warn!(
+            "download_video has no media urls after normalization: aweme_id={} desc={} author={} raw_media_type={}",
+            aweme_id,
+            desc,
+            author_name,
+            raw_media_type
+        );
         return Ok(serde_json::json!({
             "success": false,
             "message": "没有可用的媒体URL"
         }));
     }
+
+    log::info!(
+        "download_video normalized payload: aweme_id={} media_count={} media_type={:?} author={} cover_present={}",
+        aweme_id,
+        media_urls.len(),
+        media_type,
+        author_name,
+        !cover.is_empty()
+    );
 
     if desc.is_empty() {
         desc = format!("作品_{}", aweme_id);
@@ -1435,8 +1479,92 @@ async fn resume_download(
 /// 获取下载历史
 #[tauri::command]
 async fn get_history(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let history = HistoryManager::load();
+    *state.history.lock().await = history;
     let history = state.history.lock().await;
     let items = history.get_all();
+    Ok(serde_json::json!({
+        "success": true,
+        "items": items
+    }))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DownloadFileEntry {
+    id: String,
+    filename: String,
+    path: String,
+    author: String,
+    desc: String,
+    size: u64,
+    timestamp: i64,
+    file_type: String,
+}
+
+fn scan_download_directory_entries(
+    dir: &Path,
+    items: &mut Vec<DownloadFileEntry>,
+) -> Result<(), String> {
+    let read_dir = fs::read_dir(dir).map_err(|e| e.to_string())?;
+
+    for entry in read_dir {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+
+        if metadata.is_dir() {
+            scan_download_directory_entries(&path, items)?;
+            continue;
+        }
+
+        if !metadata.is_file() {
+            continue;
+        }
+
+        let filename = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("未命名文件")
+            .to_string();
+        let author = path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_string();
+        let timestamp = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs() as i64)
+            .unwrap_or(0);
+        let file_type = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        items.push(DownloadFileEntry {
+            id: path.to_string_lossy().to_string(),
+            filename,
+            path: path.to_string_lossy().to_string(),
+            author,
+            desc: String::new(),
+            size: metadata.len(),
+            timestamp,
+            file_type,
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_download_files(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let target = configured_download_directory(&state).await?;
+    let mut items = Vec::new();
+    scan_download_directory_entries(&target, &mut items)?;
+    items.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     Ok(serde_json::json!({
         "success": true,
         "items": items
@@ -2047,6 +2175,7 @@ pub fn run() {
             remove_download_task,
             pause_download,
             resume_download,
+            list_download_files,
             get_history,
             clear_history,
             delete_history,
@@ -2079,6 +2208,42 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].r#type, "video");
         assert_eq!(parsed[0].url, "https://example.com/test.mp4");
+    }
+
+    #[test]
+    fn parses_nested_react_video_payload() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "desc": "test",
+            "media_type": "video",
+            "author": { "nickname": "tester" },
+            "video": {
+                "cover": "https://example.com/cover.jpg",
+                "play_addr": "https://example.com/play.mp4"
+            }
+        });
+
+        let parsed = parse_download_media_items(&payload, "video");
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].r#type, "video");
+        assert_eq!(parsed[0].url, "https://example.com/play.mp4");
+    }
+
+    #[test]
+    fn parses_image_and_live_photo_payloads() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "media_type": "mixed",
+            "images": ["https://example.com/1.jpg"],
+            "live_photos": ["https://example.com/1.mp4"]
+        });
+
+        let parsed = parse_download_media_items(&payload, "mixed");
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].r#type, "live_photo");
+        assert_eq!(parsed[1].r#type, "image");
     }
 
     #[test]

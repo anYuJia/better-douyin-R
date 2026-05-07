@@ -151,7 +151,7 @@ export function SettingsSheet() {
                 <SettingGroup icon={Info} label="关于">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[0.8rem] text-text-muted">版本</span>
-                    <span className="text-[0.8rem] text-text font-mono">0.0.9</span>
+                    <span className="text-[0.8rem] text-text font-mono">0.0.10</span>
                   </div>
                   <Button variant="outline" className="w-full h-9 rounded-[var(--radius-sm)]">
                     <RefreshCw className="w-3.5 h-3.5" />

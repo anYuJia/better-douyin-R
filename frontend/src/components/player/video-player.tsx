@@ -180,7 +180,7 @@ export function VideoPlayer({ video, videos = [], open, onClose, onDownload }: V
         >
           <video
             ref={videoRef}
-            src={activeVideo.video_url}
+            src={activeVideo.video?.play_addr}
             className="max-w-full max-h-full object-contain"
             autoPlay
           />
@@ -304,7 +304,7 @@ export function VideoPlayer({ video, videos = [], open, onClose, onDownload }: V
               </button>
 
               {/* Music */}
-              {activeVideo.music_title && (
+              {activeVideo.music?.title && (
                 <div className="relative">
                   <button
                     onClick={() => setShowMusicPanel(!showMusicPanel)}
@@ -320,12 +320,12 @@ export function VideoPlayer({ video, videos = [], open, onClose, onDownload }: V
                         exit={{ opacity: 0, y: 4 }}
                         className="absolute bottom-full right-0 mb-2 w-56 bg-black/80 backdrop-blur-md rounded-[var(--radius-md)] p-3 border border-white/10"
                       >
-                        <div className="text-[0.8rem] font-medium text-white mb-0.5">{activeVideo.music_title}</div>
-                        {activeVideo.music_author && (
-                          <div className="text-[0.72rem] text-white/50 mb-2">{activeVideo.music_author}</div>
+                        <div className="text-[0.8rem] font-medium text-white mb-0.5">{activeVideo.music.title}</div>
+                        {activeVideo.music.author && (
+                          <div className="text-[0.72rem] text-white/50 mb-2">{activeVideo.music.author}</div>
                         )}
-                        {activeVideo.music_url && (
-                          <audio src={activeVideo.music_url} controls className="w-full h-7" />
+                        {activeVideo.music.play_url && (
+                          <audio src={activeVideo.music.play_url} controls className="w-full h-7" />
                         )}
                       </motion.div>
                     )}

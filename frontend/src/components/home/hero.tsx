@@ -5,17 +5,21 @@ import {
   Link2,
   Sparkles,
   FolderOpen,
-  ArrowRight,
+  ArrowUpRight,
   Command,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AmbientBackground } from "./ambient-background";
+import { QuickStats } from "./quick-stats";
 
 interface Shortcut {
   icon: React.ElementType;
   label: string;
   desc: string;
-  iconBg: string;
+  gradient: string;
   iconColor: string;
+  glowColor: string;
   view?: string;
   command?: "search" | "link";
   kbd?: string;
@@ -26,8 +30,9 @@ const shortcuts: Shortcut[] = [
     icon: Search,
     label: "搜索用户",
     desc: "通过用户名或抖音号查找创作者",
-    iconBg: "bg-accent/12",
+    gradient: "from-accent/20 via-accent/5 to-transparent",
     iconColor: "text-accent",
+    glowColor: "shadow-[0_0_20px_rgba(254,44,85,0.15)]",
     command: "search",
     kbd: "⌘K",
   },
@@ -35,8 +40,9 @@ const shortcuts: Shortcut[] = [
     icon: Link2,
     label: "粘贴链接",
     desc: "解析分享链接，一键下载视频",
-    iconBg: "bg-info/12",
+    gradient: "from-info/20 via-info/5 to-transparent",
     iconColor: "text-info",
+    glowColor: "shadow-[0_0_20px_rgba(124,92,252,0.15)]",
     command: "link",
     kbd: "⌘L",
   },
@@ -44,16 +50,18 @@ const shortcuts: Shortcut[] = [
     icon: Sparkles,
     label: "推荐视频",
     desc: "浏览抖音推荐流内容",
-    iconBg: "bg-purple-500/12",
+    gradient: "from-purple-500/20 via-purple-500/5 to-transparent",
     iconColor: "text-purple-400",
+    glowColor: "shadow-[0_0_20px_rgba(168,85,247,0.15)]",
     view: "recommended",
   },
   {
     icon: FolderOpen,
     label: "我的下载",
     desc: "管理已下载的视频和图片",
-    iconBg: "bg-success/12",
+    gradient: "from-success/20 via-success/5 to-transparent",
     iconColor: "text-success",
+    glowColor: "shadow-[0_0_20px_rgba(0,214,143,0.15)]",
     view: "downloads",
     kbd: "⌘4",
   },
@@ -61,12 +69,16 @@ const shortcuts: Shortcut[] = [
 
 const container = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
+  show: { transition: { staggerChildren: 0.05 } },
 };
 
 const item = {
-  hidden: { opacity: 0, y: 8 },
-  show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 400, damping: 28 } },
+  hidden: { opacity: 0, y: 12 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring" as const, stiffness: 320, damping: 26 },
+  },
 };
 
 export function Hero() {
@@ -84,41 +96,50 @@ export function Hero() {
   };
 
   return (
-    <div className="flex items-center justify-center h-full px-8">
+    <div className="relative flex items-center justify-center h-full px-8">
+      <AmbientBackground />
+
       <motion.div
-        className="w-full max-w-[520px] flex flex-col items-center"
+        className="relative z-10 w-full max-w-[560px] flex flex-col items-center"
         variants={container}
-        initial="hidden"
+        initial={false}
         animate="show"
       >
         {/* Status pill */}
-        <motion.div variants={item} className="mb-5">
-          <span className="inline-flex items-center gap-2 px-3 h-6 rounded-full bg-surface border border-border text-[0.68rem] font-semibold text-text-muted">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            Ready
+        <motion.div variants={item} className="mb-6">
+          <span className="inline-flex items-center gap-2 px-3.5 h-7 rounded-full bg-success/8 border border-success/20 text-[0.68rem] font-semibold text-success">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+            </span>
+            就绪
           </span>
         </motion.div>
 
-        {/* Title — small, editorial */}
-        <motion.h1
-          variants={item}
-          className="text-[1.15rem] font-[650] tracking-[-0.01em] text-text text-center mb-1.5"
-        >
-          从左侧导航开始
-        </motion.h1>
+        {/* Title — gradient text */}
+        <motion.div variants={item} className="mb-2 flex items-center gap-2">
+          <Zap className="w-5 h-5 text-accent" />
+          <h1 className="text-[1.35rem] font-[750] tracking-[-0.02em] text-center">
+            <span className="bg-gradient-to-r from-text via-text to-text-secondary bg-clip-text">
+              Douyin Downloader
+            </span>
+          </h1>
+        </motion.div>
 
         {/* Subtitle */}
         <motion.p
           variants={item}
-          className="text-[0.8rem] text-text-muted text-center mb-8"
+          className="text-[0.82rem] text-text-muted text-center mb-8 max-w-[360px] leading-relaxed"
         >
-          搜索用户或粘贴链接，解析预览一站完成
+          搜索用户、粘贴链接、浏览推荐
+          <br />
+          <span className="text-text-secondary">一站式视频解析与下载</span>
         </motion.p>
 
-        {/* Shortcut Grid — 2x2, prominent cards */}
+        {/* Shortcut Grid — 2x2, glassmorphism cards */}
         <motion.div
           variants={container}
-          className="w-full grid grid-cols-2 gap-2.5"
+          className="w-full grid grid-cols-2 gap-3"
         >
           {shortcuts.map((s) => (
             <motion.button
@@ -126,51 +147,91 @@ export function Hero() {
               variants={item}
               onClick={() => handleShortcut(s)}
               className={cn(
-                "group relative flex flex-col gap-3 p-5 rounded-[var(--radius-xl)] text-left cursor-pointer",
-                "border border-border bg-surface-solid/60",
-                "hover:border-border-strong hover:bg-surface-raised hover:shadow-[0_12px_40px_rgba(0,0,0,0.15)]",
-                "transition-all duration-[var(--duration-base)] ease-[var(--ease-spring)]"
+                "group relative flex flex-col gap-3 p-5 rounded-[var(--radius-xl)] text-left cursor-pointer overflow-hidden",
+                "bg-surface-solid/50 backdrop-blur-sm",
+                "border border-border",
+                "hover:border-border-strong hover:bg-surface-raised",
+                "hover:shadow-lg",
+                "transition-[transform,box-shadow,border-color,background-color] duration-[var(--duration-base)] ease-[var(--ease-spring)]",
+                s.glowColor
               )}
-              whileHover={{ y: -3 }}
+              whileHover={{ y: -4, scale: 1.01 }}
               whileTap={{ scale: 0.97 }}
             >
+              {/* Gradient accent strip at top */}
+              <div
+                className={cn(
+                  "absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+                  s.gradient.replace("/20", "/60").replace("to-transparent", "via-transparent to-transparent")
+                )}
+              />
+
+              {/* Background gradient glow on hover */}
+              <div
+                className={cn(
+                  "absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl",
+                  s.gradient
+                )}
+              />
+
               {/* Icon + kbd row */}
-              <div className="flex items-center justify-between w-full">
-                <div className={cn(
-                  "w-11 h-11 rounded-[12px] flex items-center justify-center",
-                  s.iconBg
-                )}>
-                  <s.icon className={cn("w-[22px] h-[22px]", s.iconColor)} />
+              <div className="relative flex items-center justify-between w-full">
+                <div
+                  className={cn(
+                    "w-11 h-11 rounded-[13px] flex items-center justify-center",
+                    "bg-gradient-to-br",
+                    s.gradient,
+                    "border border-border/60 group-hover:border-border-strong",
+                    "transition-[transform,border-color,background-color] duration-300"
+                  )}
+                >
+                  <s.icon
+                    className={cn(
+                      "w-[22px] h-[22px] transition-transform duration-300 group-hover:scale-110",
+                      s.iconColor
+                    )}
+                  />
                 </div>
                 {s.kbd && (
-                  <kbd className="text-[0.58rem] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted">
+                  <kbd className="text-[0.58rem] font-mono px-1.5 py-0.5 rounded-[6px] bg-surface border border-border text-text-muted opacity-60 group-hover:opacity-100 transition-opacity">
                     {s.kbd}
                   </kbd>
                 )}
               </div>
 
               {/* Text */}
-              <div>
-                <div className="text-[0.88rem] font-semibold text-text mb-0.5">{s.label}</div>
-                <div className="text-[0.72rem] text-text-muted leading-snug">{s.desc}</div>
+              <div className="relative">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[0.88rem] font-semibold text-text">
+                    {s.label}
+                  </span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-text-muted opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-[opacity,transform] duration-300" />
+                </div>
+                <div className="text-[0.72rem] text-text-muted leading-snug mt-0.5">
+                  {s.desc}
+                </div>
               </div>
-
-              {/* Arrow on hover */}
-              <ArrowRight className="absolute bottom-5 right-5 w-4 h-4 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </motion.button>
           ))}
         </motion.div>
 
+        {/* Quick Stats */}
+        <div className="w-full mt-6">
+          <QuickStats />
+        </div>
+
         {/* Keyboard hint */}
         <motion.div
           variants={item}
-          className="mt-8 flex items-center gap-1.5 text-text-muted"
+          className="mt-6 flex items-center gap-1.5 text-text-muted"
         >
           <kbd className="text-[0.58rem] font-mono px-1.5 py-0.5 rounded bg-surface border border-border">
             <Command className="w-2.5 h-2.5 inline" />
           </kbd>
           <span className="text-[0.65rem]">+</span>
-          <kbd className="text-[0.58rem] font-mono px-1.5 py-0.5 rounded bg-surface border border-border">K</kbd>
+          <kbd className="text-[0.58rem] font-mono px-1.5 py-0.5 rounded bg-surface border border-border">
+            K
+          </kbd>
           <span className="text-[0.65rem] ml-1">快速打开命令面板</span>
         </motion.div>
       </motion.div>

@@ -182,10 +182,11 @@ cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-前端静态检查：
+前端构建检查：
 
 ```bash
-for file in dist/js/*.js; do node --check "$file"; done
+cd frontend
+npm run build
 ```
 
 ---
@@ -194,7 +195,7 @@ for file in dist/js/*.js; do node --check "$file"; done
 
 - **桌面框架**：Tauri 2
 - **后端**：Rust、Tokio、Reqwest、Axum
-- **前端**：原生 HTML / CSS / JavaScript + Bootstrap 5
+- **前端**：React 19、Vite、TypeScript、Tailwind CSS
 - **更新机制**：Tauri updater + GitHub Release metadata
 - **分发产物**：Windows NSIS / portable exe、macOS dmg / app zip、Linux deb / rpm / AppImage
 

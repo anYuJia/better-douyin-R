@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { initTheme } from "./stores/app-store";
 import "./index.css";
 
 type BootBridge = {
@@ -94,6 +95,8 @@ class ErrorBoundary extends React.Component<
     return this.props.children;
   }
 }
+
+initTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>

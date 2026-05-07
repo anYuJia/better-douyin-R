@@ -1,11 +1,10 @@
-import { useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useDownloadStore } from "@/stores/app-store";
+import { useDownloadStore, useLogStore } from "@/stores/app-store";
 import { TaskCard } from "./task-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectTrigger,
@@ -14,6 +13,14 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import {
+  AlertCircle,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Eye,
+  FileVideo,
   FolderOpen,
   Search,
   RefreshCw,
@@ -23,53 +30,233 @@ import {
   Play,
   Folder,
 } from "lucide-react";
+import { useDownloads } from "@/hooks/use-downloads";
+import { useHistory } from "@/hooks/use-history";
+import { deleteFile, listDownloadFiles, openFile, openFileLocation, type HistoryItem } from "@/lib/tauri";
 import { cn, formatBytes } from "@/lib/utils";
 
-interface DownloadFile {
-  id: string;
-  filename: string;
-  path: string;
-  author: string;
-  size: number;
-  timestamp: number;
-  fileType: string;
-}
+const FILE_PAGE_SIZE_OPTIONS = [12, 24, 48, 96] as const;
 
 export function DownloadsView() {
   const tasks = useDownloadStore((s) => s.tasks);
-  const removeTask = useDownloadStore((s) => s.removeTask);
   const clearCompleted = useDownloadStore((s) => s.clearCompleted);
+  const addLog = useLogStore((s) => s.addLog);
+  const {
+    cancelDownload,
+    pauseTask,
+    resumeTask,
+    removeTask,
+    openDownloadsDirectory,
+    openTaskLocation,
+    syncTasks,
+  } = useDownloads();
+  const {
+    items: historyItems,
+    loading: historyLoading,
+    loadHistory,
+    deleteItem: deleteHistoryItem,
+  } = useHistory();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("date_desc");
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [selectAll, setSelectAll] = useState(false);
+  const [diskFiles, setDiskFiles] = useState<HistoryItem[]>([]);
+  const [diskLoading, setDiskLoading] = useState(false);
+  const [filePage, setFilePage] = useState(1);
+  const [filePageSize, setFilePageSize] = useState<number>(24);
 
-  const tasksList = Object.values(tasks);
+  useEffect(() => {
+    void syncTasks();
+  }, [syncTasks]);
+
+  const loadDiskFiles = useCallback(async () => {
+    setDiskLoading(true);
+    try {
+      setDiskFiles(await listDownloadFiles());
+    } catch (error) {
+      addLog(error instanceof Error ? error.message : "扫描下载目录失败", "error");
+    } finally {
+      setDiskLoading(false);
+    }
+  }, [addLog]);
+
+  useEffect(() => {
+    void loadDiskFiles();
+  }, [loadDiskFiles]);
 
   const handleRefresh = useCallback(() => {
-    // invoke("list_download_files", { dir: config.download_dir })
-  }, []);
+    void syncTasks();
+    void loadHistory();
+    void loadDiskFiles();
+  }, [syncTasks, loadHistory, loadDiskFiles]);
 
   const handleOpenDir = useCallback(() => {
-    // invoke("open_path", { path: config.download_dir })
-  }, []);
+    void openDownloadsDirectory();
+  }, [openDownloadsDirectory]);
+
+  const taskMatchesFilters = useCallback((task: {
+    filename?: string;
+    awemeId?: string;
+    savePath?: string;
+    filePath?: string;
+    mediaType?: string;
+    totalBytes?: number;
+    startTime?: number;
+    finishedTime?: number;
+  }) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      const matched = [task.filename, task.awemeId, task.savePath, task.filePath]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+      if (!matched) return false;
+    }
+    if (typeFilter !== "all" && !(task.mediaType || "").toLowerCase().includes(typeFilter)) {
+      return false;
+    }
+    return true;
+  }, [searchQuery, typeFilter]);
+
+  const tasksList = useMemo(() => {
+    const sorted = Object.values(tasks)
+      .filter(taskMatchesFilters)
+      .sort((a, b) => {
+        if (sortBy === "date_asc") {
+          return (a.startTime || a.finishedTime || 0) - (b.startTime || b.finishedTime || 0);
+        }
+        if (sortBy === "size_desc") {
+          return (b.totalBytes || 0) - (a.totalBytes || 0);
+        }
+        if (sortBy === "size_asc") {
+          return (a.totalBytes || 0) - (b.totalBytes || 0);
+        }
+        return (b.startTime || b.finishedTime || 0) - (a.startTime || a.finishedTime || 0);
+      });
+    return sorted;
+  }, [tasks, taskMatchesFilters, sortBy]);
+
+  const mergedFiles = useMemo(() => {
+    const historyByPath = new Map(
+      historyItems
+        .filter((item) => item.path)
+        .map((item) => [item.path, item] as const)
+    );
+
+    return diskFiles.map((file) => {
+      const history = historyByPath.get(file.path);
+      return {
+        ...file,
+        ...history,
+        id: file.id || file.path,
+        path: file.path,
+        file_path: file.path,
+        size: file.size || history?.size || 0,
+        timestamp: history?.timestamp || file.timestamp,
+      };
+    });
+  }, [diskFiles, historyItems]);
+
+  const historyList = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return mergedFiles
+      .filter((item) => {
+        if (query) {
+          const matched = [item.filename, item.title, item.author, item.aweme_id, item.path]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query));
+          if (!matched) return false;
+        }
+        if (typeFilter !== "all" && !(item.media_type || item.file_type || "").toLowerCase().includes(typeFilter)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "date_asc") return (a.timestamp || 0) - (b.timestamp || 0);
+        if (sortBy === "size_desc") return (b.size || 0) - (a.size || 0);
+        if (sortBy === "size_asc") return (a.size || 0) - (b.size || 0);
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      });
+  }, [mergedFiles, searchQuery, sortBy, typeFilter]);
+
+  const totalFilePages = Math.max(1, Math.ceil(historyList.length / filePageSize));
+  const safeFilePage = Math.min(filePage, totalFilePages);
+  const filePageStart = (safeFilePage - 1) * filePageSize;
+  const filePageEnd = Math.min(filePageStart + filePageSize, historyList.length);
+  const paginatedHistoryList = useMemo(
+    () => historyList.slice(filePageStart, filePageEnd),
+    [filePageEnd, filePageStart, historyList]
+  );
+  const pageSelectedCount = paginatedHistoryList.filter((item) => selectedFiles.has(item.id)).length;
+  const allPageSelected = paginatedHistoryList.length > 0 && pageSelectedCount === paginatedHistoryList.length;
+
+  useEffect(() => {
+    setFilePage(1);
+  }, [searchQuery, sortBy, typeFilter, filePageSize]);
+
+  useEffect(() => {
+    if (filePage > totalFilePages) {
+      setFilePage(totalFilePages);
+    }
+  }, [filePage, totalFilePages]);
 
   const toggleSelectAll = useCallback(() => {
-    if (selectAll) {
-      setSelectedFiles(new Set());
-      setSelectAll(false);
-    } else {
-      setSelectedFiles(new Set(tasksList.map((t) => t.id)));
-      setSelectAll(true);
-    }
-  }, [selectAll, tasksList]);
+    setSelectedFiles((current) => {
+      const next = new Set(current);
+      if (allPageSelected) {
+        paginatedHistoryList.forEach((item) => next.delete(item.id));
+      } else {
+        paginatedHistoryList.forEach((item) => next.add(item.id));
+      }
+      return next;
+    });
+  }, [allPageSelected, paginatedHistoryList]);
 
   const activeTasks = tasksList.filter(
-    (t) => t.status === "downloading" || t.status === "pending"
+    (t) => t.status === "downloading" || t.status === "pending" || t.status === "paused"
   );
-  const completedTasks = tasksList.filter((t) => t.status === "completed");
+  const completedTasks = tasksList.filter((t) => t.status === "completed" && (t.filePath || t.savePath));
+  const stoppedTasks = tasksList.filter((t) => t.status === "error" || t.status === "cancelled");
+  const transientTasks = tasksList.filter(
+    (t) => t.status === "completed" && !t.filePath && !t.savePath
+  );
+
+  const handleOpenHistory = useCallback(async (item: HistoryItem) => {
+    if (!item.path) return;
+    try {
+      await openFile(item.path);
+    } catch (error) {
+      try {
+        await openFileLocation(item.path);
+      } catch {
+        addLog(error instanceof Error ? error.message : "打开文件失败，文件可能已经不存在", "error");
+      }
+    }
+  }, [addLog]);
+
+  const handleRevealHistory = useCallback(async (item: HistoryItem) => {
+    if (!item.path) return;
+    try {
+      await openFileLocation(item.path);
+    } catch (error) {
+      addLog(error instanceof Error ? error.message : "打开文件位置失败，文件可能已经不存在", "error");
+    }
+  }, [addLog]);
+
+  const handleDeleteHistory = useCallback(async (item: HistoryItem, removeFile = false) => {
+    try {
+      if (removeFile && item.path) {
+        await deleteFile(item.path);
+      }
+      await deleteHistoryItem(item.aweme_id || item.id);
+      void loadHistory();
+      void loadDiskFiles();
+      addLog(removeFile ? "已删除文件和记录" : "已移除下载记录", "info");
+    } catch (error) {
+      addLog(error instanceof Error ? error.message : "删除失败", "error");
+    }
+  }, [addLog, deleteHistoryItem, loadDiskFiles, loadHistory]);
 
   return (
     <div>
@@ -78,7 +265,8 @@ export function DownloadsView() {
         <div className="flex items-center gap-2">
           <FolderOpen className="w-4 h-4 text-accent" />
           <h3 className="text-[0.9rem] font-semibold text-text">我的下载</h3>
-          <Badge variant="secondary">{tasksList.length} 个任务</Badge>
+          <Badge variant="secondary">{activeTasks.length} 个进行中</Badge>
+          <Badge variant="outline">{historyList.length} 个本地文件</Badge>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleOpenDir}>
@@ -87,7 +275,7 @@ export function DownloadsView() {
           </Button>
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="w-3.5 h-3.5" />
-            刷新
+            同步
           </Button>
         </div>
       </div>
@@ -128,33 +316,49 @@ export function DownloadsView() {
       </div>
 
       {/* Batch Actions */}
-      {tasksList.length > 0 && (
+      {historyList.length > 0 && (
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={toggleSelectAll}
-            className="flex items-center gap-1.5 px-2.5 h-8 rounded-[var(--radius-sm)] bg-surface border border-border text-[0.78rem] text-text-secondary hover:text-text cursor-pointer transition-all"
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-[var(--radius-sm)] bg-surface border border-border text-[0.78rem] text-text-secondary hover:text-text cursor-pointer transition-[background-color,border-color,color,box-shadow,opacity]"
           >
-            {selectAll ? (
+            {allPageSelected ? (
               <CheckSquare className="w-3.5 h-3.5 text-accent" />
             ) : (
               <Square className="w-3.5 h-3.5" />
             )}
-            全选
+            全选本页
           </button>
           {selectedFiles.size > 0 && (
             <>
               <Badge variant="default">{selectedFiles.size} 已选</Badge>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const first = historyList.find((item) => selectedFiles.has(item.id));
+                  if (first) void handleOpenHistory(first);
+                }}
+              >
                 <Play className="w-3 h-3" />
                 打开
               </Button>
-              <Button variant="danger-outline" size="sm">
+              <Button
+                variant="danger-outline"
+                size="sm"
+                onClick={() => {
+                  historyList
+                    .filter((item) => selectedFiles.has(item.id))
+                    .forEach((item) => void handleDeleteHistory(item, false));
+                  setSelectedFiles(new Set());
+                }}
+              >
                 <Trash2 className="w-3 h-3" />
-                删除
+                移除记录
               </Button>
             </>
           )}
-          {completedTasks.length > 0 && (
+          {(completedTasks.length > 0 || stoppedTasks.length > 0) && (
             <Button variant="ghost" size="sm" onClick={clearCompleted} className="ml-auto">
               清除已完成
             </Button>
@@ -169,12 +373,15 @@ export function DownloadsView() {
             进行中 ({activeTasks.length})
           </div>
           <div className="flex flex-col gap-1.5">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false}>
               {activeTasks.map((task) => (
                 <TaskCard
                   key={task.id}
                   task={task}
-                  onCancel={removeTask}
+                  onCancel={cancelDownload}
+                  onPause={pauseTask}
+                  onResume={resumeTask}
+                  onOpen={openTaskLocation}
                   onRemove={removeTask}
                 />
               ))}
@@ -185,16 +392,17 @@ export function DownloadsView() {
 
       {/* Completed Tasks */}
       {completedTasks.length > 0 && (
-        <div>
+        <div className="mt-4">
           <div className="text-[0.7rem] font-bold text-text-muted uppercase tracking-wider mb-2">
-            已完成 ({completedTasks.length})
+            本次完成 ({completedTasks.length})
           </div>
           <div className="flex flex-col gap-1.5">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false}>
               {completedTasks.map((task) => (
                 <TaskCard
                   key={task.id}
                   task={task}
+                  onOpen={openTaskLocation}
                   onRemove={removeTask}
                 />
               ))}
@@ -203,10 +411,130 @@ export function DownloadsView() {
         </div>
       )}
 
+      {transientTasks.length > 0 && (
+        <div className="mt-4 rounded-[14px] border border-warning/20 bg-warning-soft/15 px-4 py-3">
+          <div className="flex items-start gap-2 text-[0.78rem] text-text-secondary">
+            <AlertCircle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
+            <div>
+              <div className="font-semibold text-warning mb-0.5">
+                有 {transientTasks.length} 条旧任务没有文件路径
+              </div>
+              <div className="text-text-muted">
+                这些是前端内存任务，不代表真实文件。已下载文件请以下方“本地文件”为准。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stoppedTasks.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[0.7rem] font-bold text-text-muted uppercase tracking-wider mb-2">
+            已停止 ({stoppedTasks.length})
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <AnimatePresence initial={false}>
+              {stoppedTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onOpen={openTaskLocation}
+                  onRemove={removeTask}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <FileVideo className="w-4 h-4 text-info" />
+            <div className="text-[0.7rem] font-bold text-text-muted uppercase tracking-wider">
+              本地文件 ({historyList.length})
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {(historyLoading || diskLoading) && (
+              <span className="text-[0.72rem] text-text-muted">
+                {diskLoading ? "扫描下载目录中..." : "同步历史中..."}
+              </span>
+            )}
+            {historyList.length > 0 && (
+              <span className="text-[0.72rem] text-text-muted tabular-nums">
+                {filePageStart + 1}-{filePageEnd} / {historyList.length}
+              </span>
+            )}
+            <Select
+              value={String(filePageSize)}
+              onValueChange={(value) => setFilePageSize(Number(value))}
+            >
+              <SelectTrigger className="w-[92px] h-8 text-[0.75rem]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FILE_PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size} / 页
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {historyList.length > 0 ? (
+          <>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+              {paginatedHistoryList.map((item) => (
+                <HistoryFileCard
+                  key={item.id}
+                  item={item}
+                  selected={selectedFiles.has(item.id)}
+                  onToggle={() => {
+                    setSelectedFiles((current) => {
+                      const next = new Set(current);
+                      if (next.has(item.id)) {
+                        next.delete(item.id);
+                      } else {
+                        next.add(item.id);
+                      }
+                      return next;
+                    });
+                  }}
+                  onOpen={() => void handleOpenHistory(item)}
+                  onReveal={() => void handleRevealHistory(item)}
+                  onRemoveRecord={() => void handleDeleteHistory(item, false)}
+                  onDeleteFile={() => void handleDeleteHistory(item, true)}
+                />
+              ))}
+            </div>
+            <FilePagination
+              page={safeFilePage}
+              totalPages={totalFilePages}
+              totalItems={historyList.length}
+              pageStart={filePageStart}
+              pageEnd={filePageEnd}
+              onPageChange={setFilePage}
+            />
+          </>
+        ) : (
+          <div className="rounded-[16px] border border-border bg-surface-solid/60 p-6 text-center">
+            <p className="text-[0.85rem] text-text-secondary mb-1">
+              没有找到历史下载文件
+            </p>
+            <p className="text-[0.76rem] text-text-muted">
+              这里直接扫描下载目录，只展示磁盘上真实存在的文件。
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Empty State */}
-      {tasksList.length === 0 && (
+      {tasksList.length === 0 && historyList.length === 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col items-center justify-center py-16 text-center"
         >
@@ -219,4 +547,214 @@ export function DownloadsView() {
       )}
     </div>
   );
+}
+
+function HistoryFileCard({
+  item,
+  selected,
+  onToggle,
+  onOpen,
+  onReveal,
+  onRemoveRecord,
+  onDeleteFile,
+}: {
+  item: HistoryItem;
+  selected: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+  onReveal: () => void;
+  onRemoveRecord: () => void;
+  onDeleteFile: () => void;
+}) {
+  const filename = item.filename || item.title || item.id;
+  const mediaType = item.media_type || item.file_type || "media";
+  const createdAt = item.timestamp
+    ? new Date(item.timestamp * 1000).toLocaleString()
+    : "";
+
+  return (
+    <div
+      className={cn(
+        "group rounded-[18px] border bg-surface-solid/75 p-4 transition-[background-color,border-color,box-shadow]",
+        selected
+          ? "border-accent/45 bg-accent-soft/20 shadow-[0_0_0_1px_var(--color-accent-ring)]"
+          : "border-border hover:border-border-strong hover:bg-surface-raised"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <button
+          onClick={onToggle}
+          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-surface border border-border text-text-muted hover:text-text transition-[background-color,color,border-color]"
+          title={selected ? "取消选择" : "选择"}
+        >
+          {selected ? (
+            <CheckSquare className="h-4 w-4 text-accent" />
+          ) : (
+            <Square className="h-4 w-4" />
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <FileVideo className="h-4 w-4 shrink-0 text-info" />
+            <button
+              onClick={onOpen}
+              className="truncate text-left text-[0.86rem] font-semibold text-text hover:text-accent transition-colors"
+              title={filename}
+            >
+              {filename}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.68rem] text-text-muted tabular-nums">
+            <Badge variant="secondary" size="sm">{mediaType || "未知类型"}</Badge>
+            <span>{formatBytes(item.size || 0)}</span>
+            {createdAt && (
+              <span className="inline-flex items-center gap-1">
+                <CalendarClock className="h-3 w-3" />
+                {createdAt}
+              </span>
+            )}
+            {item.author && <span>@{item.author}</span>}
+          </div>
+
+          <div className="mt-2 truncate text-[0.66rem] text-text-muted" title={item.path}>
+            {item.path || "历史记录没有文件路径"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button variant="default" size="sm" onClick={onOpen}>
+          <Play className="h-3.5 w-3.5" />
+          打开
+        </Button>
+        <Button variant="outline" size="sm" onClick={onReveal}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          定位
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onRemoveRecord}>
+          <Eye className="h-3.5 w-3.5" />
+          仅移除记录
+        </Button>
+        <Button variant="danger-outline" size="sm" onClick={onDeleteFile} className="ml-auto">
+          <Trash2 className="h-3.5 w-3.5" />
+          删除文件
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FilePagination({
+  page,
+  totalPages,
+  totalItems,
+  pageStart,
+  pageEnd,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  pageStart: number;
+  pageEnd: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages = buildPageRange(page, totalPages);
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+      <div className="text-[0.72rem] text-text-muted tabular-nums">
+        显示 {pageStart + 1}-{pageEnd} / {totalItems}
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={page === 1}
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-border bg-surface text-text-muted disabled:opacity-40 hover:bg-surface-raised transition-[background-color,color,box-shadow]"
+          title="第一页"
+        >
+          <ChevronsLeft className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-border bg-surface text-text-muted disabled:opacity-40 hover:bg-surface-raised transition-[background-color,color,box-shadow]"
+          title="上一页"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+
+        {pages.map((entry, index) =>
+          entry === "ellipsis" ? (
+            <span key={`ellipsis-${index}`} className="px-2 text-text-muted text-[0.78rem]">
+              ···
+            </span>
+          ) : (
+            <button
+              key={entry}
+              onClick={() => onPageChange(entry)}
+              className={cn(
+                "min-w-8 h-8 px-2 rounded-[10px] border text-[0.78rem] font-semibold transition-[background-color,color,border-color,box-shadow]",
+                page === entry
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-border bg-surface text-text-muted hover:text-text hover:bg-surface-raised"
+              )}
+            >
+              {entry}
+            </button>
+          )
+        )}
+
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages}
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-border bg-surface text-text-muted disabled:opacity-40 hover:bg-surface-raised transition-[background-color,color,box-shadow]"
+          title="下一页"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={page === totalPages}
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-border bg-surface text-text-muted disabled:opacity-40 hover:bg-surface-raised transition-[background-color,color,box-shadow]"
+          title="最后一页"
+        >
+          <ChevronsRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function buildPageRange(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => index + 1);
+  }
+
+  const pages = new Set<number>([1, total, current]);
+  for (let offset = -1; offset <= 1; offset += 1) {
+    const page = current + offset;
+    if (page > 1 && page < total) {
+      pages.add(page);
+    }
+  }
+
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const output: Array<number | "ellipsis"> = [];
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const page = sorted[index];
+    const previous = sorted[index - 1];
+    if (index > 0 && page - previous > 1) {
+      output.push("ellipsis");
+    }
+    output.push(page);
+  }
+
+  return output;
 }

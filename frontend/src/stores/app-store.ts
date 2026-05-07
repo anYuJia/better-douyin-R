@@ -36,6 +36,11 @@ export const useAppStore = create<AppState>((set) => ({
 
   commandMode: "search",
   setCommandMode: (mode) => set({ commandMode: mode }),
+
+  cookieLoggedIn: false,
+  cookieNickname: "",
+  setCookieLoggedIn: (loggedIn: boolean, nickname?: string) =>
+    set({ cookieLoggedIn: loggedIn, cookieNickname: nickname || "" }),
 }));
 
 // ── Download Store ──
@@ -44,34 +49,92 @@ interface DownloadStore {
   tasks: Record<string, DownloadTask>;
   activeCount: number;
   updateTask: (task: Partial<DownloadTask> & { id: string }) => void;
+  replaceTaskId: (fromId: string, toId: string, patch?: Partial<DownloadTask>) => void;
   removeTask: (id: string) => void;
   clearCompleted: () => void;
 }
+
+const createEmptyTask = (id: string): DownloadTask => ({
+  id,
+  filename: "",
+  progress: 0,
+  speed: 0,
+  status: "pending",
+});
+
+const countActiveTasks = (tasks: Record<string, DownloadTask>) =>
+  Object.values(tasks).filter(
+    (t) => t.status === "downloading" || t.status === "pending"
+  ).length;
 
 export const useDownloadStore = create<DownloadStore>((set) => ({
   tasks: {},
   activeCount: 0,
   updateTask: (task) =>
     set((s) => {
-      const existing = s.tasks[task.id] || { id: task.id, filename: "", progress: 0, speed: 0, status: "pending" as const };
-      const updated = { ...existing, ...task };
+      const existing = s.tasks[task.id] || createEmptyTask(task.id);
+      const definedPatch = Object.fromEntries(
+        Object.entries(task).filter(([, value]) => value !== undefined && value !== "")
+      ) as Partial<DownloadTask> & { id: string };
+      const updated = { ...existing, ...definedPatch };
       const newTasks = { ...s.tasks, [task.id]: updated };
-      const activeCount = Object.values(newTasks).filter(
-        (t) => t.status === "downloading" || t.status === "pending"
-      ).length;
-      return { tasks: newTasks, activeCount };
+      return { tasks: newTasks, activeCount: countActiveTasks(newTasks) };
+    }),
+  replaceTaskId: (fromId, toId, patch = {}) =>
+    set((s) => {
+      if (fromId === toId) {
+        const existing = s.tasks[toId] || createEmptyTask(toId);
+        const tasks = { ...s.tasks, [toId]: { ...existing, ...patch, id: toId } };
+        return { tasks, activeCount: countActiveTasks(tasks) };
+      }
+
+      const source = s.tasks[fromId];
+      const target = s.tasks[toId];
+      const replacement = {
+        ...(source || createEmptyTask(toId)),
+        ...target,
+        ...patch,
+        id: toId,
+      };
+
+      const tasks: Record<string, DownloadTask> = {};
+      let inserted = false;
+
+      Object.entries(s.tasks).forEach(([id, task]) => {
+        if (id === fromId) {
+          tasks[toId] = replacement;
+          inserted = true;
+          return;
+        }
+        if (id === toId) {
+          if (!inserted) {
+            tasks[toId] = replacement;
+            inserted = true;
+          }
+          return;
+        }
+        tasks[id] = task;
+      });
+
+      if (!inserted) {
+        tasks[toId] = replacement;
+      }
+
+      return { tasks, activeCount: countActiveTasks(tasks) };
     }),
   removeTask: (id) =>
     set((s) => {
       const { [id]: _, ...rest } = s.tasks;
-      return { tasks: rest };
+      return { tasks: rest, activeCount: countActiveTasks(rest) };
     }),
   clearCompleted: () =>
     set((s) => {
       const tasks = Object.fromEntries(
-        Object.entries(s.tasks).filter(([, t]) => t.status !== "completed")
+        Object.entries(s.tasks).filter(
+          ([, t]) => t.status !== "completed" && t.status !== "cancelled" && t.status !== "error"
+        )
       );
-      return { tasks };
+      return { tasks, activeCount: countActiveTasks(tasks) };
     }),
 }));
 

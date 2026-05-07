@@ -1,21 +1,46 @@
-import { useState, useRef, useEffect } from "react";
-import { useAppStore } from "@/stores/app-store";
-import { motion } from "framer-motion";
-import { Search, Link2, CornerDownLeft, Clock, ArrowUpRight, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useAppStore, useLogStore } from "@/stores/app-store";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Search,
+  Link2,
+  Clock,
+  ArrowUpRight,
+  X,
+  Sparkles,
+  ArrowRight,
+  Globe,
+  Video,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  loadRecentSearches,
+  saveRecentSearch,
+  removeRecentSearch,
+  clearRecentSearches,
+  type RecentSearch,
+} from "@/lib/recent-searches";
+import { useSearchStore } from "@/stores/search-store";
+import { useLinkStore } from "@/stores/link-store";
 
-const recentSearches = ["张同学", "疯狂小杨哥", "李子柒"];
+const exampleLinks = [
+  "https://v.douyin.com/iRNBho6/",
+  "https://www.douyin.com/video/734...",
+];
 
 export function CommandPopover() {
   const setCommandOpen = useAppStore((s) => s.setCommandOpen);
   const commandMode = useAppStore((s) => s.commandMode);
-  const setView = useAppStore((s) => s.setView);
   const setCommandMode = useAppStore((s) => s.setCommandMode);
+  const addLog = useLogStore((s) => s.addLog);
   const [value, setValue] = useState("");
+  const [recents, setRecents] = useState<RecentSearch[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    setRecents(loadRecentSearches());
+    const timer = setTimeout(() => inputRef.current?.focus(), 80);
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setCommandOpen(false);
     };
@@ -26,13 +51,39 @@ export function CommandPopover() {
     };
   }, [setCommandOpen]);
 
-  const handleSubmit = () => {
-    if (!value.trim()) return;
-    setView("search");
+  const handleSubmit = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
+    if (commandMode === "search") {
+      setRecents(saveRecentSearch(trimmed));
+      void useSearchStore.getState().search(trimmed);
+    } else {
+      void useLinkStore.getState().parse(trimmed);
+      addLog("开始解析链接", "info");
+    }
+
+    setCommandOpen(false);
+  }, [value, commandMode, addLog, setCommandOpen]);
+
+  const handleRecentClick = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setRecents(saveRecentSearch(trimmed));
+    void useSearchStore.getState().search(trimmed);
     setCommandOpen(false);
   };
 
-  const handleRecentClick = (text: string) => {
+  const handleRemoveRecent = (text: string) => {
+    setRecents(removeRecentSearch(text));
+  };
+
+  const handleClearAll = () => {
+    clearRecentSearches();
+    setRecents([]);
+  };
+
+  const handleExampleClick = (text: string) => {
     setValue(text);
     inputRef.current?.focus();
   };
@@ -47,143 +98,330 @@ export function CommandPopover() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.12 }}
-        className="fixed inset-0 z-[1080] bg-black/50"
+        transition={{ duration: 0.15 }}
+        className="fixed inset-0 z-[1080] bg-black/60 backdrop-blur-sm"
         onClick={() => setCommandOpen(false)}
       />
 
-      {/* Command Panel */}
+      {/* Command Panel — centered on screen */}
       <motion.div
-        initial={{ opacity: 0, y: -10, scale: 0.98 }}
+        initial={{ opacity: 0, y: -16, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -6, scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 500, damping: 32 }}
+        exit={{ opacity: 0, y: -8, scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
         className={cn(
           "fixed z-[1090] flex flex-col overflow-hidden",
-          "left-[calc(var(--sidebar-width)+50%-200px)] top-[20vh]",
-          "w-[400px] max-w-[calc(100vw-var(--sidebar-width)-48px)]",
-          "rounded-[var(--radius-xl)]",
-          "border border-border-strong",
-          "bg-surface-solid",
-          "shadow-[0_40px_100px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.03)]"
+          "inset-0 m-auto w-fit h-fit",
+          "w-[540px] max-w-[calc(100vw-48px)]",
+          "rounded-[var(--radius-2xl)]",
+          "bg-surface-solid/[0.92] backdrop-blur-2xl",
+          "shadow-[0_60px_140px_rgba(0,0,0,0.55),0_0_80px_rgba(0,0,0,0.15)]"
         )}
       >
-        {/* Input */}
-        <div className="flex items-center gap-3 px-4 h-[50px] border-b border-border">
-          <Icon className="w-[17px] h-[17px] text-text-muted shrink-0" />
-          <input
-            ref={inputRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            placeholder={isSearch ? "搜索用户名或抖音号..." : "粘贴抖音分享链接..."}
-            className="flex-1 bg-transparent text-[0.88rem] text-text placeholder:text-text-muted outline-none"
-          />
-          <button
-            onClick={() => setCommandOpen(false)}
-            className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text cursor-pointer transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {/* Header with mode tabs */}
+        <div className="flex items-center gap-2 px-5 pt-4 pb-3">
+          <div className="flex items-center gap-1 p-1 rounded-[12px] bg-white/[0.04]">
+            {(
+              [
+                { mode: "search" as const, icon: Search, label: "搜索用户" },
+                { mode: "link" as const, icon: Link2, label: "解析链接" },
+              ] as const
+            ).map(({ mode, icon: TabIcon, label }) => (
+              <button
+                key={mode}
+                onClick={() => {
+                  setCommandMode(mode);
+                  setValue("");
+                  setTimeout(() => inputRef.current?.focus(), 30);
+                }}
+                className={cn(
+                  "relative flex items-center gap-2 px-3.5 py-2 rounded-[10px] text-[0.78rem] font-semibold cursor-pointer transition-all duration-200",
+                  commandMode === mode
+                    ? "text-text"
+                    : "text-text-muted hover:text-text-secondary"
+                )}
+              >
+                {commandMode === mode && (
+                  <motion.div
+                    layoutId="command-tab-bg"
+                    className="absolute inset-0 rounded-[10px] bg-accent/[0.12] shadow-[0_0_12px_rgba(254,44,85,0.08)]"
+                    transition={{
+                      type: "spring",
+                      stiffness: 400,
+                      damping: 30,
+                    }}
+                  />
+                )}
+                <TabIcon className="relative w-3.5 h-3.5" />
+                <span className="relative">{label}</span>
+              </button>
+            ))}
+          </div>
 
-        {/* Mode Tabs */}
-        <div className="flex items-center gap-1 px-3 py-2 border-b border-border">
-          {([
-            { mode: "search" as const, icon: Search, label: "搜索用户" },
-            { mode: "link" as const, icon: Link2, label: "解析链接" },
-          ]).map(({ mode, icon: TabIcon, label }) => (
+          <div className="ml-auto flex items-center gap-2">
             <button
-              key={mode}
-              onClick={() => {
-                setCommandMode(mode);
-                setValue("");
-                setTimeout(() => inputRef.current?.focus(), 30);
-              }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[0.75rem] font-medium cursor-pointer transition-all duration-[var(--duration-fast)]",
-                commandMode === mode
-                  ? "bg-accent/10 text-accent"
-                  : "text-text-muted hover:text-text-secondary hover:bg-surface-raised"
-              )}
+              onClick={() => setCommandOpen(false)}
+              className="w-7 h-7 rounded-[8px] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised cursor-pointer transition-all"
             >
-              <TabIcon className="w-3 h-3" />
-              {label}
+              <X className="w-4 h-4" />
             </button>
-          ))}
-
-          <div className="ml-auto flex items-center gap-2 text-text-muted">
-            <span className="flex items-center gap-1">
-              <kbd className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[0.58rem] font-mono rounded bg-surface-raised border border-border">
-                ↵
-              </kbd>
-              <span className="text-[0.62rem]">执行</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="inline-flex items-center justify-center min-w-[24px] h-[18px] px-1 text-[0.58rem] font-mono rounded bg-surface-raised border border-border">
-                esc
-              </kbd>
-              <span className="text-[0.62rem]">关闭</span>
-            </span>
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="max-h-[260px] overflow-y-auto">
-          {/* Search mode: recent */}
-          {isSearch && !value && (
-            <div className="px-3 py-2.5">
-              <div className="flex items-center gap-1.5 px-2 mb-2">
-                <Clock className="w-3 h-3 text-text-muted" />
-                <span className="text-[0.65rem] font-bold text-text-muted uppercase tracking-[0.06em]">
-                  最近搜索
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {recentSearches.map((item) => (
-                  <button
-                    key={item}
-                    onClick={() => handleRecentClick(item)}
-                    className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-[10px] text-left text-[0.82rem] text-text-secondary hover:text-text hover:bg-surface-raised cursor-pointer transition-all group"
-                  >
-                    <Search className="w-3.5 h-3.5 text-text-muted group-hover:text-accent transition-colors" />
-                    <span className="flex-1">{item}</span>
-                    <ArrowUpRight className="w-3 h-3 text-text-muted opacity-0 group-hover:opacity-60 transition-opacity" />
-                  </button>
-                ))}
-              </div>
+        {/* Input area */}
+        <div className="px-5 pb-4">
+          <div
+            className={cn(
+              "relative flex items-center gap-4 px-5 h-[64px] rounded-[16px] transition-all duration-200",
+              value
+                ? "bg-accent/[0.07] shadow-[0_0_50px_rgba(254,44,85,0.1),0_8px_32px_rgba(0,0,0,0.2)]"
+                : "bg-white/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.1)] focus-within:bg-white/[0.07] focus-within:shadow-[0_0_40px_rgba(254,44,85,0.05),0_8px_40px_rgba(0,0,0,0.2)]"
+            )}
+          >
+            <div
+              className={cn(
+                "w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 transition-all duration-200",
+                value
+                  ? "bg-accent/15 shadow-[0_0_12px_rgba(254,44,85,0.15)]"
+                  : "bg-white/[0.06]"
+              )}
+            >
+              <Icon
+                className={cn(
+                  "w-[18px] h-[18px] transition-colors duration-200",
+                  value ? "text-accent" : "text-text-muted"
+                )}
+              />
             </div>
-          )}
 
-          {/* Link mode: empty state */}
-          {!isSearch && !value && (
-            <div className="px-4 py-8 text-center">
-              <div className="w-11 h-11 rounded-[12px] bg-surface border border-border flex items-center justify-center mx-auto mb-3">
-                <Link2 className="w-5 h-5 text-text-muted" />
-              </div>
-              <p className="text-[0.82rem] font-medium text-text-secondary mb-1">粘贴抖音分享链接</p>
-              <p className="text-[0.72rem] text-text-muted">支持分享链接、短链接和完整 URL</p>
-            </div>
-          )}
+            <input
+              ref={inputRef}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              placeholder={
+                isSearch
+                  ? "输入用户名或抖音号..."
+                  : "粘贴抖音分享链接..."
+              }
+              className="flex-1 bg-transparent text-[1rem] text-text placeholder:text-text-muted/60 font-medium tracking-tight command-input"
+            />
 
-          {/* Input active: preview action */}
-          {value && (
-            <div className="px-3 py-2.5">
-              <button
+            {value ? (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
                 onClick={handleSubmit}
-                className="flex items-center gap-3 w-full px-3 py-3 rounded-[12px] text-left bg-accent/[0.06] hover:bg-accent/[0.1] border border-accent/10 cursor-pointer transition-all group"
+                className="flex items-center gap-1.5 px-4 h-9 rounded-[10px] bg-accent text-white text-[0.82rem] font-bold cursor-pointer hover:bg-accent-hover active:scale-95 transition-all shrink-0 shadow-[0_4px_16px_rgba(254,44,85,0.35)]"
               >
-                <div className="w-9 h-9 rounded-[10px] bg-accent/12 flex items-center justify-center shrink-0">
-                  <Icon className="w-[18px] h-[18px] text-accent" />
+                {isSearch ? "搜索" : "解析"}
+                <ArrowRight className="w-4 h-4" />
+              </motion.button>
+            ) : (
+              <div className="flex items-center gap-1 shrink-0 text-text-muted">
+                <kbd className="inline-flex items-center justify-center h-6 px-1.5 text-[0.6rem] font-mono rounded-[5px] bg-white/[0.06] text-text-muted/60">
+                  esc
+                </kbd>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="h-px bg-white/[0.06] mx-5" />
+
+        {/* Content Area */}
+        <div className="px-5 py-4 max-h-[320px] overflow-y-auto">
+          <AnimatePresence mode="wait">
+            {/* Search mode: recent searches */}
+            {isSearch && !value && (
+              <motion.div
+                key="search-empty"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
+              >
+                {recents.length > 0 ? (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between px-1 mb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-text-muted" />
+                        <span className="text-[0.7rem] font-bold text-text-muted uppercase tracking-[0.08em]">
+                          最近搜索
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleClearAll}
+                        className="flex items-center gap-1 text-[0.65rem] text-text-muted hover:text-danger cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        清除
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      {recents.map((item) => (
+                        <div
+                          key={item.text}
+                          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised group/item transition-all"
+                        >
+                          <button
+                            onClick={() => handleRecentClick(item.text)}
+                            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                          >
+                            <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover/item:bg-accent/[0.08] transition-all">
+                              <Search className="w-3.5 h-3.5 text-text-muted group-hover/item:text-accent transition-colors" />
+                            </div>
+                            <span className="text-[0.85rem] font-medium text-text-secondary group-hover/item:text-text transition-colors truncate">
+                              {item.text}
+                            </span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveRecent(item.text);
+                            }}
+                            className="w-6 h-6 rounded-[6px] flex items-center justify-center text-text-muted opacity-0 group-hover/item:opacity-100 hover:text-danger hover:bg-danger/10 cursor-pointer transition-all shrink-0"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center py-6 mb-3">
+                    <div className="w-12 h-12 rounded-[14px] bg-white/[0.04] flex items-center justify-center mb-3">
+                      <Search className="w-6 h-6 text-text-muted/50" />
+                    </div>
+                    <p className="text-[0.85rem] font-medium text-text-secondary mb-1">
+                      暂无搜索记录
+                    </p>
+                    <p className="text-[0.75rem] text-text-muted">
+                      搜索过的用户会显示在这里
+                    </p>
+                  </div>
+                )}
+
+                {/* Tips */}
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-white/[0.03]">
+                  <Sparkles className="w-3.5 h-3.5 text-info shrink-0" />
+                  <span className="text-[0.72rem] text-text-muted">
+                    支持搜索抖音昵称、抖音号、UID
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[0.82rem] font-medium text-text truncate">{value}</div>
-                  <div className="text-[0.68rem] text-text-muted">{isSearch ? "搜索用户" : "解析链接"}</div>
+              </motion.div>
+            )}
+
+            {/* Link mode: empty state */}
+            {!isSearch && !value && (
+              <motion.div
+                key="link-empty"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
+              >
+                <div className="flex flex-col items-center py-4 mb-4">
+                  <div className="w-14 h-14 rounded-[16px] bg-gradient-to-br from-info/15 to-info/5 flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(124,92,252,0.1)]">
+                    <Globe className="w-7 h-7 text-info" />
+                  </div>
+                  <p className="text-[0.92rem] font-semibold text-text mb-1">
+                    粘贴链接开始解析
+                  </p>
+                  <p className="text-[0.78rem] text-text-muted text-center max-w-[280px]">
+                    支持抖音分享链接、短链接和完整视频 URL
+                  </p>
                 </div>
-                <CornerDownLeft className="w-3.5 h-3.5 text-accent/50 shrink-0" />
-              </button>
-            </div>
-          )}
+
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 px-1 mb-2.5">
+                    <Video className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="text-[0.7rem] font-bold text-text-muted uppercase tracking-[0.08em]">
+                      示例链接
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {exampleLinks.map((link) => (
+                      <button
+                        key={link}
+                        onClick={() => handleExampleClick(link)}
+                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised cursor-pointer transition-all group"
+                      >
+                        <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover:bg-info/[0.08] transition-all">
+                          <Link2 className="w-3.5 h-3.5 text-text-muted group-hover:text-info transition-colors" />
+                        </div>
+                        <span className="text-[0.78rem] text-text-muted font-mono truncate group-hover:text-text-secondary transition-colors">
+                          {link}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-white/[0.03]">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span className="text-[0.72rem] text-text-muted">
+                    也可以直接从抖音 App 复制分享链接
+                  </span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Input active: action preview */}
+            {value && (
+              <motion.div
+                key="action"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
+              >
+                <button
+                  onClick={handleSubmit}
+                  className="flex items-center gap-4 w-full px-4 py-4 rounded-[14px] text-left bg-accent/[0.07] hover:bg-accent/[0.11] cursor-pointer transition-all group"
+                >
+                  <div className="w-11 h-11 rounded-[12px] bg-accent/12 flex items-center justify-center shrink-0">
+                    <Icon className="w-5 h-5 text-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[0.9rem] font-semibold text-text truncate">
+                      {value}
+                    </div>
+                    <div className="text-[0.75rem] text-text-muted mt-0.5">
+                      {isSearch ? "搜索此用户" : "解析此链接"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <kbd className="inline-flex items-center justify-center h-6 px-2 text-[0.65rem] font-mono rounded-[6px] bg-white/[0.06] text-text-muted/70">
+                      Enter
+                    </kbd>
+                  </div>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Footer keyboard hints */}
+        <div className="flex items-center justify-between px-5 py-3 bg-white/[0.02]">
+          <div className="flex items-center gap-3 text-text-muted">
+            <span className="flex items-center gap-1.5">
+              <kbd className="inline-flex items-center justify-center min-w-[22px] h-[20px] px-1.5 text-[0.6rem] font-mono rounded-[5px] bg-white/[0.06] text-text-muted/70">
+                ↵
+              </kbd>
+              <span className="text-[0.65rem]">执行</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="inline-flex items-center justify-center min-w-[28px] h-[20px] px-1.5 text-[0.6rem] font-mono rounded-[5px] bg-white/[0.06] text-text-muted/70">
+                esc
+              </kbd>
+              <span className="text-[0.65rem]">关闭</span>
+            </span>
+          </div>
+          <span className="text-[0.62rem] text-text-muted/60">
+            Douyin Downloader
+          </span>
         </div>
       </motion.div>
     </>
