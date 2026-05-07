@@ -5,14 +5,15 @@
   "identifier": "com.douyin.downloader",
   "build": {
     "frontendDist": "../dist",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "抖音视频下载器",
+        "title": "Douyin Downloader",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

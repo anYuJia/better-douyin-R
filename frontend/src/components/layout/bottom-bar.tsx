@@ -1,0 +1,151 @@
+import { useState } from "react";
+import { useAppStore, useDownloadStore, useLogStore } from "@/stores/app-store";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { TaskCard } from "@/components/downloads/task-card";
+import { Download, ChevronUp, Trash2, ArrowDown } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+
+export function BottomBar() {
+  const expanded = useAppStore((s) => s.bottomBarExpanded);
+  const toggleExpanded = useAppStore((s) => s.toggleBottomBar);
+  const activeCount = useDownloadStore((s) => s.activeCount);
+  const tasks = useDownloadStore((s) => s.tasks);
+  const logs = useLogStore((s) => s.logs);
+  const clearLogs = useLogStore((s) => s.clearLogs);
+  const [activeTab, setActiveTab] = useState("progress");
+
+  const tasksList = Object.values(tasks);
+  const hasActiveTasks = activeCount > 0;
+
+  return (
+    <motion.div
+      className="border-t border-border bg-background shrink-0"
+      animate={{ height: expanded ? "var(--bottombar-expanded)" : "var(--bottombar-height)" }}
+      transition={{ type: "spring", stiffness: 350, damping: 30 }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between h-[var(--bottombar-height)] px-3 cursor-pointer select-none"
+        onClick={toggleExpanded}
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-text-secondary">
+            <Download className="w-3.5 h-3.5" />
+            下载
+            {hasActiveTasks && (
+              <Badge variant="secondary" size="sm">{activeCount}</Badge>
+            )}
+          </span>
+
+          <AnimatePresence>
+            {hasActiveTasks && (
+              <motion.div
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 80 }}
+                exit={{ opacity: 0, width: 0 }}
+                className="h-[3px] rounded-full bg-surface overflow-hidden"
+              >
+                <div className="h-full bg-accent rounded-full transition-all duration-300" style={{ width: "40%" }} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="progress">进度</TabsTrigger>
+              <TabsTrigger value="logs">日志</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <motion.button
+            className="w-7 h-7 rounded-[var(--radius-sm)] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all duration-[var(--duration-fast)] cursor-pointer"
+            animate={{ rotate: expanded ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <ChevronUp className="w-4 h-4" />
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Body — uses the SAME tab state */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="px-3 pb-2 h-[calc(var(--bottombar-expanded)-var(--bottombar-height))] overflow-hidden"
+          >
+            {/* Progress Panel */}
+            {activeTab === "progress" && (
+              <ScrollArea className="h-full">
+                {tasksList.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-[0.8125rem] text-text-muted">
+                    暂无下载任务
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5 py-1">
+                    <AnimatePresence mode="popLayout">
+                      {tasksList.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          onRemove={useDownloadStore.getState().removeTask}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </ScrollArea>
+            )}
+
+            {/* Logs Panel */}
+            {activeTab === "logs" && (
+              <>
+                <div className="flex items-center gap-1 mb-1">
+                  <button
+                    onClick={clearLogs}
+                    className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                  <button className="w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised transition-all cursor-pointer">
+                    <ArrowDown className="w-3 h-3" />
+                  </button>
+                </div>
+                <ScrollArea className="h-[calc(100%-28px)]">
+                  <div className="font-mono text-[11px] leading-relaxed text-text-secondary">
+                    {logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className={cn(
+                          "py-0.5",
+                          log.type === "success" && "text-success",
+                          log.type === "error" && "text-danger",
+                          log.type === "warning" && "text-warning"
+                        )}
+                      >
+                        <span className="text-text-muted mr-2">
+                          [{new Date(log.timestamp).toLocaleTimeString()}]
+                        </span>
+                        {log.message}
+                      </div>
+                    ))}
+                    {logs.length === 0 && (
+                      <div className="text-text-muted">等待操作...</div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
