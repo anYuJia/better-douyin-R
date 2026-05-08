@@ -429,6 +429,26 @@ const CollectedDataCache = {
         _log(`已缓存 ${normalizedVideos.length} 个收藏视频`);
     },
 
+    appendCollectedVideos: function(videos) {
+        try {
+            var cached = localStorage.getItem(this.COLLECTED_VIDEOS_KEY);
+            var cacheData = cached ? JSON.parse(cached) : { version: this.CACHE_VERSION, data: [], count: 0, timestamp: Date.now() };
+            var existing = Array.isArray(cacheData.data) ? cacheData.data : [];
+            var timestamp = Date.now();
+            var newVideos = Array.isArray(videos)
+                ? videos.map(function(video) { return Object.assign({}, video, { media_fetched_at: video.media_fetched_at || timestamp }); })
+                : [];
+            existing = existing.concat(newVideos);
+            cacheData.data = existing;
+            cacheData.count = existing.length;
+            cacheData.timestamp = timestamp;
+            localStorage.setItem(this.COLLECTED_VIDEOS_KEY, JSON.stringify(cacheData));
+            _log('已追加缓存 ' + newVideos.length + ' 个收藏视频，共 ' + existing.length + ' 个');
+        } catch (error) {
+            console.error('追加收藏视频缓存失败:', error);
+        }
+    },
+
     getCollectedVideos: function() {
         try {
             const cached = localStorage.getItem(this.COLLECTED_VIDEOS_KEY);

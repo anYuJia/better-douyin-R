@@ -716,26 +716,91 @@
         }
 
         if (path === '/api/get_collected_videos') {
+            console.log('[Adapter] get_collected_videos request:', { cursor: Number(body.cursor || params.cursor || 0), count: Number(body.count || params.count || 20) });
             const result = await invoke('get_collected_videos', {
-                cursor: 0,
+                cursor: Number(body.cursor || params.cursor || 0),
                 count: Number(body.count || params.count || 20)
             });
+            console.log('[Adapter] get_collected_videos response:', result);
+
+            if (result && result.success === false) {
+                console.error('[Adapter] get_collected_videos error:', result.message);
+                return {
+                    success: false,
+                    message: (result && result.message) || '获取收藏视频失败。该接口需要登录态，请确认Cookie有效且包含完整的登录信息。如果Cookie已过期请重新获取。',
+                    has_more: false,
+                    next_cursor: 0
+                };
+            }
+
             const rawVideos = result && (result.data || result.videos);
             const videos = normalizeVideos(rawVideos);
 
-            if (!Array.isArray(videos) || videos.length === 0) {
+            return {
+                success: true,
+                data: videos || [],
+                count: Number(result && result.count) || (videos && videos.length) || 0,
+                has_more: Boolean(result && result.has_more),
+                next_cursor: Number(result && result.next_cursor) || 0
+            };
+        }
+
+        if (path === '/api/get_collected_mixes') {
+            console.log('[Adapter] get_collected_mixes request:', { cursor: Number(body.cursor || params.cursor || 0), count: Number(body.count || params.count || 20) });
+            const result = await invoke('get_collected_mixes', {
+                cursor: Number(body.cursor || params.cursor || 0),
+                count: Number(body.count || params.count || 20)
+            });
+            console.log('[Adapter] get_collected_mixes response:', result);
+
+            if (result && result.success === false) {
+                console.error('[Adapter] get_collected_mixes error:', result.message);
                 return {
                     success: false,
-                    message: (result && result.message) || '获取收藏视频失败。该接口需要登录态，请确认Cookie有效且包含完整的登录信息。如果Cookie已过期请重新获取。'
+                    message: (result && result.message) || '获取收藏合集失败。该接口需要登录态，请确认Cookie有效且包含完整的登录信息。',
+                    has_more: false,
+                    next_cursor: 0
                 };
             }
+
+            const mixes = result && result.data;
+
+            return {
+                success: true,
+                data: mixes || [],
+                count: Number(result && result.count) || (mixes && mixes.length) || 0,
+                has_more: Boolean(result && result.has_more),
+                next_cursor: Number(result && result.next_cursor) || 0
+            };
+        }
+
+        if (path === '/api/get_mix_videos') {
+            console.log('[Adapter] get_mix_videos request:', { seriesId: body.series_id || body.seriesId || params.series_id || params.seriesId || '', cursor: Number(body.cursor || params.cursor || 0), count: Number(body.count || params.count || 12) });
+            const result = await invoke('get_mix_videos', {
+                seriesId: body.series_id || body.seriesId || params.series_id || params.seriesId || '',
+                cursor: Number(body.cursor || params.cursor || 0),
+                count: Number(body.count || params.count || 12)
+            });
+            console.log('[Adapter] get_mix_videos response:', result);
+
+            if (result && result.success === false) {
+                console.error('[Adapter] get_mix_videos error:', result.message);
+                return {
+                    success: false,
+                    message: (result && result.message) || '获取合集视频失败。',
+                    has_more: false,
+                    next_cursor: 0
+                };
+            }
+
+            const videos = normalizeVideos(result && result.data);
 
             return {
                 success: true,
                 data: videos,
                 count: Number(result && result.count) || videos.length,
-                cursor: Number(result && result.cursor) || 0,
-                has_more: Boolean(result && result.has_more)
+                has_more: Boolean(result && result.has_more),
+                next_cursor: Number(result && result.next_cursor) || 0
             };
         }
 
