@@ -100,6 +100,14 @@ function setupEventListeners() {
         }
         handleLikedAuthorsClick();
     });
+    var collectedBtn = document.getElementById('download-collected-btn');
+    if (collectedBtn) collectedBtn.addEventListener('click', function(e) {
+        if (!checkLoginRequired(collectedBtn)) {
+            e.preventDefault();
+            return;
+        }
+        handleCollectedVideosClick();
+    });
 
     document.getElementById('clear-log-btn').addEventListener('click', clearLog);
     document.getElementById('scroll-to-bottom-btn').addEventListener('click', scrollToBottom);
@@ -1680,6 +1688,26 @@ async function downloadLikedAuthors() {
     finally { setButtonLoading('download-liked-authors-btn', false); }
 }
 
+async function downloadCollectedVideos() {
+    try {
+        setButtonLoading('download-collected-btn', true, '获取中');
+        var count = document.getElementById('collected-videos-count').value || 20;
+        var response = await fetch('/api/get_collected_videos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: parseInt(count) }) });
+        var result = await response.json();
+        if (result.success) {
+            isHomeView = false; hideAllSections();
+            displayCollectedVideos(result.data);
+            CollectedDataCache.saveCollectedVideos(result.data, result.data.length);
+            CollectedDataCache.currentDisplayType = 'collected';
+            showToast('获取到 ' + result.data.length + ' 个收藏视频', 'success');
+        } else {
+            showToast('获取收藏视频失败，请先登录抖音账号', 'error');
+            addLog('收藏视频需要登录态，请点击设置 → 登录抖音账号', 'warning');
+        }
+    } catch (error) { showToast('获取收藏视频失败，请先登录抖音账号', 'error'); }
+    finally { setButtonLoading('download-collected-btn', false); }
+}
+
 function displayLikedVideos(videos) {
     var section = document.getElementById('likedVideosSection');
     var videosList = document.getElementById('likedVideosList');
@@ -1724,6 +1752,23 @@ function displayLikedAuthors(authors) {
         authorsList.appendChild(ac);
     });
     revealSectionById('likedAuthorsSection');
+    _hideEmptyState();
+}
+
+function displayCollectedVideos(videos) {
+    var section = document.getElementById('collectedVideosSection');
+    var videosList = document.getElementById('collectedVideosList');
+    videosList.innerHTML = '';
+    document.getElementById('collectedVideoCount').textContent = videos.length + ' 个视频';
+    window.currentCollectedVideos = videos;
+    videos.forEach(function(v) { VideoStorage.saveVideo(v); });
+    videos.forEach(function(video) {
+        var vc = createVideoCardElement(video, {
+            showAuthorButton: true
+        });
+        videosList.appendChild(vc);
+    });
+    revealSectionById('collectedVideosSection');
     _hideEmptyState();
 }
 
@@ -1830,6 +1875,39 @@ async function handleLikedAuthorsClick() {
     var cached = LikedDataCache.getLikedAuthors();
     if (cached && cached.data && cached.data.length > 0) { hideAllSections(true); displayLikedAuthors(cached.data); LikedDataCache.currentDisplayType = 'authors'; showToast('显示缓存的 ' + cached.data.length + ' 个点赞作者', 'info'); }
     else await downloadLikedAuthors();
+}
+
+async function handleCollectedVideosClick() {
+    var s = document.getElementById('collectedVideosSection');
+    if ((s && s.style.display === 'block') || CollectedDataCache.currentDisplayType === 'collected') { await downloadCollectedVideos(); return; }
+    var cached = CollectedDataCache.getCollectedVideos();
+    if (cached && cached.data && cached.data.length > 0) { hideAllSections(true); displayCollectedVideos(cached.data); CollectedDataCache.currentDisplayType = 'collected'; showToast('显示缓存的 ' + cached.data.length + ' 个收藏视频', 'info'); }
+    else await downloadCollectedVideos();
+}
+
+async function downloadAllCollectedVideos() {
+    if (!window.currentCollectedVideos || window.currentCollectedVideos.length === 0) { showToast('没有可下载的收藏视频', 'warning'); return; }
+    var videos = window.currentCollectedVideos, total = videos.length;
+    var batchId = 'batch_collected_videos_' + Date.now();
+    createDownloadProgressElement(batchId, '批量下载收藏视频 (' + total + '个)');
+    var ok = 0, fail = 0, done = 0;
+    for (var i = 0; i < videos.length; i++) {
+        var v = videos[i];
+        var vd = { aweme_id: v.aweme_id, desc: v.desc || '收藏视频_' + (i + 1), media_urls: v.media_urls || [], raw_media_type: v.raw_media_type || v.media_type || 'video', author_name: v.author ? v.author.nickname : '未知作者' };
+        vd.media_urls = normalizeMediaUrlsForDownload(vd.media_urls, vd.raw_media_type);
+        if (!vd.media_urls.length) { fail++; done++; continue; }
+        try {
+            var r = await fetch('/api/download_single_video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vd) });
+            var res = await r.json();
+            res.success ? ok++ : fail++;
+        } catch (e) { fail++; }
+        done++;
+        updateDownloadProgress(Math.round(done / total * 100), done, total, batchId);
+        if (i < videos.length - 1) await new Promise(function(res) { setTimeout(res, 500); });
+    }
+    updateDownloadProgress(100, total, total, batchId);
+    showToast('完成！成功: ' + ok + ', 失败: ' + fail, ok > 0 ? 'success' : 'warning');
+    setTimeout(function() { removeProgressElement(batchId); }, 3000);
 }
 
 // ═══════════════════════════════════════════════

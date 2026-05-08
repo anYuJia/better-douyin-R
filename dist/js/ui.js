@@ -298,6 +298,7 @@ function hideAllSections(fromCache) {
         'userVideosSection',
         'likedVideosSection',
         'likedAuthorsSection',
+        'collectedVideosSection',
         'linkParseResult',
         'recommendedFeedSection',
         'myDownloadsSection'
