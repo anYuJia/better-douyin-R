@@ -147,7 +147,7 @@ export function CommandPopover() {
                   setTimeout(() => inputRef.current?.focus(), 30);
                 }}
                 className={cn(
-                  "relative flex items-center gap-2 px-3.5 py-2 rounded-[10px] text-[0.78rem] font-semibold cursor-pointer transition-all duration-200",
+                  "relative flex items-center gap-2 px-3.5 py-2 rounded-[10px] text-[0.78rem] font-semibold cursor-pointer transition-[color,background-color,box-shadow] duration-200",
                   commandMode === mode
                     ? "text-text"
                     : "text-text-muted hover:text-text-secondary"
@@ -173,7 +173,7 @@ export function CommandPopover() {
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => setCommandOpen(false)}
-              className="w-7 h-7 rounded-[8px] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised cursor-pointer transition-all"
+              className="w-7 h-7 rounded-[8px] flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-raised cursor-pointer transition-[background-color,color]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -184,7 +184,7 @@ export function CommandPopover() {
         <div className="px-5 pb-4">
           <div
             className={cn(
-              "relative flex items-center gap-4 px-5 h-[64px] rounded-[16px] transition-all duration-200",
+              "relative flex items-center gap-4 px-5 h-[64px] rounded-[16px] transition-[background-color,box-shadow] duration-200",
               value
                 ? "bg-accent/[0.07] shadow-[0_0_50px_rgba(254,44,85,0.1),0_8px_32px_rgba(0,0,0,0.2)]"
                 : "bg-white/[0.04] shadow-[0_4px_20px_rgba(0,0,0,0.1)] focus-within:bg-white/[0.07] focus-within:shadow-[0_0_40px_rgba(254,44,85,0.05),0_8px_40px_rgba(0,0,0,0.2)]"
@@ -192,7 +192,7 @@ export function CommandPopover() {
           >
             <div
               className={cn(
-                "w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 transition-all duration-200",
+                "w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 transition-[background-color,box-shadow] duration-200",
                 value
                   ? "bg-accent/15 shadow-[0_0_12px_rgba(254,44,85,0.15)]"
                   : "bg-white/[0.06]"
@@ -224,7 +224,7 @@ export function CommandPopover() {
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 onClick={handleSubmit}
-                className="flex items-center gap-1.5 px-4 h-9 rounded-[10px] bg-accent text-white text-[0.82rem] font-bold cursor-pointer hover:bg-accent-hover active:scale-95 transition-all shrink-0 shadow-[0_4px_16px_rgba(254,44,85,0.35)]"
+                className="flex items-center gap-1.5 px-4 h-9 rounded-[10px] bg-accent text-white text-[0.82rem] font-bold cursor-pointer hover:bg-accent-hover active:scale-[0.96] transition-[background-color,scale,box-shadow] shrink-0 shadow-[0_4px_16px_rgba(254,44,85,0.35)]"
               >
                 {isSearch ? "搜索" : "解析"}
                 <ArrowRight className="w-4 h-4" />
@@ -280,13 +280,13 @@ export function CommandPopover() {
                       {recents.map((item) => (
                         <div
                           key={item.text}
-                          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised group/item transition-all"
+                          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised group/item transition-colors"
                         >
                           <button
                             onClick={() => handleRecentClick(item.text)}
                             className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
                           >
-                            <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover/item:bg-accent/[0.08] transition-all">
+                            <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover/item:bg-accent/[0.08] transition-colors">
                               <Search className="w-3.5 h-3.5 text-text-muted group-hover/item:text-accent transition-colors" />
                             </div>
                             <span className="text-[0.85rem] font-medium text-text-secondary group-hover/item:text-text transition-colors truncate">
@@ -298,7 +298,7 @@ export function CommandPopover() {
                               e.stopPropagation();
                               handleRemoveRecent(item.text);
                             }}
-                            className="w-6 h-6 rounded-[6px] flex items-center justify-center text-text-muted opacity-0 group-hover/item:opacity-100 hover:text-danger hover:bg-danger/10 cursor-pointer transition-all shrink-0"
+                            className="w-6 h-6 rounded-[6px] flex items-center justify-center text-text-muted opacity-0 group-hover/item:opacity-100 hover:text-danger hover:bg-danger/10 cursor-pointer transition-[opacity,background-color,color] shrink-0"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -364,9 +364,9 @@ export function CommandPopover() {
                       <button
                         key={link}
                         onClick={() => handleExampleClick(link)}
-                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised cursor-pointer transition-all group"
+                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-[12px] text-left hover:bg-surface-raised cursor-pointer transition-colors group"
                       >
-                        <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover:bg-info/[0.08] transition-all">
+                        <div className="w-8 h-8 rounded-[10px] bg-white/[0.05] flex items-center justify-center group-hover:bg-info/[0.08] transition-colors">
                           <Link2 className="w-3.5 h-3.5 text-text-muted group-hover:text-info transition-colors" />
                         </div>
                         <span className="text-[0.78rem] text-text-muted font-mono truncate group-hover:text-text-secondary transition-colors">
@@ -398,7 +398,7 @@ export function CommandPopover() {
               >
                 <button
                   onClick={handleSubmit}
-                  className="flex items-center gap-4 w-full px-4 py-4 rounded-[14px] text-left bg-accent/[0.07] hover:bg-accent/[0.11] cursor-pointer transition-all group"
+                  className="flex items-center gap-4 w-full px-4 py-4 rounded-[14px] text-left bg-accent/[0.07] hover:bg-accent/[0.11] cursor-pointer transition-colors group"
                 >
                   <div className="w-11 h-11 rounded-[12px] bg-accent/12 flex items-center justify-center shrink-0">
                     <Icon className="w-5 h-5 text-accent" />

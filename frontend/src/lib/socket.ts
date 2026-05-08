@@ -49,6 +49,9 @@ interface DownloadProgressPayload {
   overall_progress?: number;
   current_downloaded?: number;
   total_videos?: number;
+  skipped?: number;
+  failed?: number;
+  processed?: number;
   elapsed_seconds?: number;
   message?: string;
 }
@@ -89,8 +92,10 @@ interface BatchDownloadCompletedPayload {
   task_id: string;
   total_videos?: number;
   completed?: number;
+  succeeded?: number;
   skipped?: number;
   failed?: number;
+  processed?: number;
   message?: string;
 }
 
@@ -100,6 +105,7 @@ interface CurrentVideoProgressPayload {
   name?: string;
   progress?: number;
   speed_bps?: number;
+  speed_mbps?: number;
 }
 
 function normalizeDownloadStatus(status: string) {
@@ -128,6 +134,14 @@ function toPercent(value: unknown) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, n));
+}
+
+function normalizeSpeedBps(payload: { speed_bps?: number; speed_mbps?: number }) {
+  const speedBps = toFiniteNumber(payload.speed_bps);
+  if (speedBps !== undefined) return speedBps;
+  const speedMbps = toFiniteNumber(payload.speed_mbps);
+  if (speedMbps === undefined) return undefined;
+  return speedMbps * 1024 * 1024;
 }
 
 export function useSocket() {
@@ -210,8 +224,9 @@ export function useSocket() {
             filePath: d.file_path,
             mediaType: d.media_type,
           };
-          if (d.speed_bps !== undefined) {
-            patch.speed = d.speed_bps;
+          const speed = normalizeSpeedBps(d);
+          if (speed !== undefined) {
+            patch.speed = speed;
           }
 
           if (isBatchTask) {
@@ -227,13 +242,19 @@ export function useSocket() {
               patch.mediaCount = totalVideos;
             }
             const currentDownloaded = toFiniteNumber(
-              d.current_downloaded ?? d.completed ?? existing?.fileIndex ?? 0
+              d.processed ?? d.current_downloaded ?? d.completed ?? existing?.fileIndex ?? 0
             );
             if (currentDownloaded !== undefined) {
               patch.fileIndex = currentDownloaded;
             }
             if (d.message) {
               patch.currentName = d.message;
+            }
+            if (d.skipped !== undefined) {
+              patch.skippedCount = d.skipped;
+            }
+            if (d.failed !== undefined) {
+              patch.failedCount = d.failed;
             }
             if (d.file_progress !== undefined) {
               patch.fileProgress = toPercent(d.file_progress);
@@ -311,13 +332,16 @@ export function useSocket() {
           const existing = useDownloadStore.getState().tasks[d.task_id];
           const totalVideos = toFiniteNumber(d.total_videos ?? existing?.fileTotal ?? 0);
           const completed = toFiniteNumber(d.completed ?? existing?.fileIndex ?? totalVideos ?? 0);
+          const succeeded = toFiniteNumber(d.succeeded);
           const skipped = toFiniteNumber(d.skipped ?? existing?.skippedCount ?? 0) || 0;
           const failed = toFiniteNumber(d.failed ?? existing?.failedCount ?? 0) || 0;
+          const processed = toFiniteNumber(d.processed) ?? completed ?? Math.min(totalVideos || 0, skipped + failed);
+          const successful = succeeded ?? Math.max(0, (processed || 0) - skipped - failed);
           const progress =
             totalVideos && totalVideos > 0
-              ? Math.max(0, Math.min(100, ((completed || 0) / totalVideos) * 100))
+              ? Math.max(0, Math.min(100, (processed / totalVideos) * 100))
               : 100;
-          const status = completed && completed > 0 ? "completed" : "error";
+          const status = successful > 0 || skipped > 0 ? "completed" : failed > 0 ? "error" : "completed";
 
           updateTask({
             id: d.task_id,
@@ -328,7 +352,7 @@ export function useSocket() {
             speed: 0,
             etaSeconds: 0,
             finishedTime: Date.now(),
-            fileIndex: completed ?? undefined,
+            fileIndex: processed || completed || undefined,
             fileTotal: totalVideos ?? undefined,
             mediaCount: totalVideos ?? undefined,
             skippedCount: skipped,
@@ -362,7 +386,7 @@ export function useSocket() {
             currentAwemeId: d.aweme_id,
             currentName: d.name,
             fileProgress: d.progress,
-            speed: d.speed_bps || existing?.speed || 0,
+            speed: normalizeSpeedBps(d) ?? existing?.speed ?? 0,
             status: existing?.status === "paused" ? "paused" : "downloading",
           });
         });

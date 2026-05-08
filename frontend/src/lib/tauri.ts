@@ -2,6 +2,8 @@
 // Tauri IPC Wrappers
 // ═══════════════════════════════════════════════
 
+import { convertFileSrc } from "@tauri-apps/api/core";
+
 type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 const MEDIA_PROXY_BASE = "http://127.0.0.1:39143/api/media/proxy";
 
@@ -35,6 +37,16 @@ export function mediaProxyUrl(url: string | null | undefined, mediaType = "image
     return `${MEDIA_PROXY_BASE}?url=${encodeURIComponent(trimmed)}&media_type=${encodeURIComponent(mediaType)}`;
   } catch {
     return trimmed;
+  }
+}
+
+export function localFileAssetUrl(path: string | null | undefined): string {
+  const trimmed = (path || "").trim();
+  if (!trimmed) return "";
+  try {
+    return convertFileSrc(trimmed);
+  } catch {
+    return "";
   }
 }
 
@@ -915,9 +927,37 @@ export async function getHistory(): Promise<HistoryItem[]> {
   return (result.items || []).map(normalizeHistoryItem).filter(Boolean) as HistoryItem[];
 }
 
-export async function listDownloadFiles(): Promise<HistoryItem[]> {
-  const result = await invoke<{ success: boolean; items?: unknown[] }>("list_download_files");
+export interface DownloadFilesResult {
+  items: HistoryItem[];
+  total: number;
+  totalSize: number;
+  latest: HistoryItem | null;
+}
+
+export async function listDownloadFiles(options?: { offset?: number; limit?: number; forceRefresh?: boolean }): Promise<HistoryItem[]> {
+  const result = await invoke<{ success: boolean; items?: unknown[] }>("list_download_files", {
+    offset: options?.offset,
+    limit: options?.limit,
+    forceRefresh: options?.forceRefresh,
+  });
   return (result.items || []).map(normalizeHistoryItem).filter(Boolean) as HistoryItem[];
+}
+
+export async function listDownloadFilesPage(options: { offset?: number; limit?: number; forceRefresh?: boolean } = {}): Promise<DownloadFilesResult> {
+  const result = await invoke<{ success: boolean; items?: unknown[]; total?: number; total_size?: number; latest?: unknown }>(
+    "list_download_files",
+    {
+      offset: options.offset,
+      limit: options.limit,
+      forceRefresh: options.forceRefresh,
+    }
+  );
+  return {
+    items: (result.items || []).map(normalizeHistoryItem).filter(Boolean) as HistoryItem[],
+    total: Number(result.total ?? 0) || 0,
+    totalSize: Number(result.total_size ?? 0) || 0,
+    latest: normalizeHistoryItem(result.latest) as HistoryItem | null,
+  };
 }
 
 export async function clearHistory(): Promise<void> {

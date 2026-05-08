@@ -37,6 +37,13 @@ export default defineConfig({
     sourcemap: !!process.env.TAURI_DEBUG,
     cssCodeSplit: false,
     modulePreload: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return id.includes("node_modules") ? "vendor" : undefined;
+        },
+      },
+    },
   },
   server: {
     port: 1420,

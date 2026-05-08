@@ -94,12 +94,12 @@ export function useDownloads() {
 
   const cancelDownload = useCallback(
     async (taskId: string) => {
+      updateTask({ id: taskId, status: "cancelled", speed: 0, etaSeconds: 0 });
       try {
         const result = await cancelDownloadTask(taskId);
         if (!result.success) {
           throw new Error(result.message || "取消下载失败");
         }
-        updateTask({ id: taskId, status: "cancelled", speed: 0, etaSeconds: 0 });
         addLog(`已取消下载: ${getTaskLabel(taskId)}`, "warning");
       } catch (error) {
         addLog(error instanceof Error ? error.message : "取消下载失败", "error");
@@ -110,14 +110,16 @@ export function useDownloads() {
 
   const pauseTask = useCallback(
     async (taskId: string) => {
+      const previousStatus = useDownloadStore.getState().tasks[taskId]?.status || "downloading";
+      updateTask({ id: taskId, status: "paused", speed: 0 });
       try {
         const result = await pauseDownload(taskId);
         if (!result.success) {
           throw new Error(result.message || "暂停下载失败");
         }
-        updateTask({ id: taskId, status: "paused", speed: 0 });
         addLog(`已暂停下载: ${getTaskLabel(taskId)}`, "info");
       } catch (error) {
+        updateTask({ id: taskId, status: previousStatus });
         addLog(error instanceof Error ? error.message : "暂停下载失败", "error");
       }
     },
@@ -126,14 +128,16 @@ export function useDownloads() {
 
   const resumeTask = useCallback(
     async (taskId: string) => {
+      const previousStatus = useDownloadStore.getState().tasks[taskId]?.status || "paused";
+      updateTask({ id: taskId, status: "downloading" });
       try {
         const result = await resumeDownload(taskId);
         if (!result.success) {
           throw new Error(result.message || "继续下载失败");
         }
-        updateTask({ id: taskId, status: "downloading" });
         addLog(`继续下载: ${getTaskLabel(taskId)}`, "info");
       } catch (error) {
+        updateTask({ id: taskId, status: previousStatus });
         addLog(error instanceof Error ? error.message : "继续下载失败", "error");
       }
     },

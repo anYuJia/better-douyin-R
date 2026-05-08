@@ -956,7 +956,9 @@ impl Downloader {
                                     "task_id": batch_id,
                                     "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
                                     "current_downloaded": current,
-                                    "total_videos": total
+                                    "total_videos": total,
+                                    "processed": current,
+                                    "skipped": skipped.load(AtomicOrdering::SeqCst)
                                 }),
                             ).await;
 
@@ -1006,13 +1008,6 @@ impl Downloader {
                                 let total =
                                     total_discovered.load(AtomicOrdering::SeqCst).max(estimated);
 
-                                // 计算速度
-                                let speed_mbps = if elapsed.as_secs() > 0 {
-                                    current as f64 / elapsed.as_secs_f64()
-                                } else {
-                                    0.0
-                                };
-
                                 emit_event(
                                     &progress_tx,
                                     "download-progress",
@@ -1021,8 +1016,8 @@ impl Downloader {
                                         "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
                                         "current_downloaded": current,
                                         "total_videos": total,
-                                        "elapsed_seconds": elapsed.as_secs(),
-                                        "speed_mbps": (speed_mbps * 100.0).round() / 100.0
+                                        "processed": current,
+                                        "elapsed_seconds": elapsed.as_secs()
                                     }),
                                 ).await;
                             }
@@ -1030,19 +1025,22 @@ impl Downloader {
                                 failed.fetch_add(1, AtomicOrdering::SeqCst);
                                 log::error!("Download error for {}: {}", aweme_id, e);
 
-                                let current = completed.load(AtomicOrdering::SeqCst);
+                                let current = completed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
                                 let total =
                                     total_discovered.load(AtomicOrdering::SeqCst).max(estimated);
 
                                 emit_event(
                                     &progress_tx,
                                     "download-progress",
-                                    serde_json::json!({
-                                        "task_id": batch_id,
-                                        "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
-                                        "current_downloaded": current,
-                                        "total_videos": total
-                                    }),
+	                            serde_json::json!({
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total,
+	                                "processed": current,
+	                                "failed": failed.load(AtomicOrdering::SeqCst),
+	                                "message": format!("下载失败: {}", aweme_id)
+	                            }),
                                 ).await;
                             }
                         }
@@ -1099,6 +1097,8 @@ impl Downloader {
                     "task_id": batch_task_id,
                     "total_videos": final_total,
                     "completed": final_completed,
+                    "processed": final_completed,
+                    "succeeded": final_completed.saturating_sub(final_skipped + final_failed),
                     "skipped": final_skipped,
                     "failed": final_failed,
                     "message": format!("下载完成: {} 个视频, {} 个跳过", final_completed, final_skipped)
@@ -1454,12 +1454,14 @@ impl Downloader {
                     &self.progress_tx,
                     "download-progress",
                     serde_json::json!({
-                        "task_id": batch_task_id,
-                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
-                        "current_downloaded": current,
-                        "total_videos": total_videos,
-                        "message": format!("跳过已下载: {}", video.desc.chars().take(15).collect::<String>())
-                    }),
+	                        "task_id": batch_task_id,
+	                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                        "current_downloaded": current,
+	                        "total_videos": total_videos,
+	                        "processed": current,
+	                        "skipped": skipped_count.load(AtomicOrdering::SeqCst),
+	                        "message": format!("跳过已下载: {}", video.desc.chars().take(15).collect::<String>())
+	                    }),
                 ).await;
 
                 drop(permit);
@@ -1482,6 +1484,21 @@ impl Downloader {
             // 收集媒体URL
             let media_urls = self.collect_download_media_items(&video);
             if media_urls.is_empty() {
+                failed_count.fetch_add(1, AtomicOrdering::SeqCst);
+                let current = completed_count.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                emit_event(
+                    &self.progress_tx,
+                    "download-progress",
+                    serde_json::json!({
+	                        "task_id": batch_task_id,
+	                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                        "current_downloaded": current,
+	                        "total_videos": total_videos,
+	                        "processed": current,
+	                        "failed": failed_count.load(AtomicOrdering::SeqCst),
+	                        "message": format!("无可下载媒体: {}", video.desc.chars().take(15).collect::<String>())
+	                    }),
+                ).await;
                 drop(permit);
                 continue;
             }
@@ -1550,17 +1567,19 @@ impl Downloader {
                             &progress_tx,
                             "download-progress",
                             serde_json::json!({
-                                "task_id": batch_id,
-                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
-                                "current_downloaded": current,
-                                "total_videos": total_videos,
-                                "message": format!("完成 {}/{}: {}", current, total_videos, display_name_for_log)
-                            }),
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total_videos,
+	                                "processed": current,
+	                                "message": format!("完成 {}/{}: {}", current, total_videos, display_name_for_log)
+	                            }),
                         ).await;
                     }
                     Err(e) => {
                         failed.fetch_add(1, AtomicOrdering::SeqCst);
                         log::error!("Download error for {}: {}", aweme_id, e);
+                        let current = completed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
                         emit_event(
                             &progress_tx,
                             "download-log",
@@ -1571,6 +1590,19 @@ impl Downloader {
                             }),
                         )
                         .await;
+                        emit_event(
+                            &progress_tx,
+                            "download-progress",
+                            serde_json::json!({
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total_videos,
+	                                "processed": current,
+	                                "failed": failed.load(AtomicOrdering::SeqCst),
+	                                "message": format!("失败 {}/{}: {}", current, total_videos, display_name_for_log)
+	                            }),
+                        ).await;
                     }
                 }
             });
@@ -1611,6 +1643,8 @@ impl Downloader {
                     "task_id": batch_task_id,
                     "total_videos": total_videos,
                     "completed": final_completed,
+                    "processed": final_completed,
+                    "succeeded": final_completed.saturating_sub(final_skipped + final_failed),
                     "skipped": final_skipped,
                     "failed": final_failed,
                     "message": format!("下载完成: {} 个视频, {} 个跳过", final_completed, final_skipped)

@@ -19,6 +19,7 @@ interface VideoCoverProps {
   showStats?: boolean;
   showDuration?: boolean;
   showPlayOverlay?: boolean;
+  allowVideoFallback?: boolean;
 }
 
 export function VideoCover({
@@ -28,6 +29,7 @@ export function VideoCover({
   showStats = true,
   showDuration = true,
   showPlayOverlay = true,
+  allowVideoFallback = false,
 }: VideoCoverProps) {
   const cover = getVideoCover(video);
   const coverUrl = useMemo(() => (cover ? mediaProxyUrl(cover, "image") : ""), [cover]);
@@ -46,7 +48,7 @@ export function VideoCover({
   }, [coverUrl]);
 
   return (
-    <div className={cn("relative overflow-hidden bg-surface", className)}>
+    <div className={cn("relative isolate overflow-hidden bg-surface", className)}>
       {coverUrl && !coverFailed ? (
         <>
           <div
@@ -60,7 +62,7 @@ export function VideoCover({
             src={coverUrl}
             alt={video.desc}
             className={cn(
-              "h-full w-full object-cover transition-[opacity,transform] duration-[var(--duration-slow)] will-change-transform group-hover:scale-[1.05]",
+              "h-full w-full object-cover transition-[opacity,transform] duration-[var(--duration-base)] group-hover:scale-[1.025]",
               coverLoaded ? "opacity-100" : "opacity-0",
               imageClassName
             )}
@@ -70,7 +72,7 @@ export function VideoCover({
             onError={() => setCoverFailed(true)}
           />
         </>
-      ) : fallbackMedia && isVideoLikeMedia(fallbackMedia) ? (
+      ) : allowVideoFallback && fallbackMedia && isVideoLikeMedia(fallbackMedia) ? (
         <video
           src={mediaProxyUrl(fallbackMedia.url, getMediaProxyType(fallbackMedia))}
           muted

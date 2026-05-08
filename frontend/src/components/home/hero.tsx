@@ -117,8 +117,8 @@ export function Hero() {
 
         {/* Title — gradient text */}
         <motion.div variants={item} className="mb-2 flex items-center gap-2">
-          <div className="h-9 w-9 overflow-hidden rounded-[14px] border border-border bg-surface-solid shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
-            <img src="/animated_icon.svg" alt="Douyin Downloader" className="h-full w-full" />
+          <div className="h-9 w-9 overflow-visible rounded-[14px] bg-transparent drop-shadow-[0_10px_24px_rgba(0,0,0,0.14)]">
+            <img src="/animated_icon.svg" alt="Douyin Downloader" className="h-full w-full object-contain" />
           </div>
           <h1 className="text-[1.35rem] font-[750] tracking-[-0.02em] text-center">
             <span className="bg-gradient-to-r from-text via-text to-text-secondary bg-clip-text">

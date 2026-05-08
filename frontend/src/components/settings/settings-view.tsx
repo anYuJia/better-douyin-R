@@ -79,7 +79,7 @@ export function SettingsView() {
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Update state
-  const [appVersion, setAppVersion] = useState("0.0.12");
+  const [appVersion, setAppVersion] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
   const [updateMessage, setUpdateMessage] = useState("");
   const [updateInfo, setUpdateInfo] = useState<{ version?: string; current_version?: string; notes?: string } | null>(null);
@@ -696,7 +696,7 @@ export function SettingsView() {
           <div className="flex items-center justify-between py-3 px-4 rounded-[12px] bg-white/[0.03]">
             <span className="text-[0.82rem] text-text-muted">当前版本</span>
             <span className="text-[0.82rem] text-text font-mono font-semibold">
-              v{appVersion}
+              {appVersion ? `v${appVersion}` : "读取中"}
             </span>
           </div>
           {updateMessage && (

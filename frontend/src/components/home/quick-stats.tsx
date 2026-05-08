@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, Clock, Download, HardDrive, Video } from "lucide-react";
 import {
   getHistory,
-  listDownloadFiles,
+  listDownloadFilesPage,
   openDownloadDirectory,
   openFileLocation,
   type HistoryItem,
@@ -36,21 +36,22 @@ export function QuickStats() {
 
     const loadStats = async () => {
       const [filesResult, historyResult] = await Promise.allSettled([
-        listDownloadFiles(),
+        listDownloadFilesPage({ offset: 0, limit: 1 }),
         getHistory(),
       ]);
       if (disposed) return;
 
-      const files = filesResult.status === "fulfilled" ? filesResult.value : [];
+      const filesPage = filesResult.status === "fulfilled" ? filesResult.value : null;
       const history = historyResult.status === "fulfilled" ? historyResult.value : [];
-      const realItems = [...files].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      const latest = realItems[0] || history[0] || null;
+      const latest = filesPage?.latest || history[0] || null;
+      const total = filesPage?.total || 0;
+      const totalSize = filesPage?.totalSize || 0;
 
       if (filesResult.status === "rejected") {
         addLog("读取下载目录失败，首页统计已回退到历史记录", "warning");
       }
 
-      if (realItems.length === 0) {
+      if (total === 0) {
           setLatestItem(null);
           setStats([
             { icon: Video, label: "已下载", value: "0 个", color: "text-accent", action: "downloads", hint: "查看任务" },
@@ -61,15 +62,14 @@ export function QuickStats() {
           return;
         }
 
-        const totalSize = realItems.reduce((sum, i) => sum + (i.size || 0), 0);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayTs = today.getTime() / 1000;
-        const todayCount = realItems.filter((i) => i.timestamp >= todayTs).length;
+        const todayCount = history.filter((i) => i.timestamp >= todayTs).length;
         setLatestItem(latest);
 
         setStats([
-          { icon: Video, label: "已下载", value: `${realItems.length} 个`, color: "text-accent", action: "downloads", hint: "查看任务" },
+          { icon: Video, label: "已下载", value: `${total} 个`, color: "text-accent", action: "downloads", hint: "查看任务" },
           { icon: HardDrive, label: "占用空间", value: formatBytes(totalSize), color: "text-info", action: "directory", hint: "打开目录" },
           { icon: Download, label: "今日下载", value: `${todayCount} 个`, color: "text-purple-400", action: "downloads", hint: "查看今日" },
           { icon: Clock, label: "最近记录", value: latest?.filename?.slice(0, 10) || "暂无", color: "text-success", action: "latest", hint: "定位文件" },

@@ -73,17 +73,7 @@ export function RecommendedFeed() {
       </div>
 
       {loading && videos.length === 0 ? (
-        <motion.div
-          initial={false}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col items-center justify-center py-20 text-center"
-        >
-          <Loader2
-            className="w-8 h-8 text-accent animate-spin mb-4"
-            style={{ willChange: "transform" }}
-          />
-          <p className="text-[0.9rem] text-text-secondary">正在加载推荐内容...</p>
-        </motion.div>
+        <RecommendedSkeletonGrid />
       ) : videos.length === 0 ? (
         <motion.div
           initial={false}
@@ -164,5 +154,34 @@ export function RecommendedFeed() {
         onDownload={(video) => void downloadVideo(video)}
       />
     </>
+  );
+}
+
+function RecommendedSkeletonGrid() {
+  return (
+    <motion.div
+      initial={false}
+      animate={{ opacity: 1 }}
+      className={ORIGINAL_VIDEO_GRID_CLASS}
+      aria-label="正在加载推荐内容"
+    >
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div
+          key={index}
+          className="h-[380px] overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface-solid/70 shadow-[var(--shadow-sm)]"
+        >
+          <div className="h-[260px] bg-white/[0.05] animate-pulse" />
+          <div className="h-[120px] p-3">
+            <div className="mb-2 h-4 rounded bg-white/[0.06] animate-pulse" />
+            <div className="mb-3 h-3 w-2/3 rounded bg-white/[0.05] animate-pulse" />
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="h-7 rounded bg-white/[0.05] animate-pulse" />
+              <div className="h-7 rounded bg-white/[0.05] animate-pulse" />
+              <div className="h-7 rounded bg-white/[0.05] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </motion.div>
   );
 }

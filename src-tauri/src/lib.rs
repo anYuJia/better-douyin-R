@@ -24,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::{mpsc, Mutex};
 use url::Url;
@@ -39,6 +40,15 @@ pub struct AppState {
     pub(crate) cookie_login: Arc<Mutex<Option<CookieLoginSession>>>,
     pub(crate) media_http_client: reqwest::Client,
     pub(crate) media_redirect_cache: Arc<Mutex<HashMap<String, String>>>,
+    pub(crate) download_file_index: Arc<Mutex<Option<DownloadFileIndexCache>>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct DownloadFileIndexCache {
+    directory: PathBuf,
+    scanned_at: Instant,
+    items: Vec<DownloadFileEntry>,
+    total_size: u64,
 }
 
 impl AppState {
@@ -60,6 +70,7 @@ impl AppState {
             cookie_login: Arc::new(Mutex::new(None)),
             media_http_client,
             media_redirect_cache: Arc::new(Mutex::new(HashMap::new())),
+            download_file_index: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -1499,6 +1510,31 @@ struct DownloadFileEntry {
     size: u64,
     timestamp: i64,
     file_type: String,
+    media_type: String,
+}
+
+const DOWNLOAD_FILE_INDEX_TTL: Duration = Duration::from_secs(5);
+
+fn is_hidden_download_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false)
+}
+
+fn download_file_media_kind(path: &Path) -> Option<&'static str> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match extension.as_str() {
+        "mp4" | "mov" | "m4v" | "webm" | "mkv" | "avi" | "flv" => Some("video"),
+        "jpg" | "jpeg" | "png" | "webp" | "gif" | "avif" | "heic" | "heif" => Some("image"),
+        "mp3" | "m4a" | "aac" | "wav" | "flac" | "ogg" => Some("audio"),
+        _ => None,
+    }
 }
 
 fn scan_download_directory_entries(
@@ -1510,6 +1546,10 @@ fn scan_download_directory_entries(
     for entry in read_dir {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
+        if is_hidden_download_path(&path) {
+            continue;
+        }
+
         let metadata = entry.metadata().map_err(|e| e.to_string())?;
 
         if metadata.is_dir() {
@@ -1520,6 +1560,10 @@ fn scan_download_directory_entries(
         if !metadata.is_file() {
             continue;
         }
+
+        let Some(media_kind) = download_file_media_kind(&path) else {
+            continue;
+        };
 
         let filename = path
             .file_stem()
@@ -1552,7 +1596,8 @@ fn scan_download_directory_entries(
             desc: String::new(),
             size: metadata.len(),
             timestamp,
-            file_type,
+            file_type: file_type.clone(),
+            media_type: media_kind.to_string(),
         });
     }
 
@@ -1560,15 +1605,69 @@ fn scan_download_directory_entries(
 }
 
 #[tauri::command]
-async fn list_download_files(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+async fn list_download_files(
+    state: State<'_, AppState>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    force_refresh: Option<bool>,
+) -> Result<serde_json::Value, String> {
     let target = configured_download_directory(&state).await?;
-    let mut items = Vec::new();
-    scan_download_directory_entries(&target, &mut items)?;
-    items.sort_by_key(|item| std::cmp::Reverse(item.timestamp));
+    let use_cache = !force_refresh.unwrap_or(false);
+    let cached_index = if use_cache {
+        state.download_file_index.lock().await.clone()
+    } else {
+        None
+    };
+
+    let index = if let Some(cache) = cached_index {
+        if cache.directory == target && cache.scanned_at.elapsed() <= DOWNLOAD_FILE_INDEX_TTL {
+            cache
+        } else {
+            build_download_file_index(target, state.download_file_index.clone()).await?
+        }
+    } else {
+        build_download_file_index(target, state.download_file_index.clone()).await?
+    };
+
+    let total = index.items.len();
+    let total_size = index.total_size;
+    let latest = index.items.first().cloned();
+    let items = match (offset, limit) {
+        (Some(offset), Some(limit)) => index.items.into_iter().skip(offset).take(limit).collect(),
+        (Some(offset), None) => index.items.into_iter().skip(offset).collect(),
+        (None, Some(limit)) => index.items.into_iter().take(limit).collect(),
+        (None, None) => index.items,
+    };
+
     Ok(serde_json::json!({
         "success": true,
-        "items": items
+        "items": items,
+        "total": total,
+        "total_size": total_size,
+        "latest": latest
     }))
+}
+
+async fn build_download_file_index(
+    target: PathBuf,
+    cache_store: Arc<Mutex<Option<DownloadFileIndexCache>>>,
+) -> Result<DownloadFileIndexCache, String> {
+    let cache = tokio::task::spawn_blocking(move || {
+        let mut items = Vec::new();
+        scan_download_directory_entries(&target, &mut items)?;
+        items.sort_by_key(|item| std::cmp::Reverse(item.timestamp));
+        let total_size = items.iter().map(|item| item.size).sum::<u64>();
+        Ok::<_, String>(DownloadFileIndexCache {
+            directory: target,
+            scanned_at: Instant::now(),
+            items,
+            total_size,
+        })
+    })
+    .await
+    .map_err(|error| format!("扫描下载目录任务失败: {error}"))??;
+    *cache_store.lock().await = Some(cache.clone());
+    Ok(cache)
 }
 
 /// 清空下载历史
@@ -2192,6 +2291,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::media_utils::{download_media_type_from_payload, parse_download_media_items};
+    use super::{download_file_media_kind, is_hidden_download_path};
+    use std::path::Path;
 
     #[test]
     fn parses_flat_download_media_items() {
@@ -2262,5 +2363,27 @@ mod tests {
             download_media_type_from_payload(&serde_json::json!({ "media_type": "mixed" })),
             "mixed"
         );
+    }
+
+    #[test]
+    fn classifies_download_media_files_and_filters_auxiliary_files() {
+        assert_eq!(
+            download_file_media_kind(Path::new("clip.mp4")),
+            Some("video")
+        );
+        assert_eq!(
+            download_file_media_kind(Path::new("image.WEBP")),
+            Some("image")
+        );
+        assert_eq!(
+            download_file_media_kind(Path::new("sound.m4a")),
+            Some("audio")
+        );
+        assert_eq!(download_file_media_kind(Path::new(".downloaded")), None);
+        assert_eq!(download_file_media_kind(Path::new("metadata.json")), None);
+
+        assert!(is_hidden_download_path(Path::new(".DS_Store")));
+        assert!(is_hidden_download_path(Path::new(".downloaded")));
+        assert!(!is_hidden_download_path(Path::new("作品.mp4")));
     }
 }

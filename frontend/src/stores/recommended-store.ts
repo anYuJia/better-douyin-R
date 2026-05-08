@@ -3,6 +3,8 @@ import { getRecommended, type VideoInfo } from "@/lib/tauri";
 import { useLogStore } from "@/stores/app-store";
 
 const PAGE_SIZE = 20;
+let latestFeedRequestId = 0;
+let latestLoadMoreRequestId = 0;
 
 interface RecommendedStoreState {
   videos: VideoInfo[];
@@ -44,6 +46,8 @@ export const useRecommendedStore = create<RecommendedStoreState>((set, get) => (
 
     const addLog = useLogStore.getState().addLog;
     const shouldKeepVideos = state.videos.length > 0;
+    const requestId = ++latestFeedRequestId;
+    latestLoadMoreRequestId += 1;
 
     set({
       loading: true,
@@ -55,6 +59,8 @@ export const useRecommendedStore = create<RecommendedStoreState>((set, get) => (
 
     try {
       const result = await getRecommended(0, count);
+      if (requestId !== latestFeedRequestId) return;
+
       if (!result.success) {
         const message = result.message || "加载推荐视频失败";
         set((current) => ({
@@ -79,6 +85,7 @@ export const useRecommendedStore = create<RecommendedStoreState>((set, get) => (
       });
       addLog(`已加载 ${videos.length} 个推荐视频`, "success");
     } catch (error) {
+      if (requestId !== latestFeedRequestId) return;
       const message = error instanceof Error ? error.message : "加载推荐视频失败";
       set((current) => ({
         loading: false,
@@ -94,24 +101,33 @@ export const useRecommendedStore = create<RecommendedStoreState>((set, get) => (
     const state = get();
     if (state.loading || state.loadingMore || !state.hasMore) return;
 
+    const requestId = ++latestLoadMoreRequestId;
+    const cursor = state.cursor;
     set({ loadingMore: true, error: null });
 
     try {
-      const result = await getRecommended(state.cursor, PAGE_SIZE);
+      const result = await getRecommended(cursor, PAGE_SIZE);
+      if (requestId !== latestLoadMoreRequestId) return;
+
       if (!result.success) {
         set({ loadingMore: false, error: result.message || "加载更多失败" });
         return;
       }
 
-      set((current) => ({
-        loadingMore: false,
-        videos: uniqueVideos(current.videos, result.videos || []),
-        cursor: result.cursor || current.cursor,
-        hasMore: result.has_more ?? ((result.videos?.length || 0) > 0),
-        error: null,
-        initialized: true,
-      }));
+      set((current) => {
+        const nextVideos = uniqueVideos(current.videos, result.videos || []);
+        const addedCount = nextVideos.length - current.videos.length;
+        return {
+          loadingMore: false,
+          videos: nextVideos,
+          cursor: result.cursor || current.cursor,
+          hasMore: addedCount > 0 && (result.has_more ?? ((result.videos?.length || 0) > 0)),
+          error: null,
+          initialized: true,
+        };
+      });
     } catch (error) {
+      if (requestId !== latestLoadMoreRequestId) return;
       set({
         loadingMore: false,
         error: error instanceof Error ? error.message : "加载更多失败",

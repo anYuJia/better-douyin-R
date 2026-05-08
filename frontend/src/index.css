@@ -13,6 +13,7 @@
 
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.14);
+  --image-outline: rgba(255, 255, 255, 0.1);
 
   --color-text: #e8e8ed;
   --color-text-secondary: #9b9baa;
@@ -63,6 +64,7 @@
   --color-surface-raised: rgba(255, 255, 255, 0.94);
   --color-border: rgba(0, 0, 0, 0.1);
   --color-border-strong: rgba(0, 0, 0, 0.18);
+  --image-outline: rgba(0, 0, 0, 0.1);
   --color-text: #1d1d1f;
   --color-text-secondary: #6e6e73;
   --color-text-muted: #aeaeb2;
