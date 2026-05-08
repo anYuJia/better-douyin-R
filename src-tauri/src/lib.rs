@@ -802,6 +802,46 @@ async fn get_liked_videos(
     }
 }
 
+/// 获取收藏视频列表
+#[tauri::command]
+async fn get_collected_videos(
+    state: State<'_, AppState>,
+    cursor: i64,
+    count: u32,
+) -> Result<serde_json::Value, String> {
+    let client = match get_client(&state).await {
+        Ok(client) => client,
+        Err(_) => {
+            return Ok(serde_json::json!({
+                "success": false,
+                "message": "请先设置Cookie"
+            }));
+        }
+    };
+
+    match client
+        .get_collected_videos_python_style(cursor, count)
+        .await
+    {
+        Ok(videos) if !videos.is_empty() => {
+            let count = videos.len();
+            Ok(serde_json::json!({
+                "success": true,
+                "data": videos,
+                "count": count
+            }))
+        }
+        Ok(_) => Ok(serde_json::json!({
+            "success": false,
+            "message": "获取收藏视频失败。该接口需要登录态，请确认Cookie有效且包含完整的登录信息。如果Cookie已过期请重新获取。"
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "success": false,
+            "message": format!("获取收藏视频失败: {}", e)
+        })),
+    }
+}
+
 /// 获取点赞作者列表
 #[tauri::command]
 async fn get_liked_authors(
@@ -1227,6 +1267,76 @@ async fn download_liked_videos(
         "success": true,
         "task_id": batch_task_id,
         "message": format!("开始下载 {} 个点赞视频", total_videos),
+        "total_videos": total_videos
+    }))
+}
+
+/// 下载收藏视频
+#[tauri::command]
+async fn download_collected_videos(
+    state: State<'_, AppState>,
+    count: u32,
+) -> Result<serde_json::Value, String> {
+    let client = match get_client(&state).await {
+        Ok(client) => client,
+        Err(_) => {
+            return Ok(serde_json::json!({
+                "success": false,
+                "message": "请先设置Cookie"
+            }));
+        }
+    };
+
+    let (videos, _, _) = match client.get_collected_videos(0, count).await {
+        Ok(result) => result,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "success": false,
+                "message": format!("获取收藏列表失败: {}", e)
+            }));
+        }
+    };
+
+    if videos.is_empty() {
+        return Ok(serde_json::json!({
+            "success": false,
+            "message": "没有找到收藏视频"
+        }));
+    }
+
+    let batch_task_id = uuid::Uuid::new_v4().to_string();
+    let total_videos = videos.len();
+    let batch_task_id_clone = batch_task_id.clone();
+
+    {
+        let downloader_guard = state.downloader.lock().await;
+        let downloader = match downloader_guard.as_ref() {
+            Some(d) => d,
+            None => {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "message": "服务未完全初始化"
+                }));
+            }
+        };
+
+        let downloader_clone = downloader.clone();
+        let videos_clone = videos.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = downloader_clone
+                .start_batch_download(videos_clone, batch_task_id_clone, "收藏视频".to_string())
+                .await
+            {
+                log::error!("Batch download error: {}", e);
+            }
+        });
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "task_id": batch_task_id,
+        "message": format!("开始下载 {} 个收藏视频", total_videos),
         "total_videos": total_videos
     }))
 }
@@ -2028,6 +2138,7 @@ pub fn run() {
             get_user_detail,
             get_user_videos,
             get_liked_videos,
+            get_collected_videos,
             get_liked_authors,
             get_recommended,
             get_comments,
@@ -2039,6 +2150,7 @@ pub fn run() {
             download_video,
             download_user_videos,
             download_liked_videos,
+            download_collected_videos,
             download_liked_authors,
             add_download_task,
             start_download,

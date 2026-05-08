@@ -991,6 +991,32 @@ impl DouyinClient {
             .unwrap_or_default())
     }
 
+    /// 获取收藏视频列表（返回 VideoInfo，用于批量下载）
+    pub async fn get_collected_videos(
+        &self,
+        max_cursor: i64,
+        count: u32,
+    ) -> Result<(Vec<VideoInfo>, i64, bool)> {
+        let response = self
+            .request_collected_videos_response(max_cursor, count)
+            .await?;
+
+        let aweme_list = response["aweme_list"].as_array();
+        let has_more = response["has_more"].as_i64().unwrap_or(0) == 1
+            || response["has_more"].as_bool().unwrap_or(false);
+        let cursor = response["max_cursor"].as_i64().unwrap_or(0);
+
+        let videos = if let Some(list) = aweme_list {
+            list.iter()
+                .filter_map(|v| self.parse_video_info(v).ok())
+                .collect()
+        } else {
+            vec![]
+        };
+
+        Ok((videos, cursor, has_more))
+    }
+
     /// 获取无水印视频 URL
     pub fn get_no_watermark_url(video: &VideoInfo) -> Option<String> {
         // 优先使用 download_addr
