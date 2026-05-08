@@ -23,14 +23,14 @@ Recommended order:
 Download the release assets:
 
 ```bash
-VERSION=v0.0.9
+VERSION=v0.0.12
 gh release download "$VERSION" --pattern 'Douyin.Downloader_*' --pattern 'Douyin-Downloader_*'
 ```
 
 Then generate version-pinned manifests:
 
 ```bash
-VERSION=v0.0.9 node scripts/generate-package-manifests.mjs
+VERSION=v0.0.12 node scripts/generate-package-manifests.mjs
 ```
 
 The script computes SHA-256 hashes and writes files under `generated/<version>/`.

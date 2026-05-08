@@ -1,5 +1,8 @@
 # Build outputs
 target/
+dist/
+node_modules/
+*.tsbuildinfo
 
 # IDE
 .idea/

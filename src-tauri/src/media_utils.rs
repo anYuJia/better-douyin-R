@@ -209,12 +209,23 @@ pub fn python_video_detail_value(video: &VideoInfo) -> serde_json::Value {
 }
 
 pub fn python_recommended_video(video: &VideoInfo) -> serde_json::Value {
+    let media_type = python_media_type(video);
+    let media_urls = python_media_urls(video);
     let music = python_music_info(video);
+    let bgm_url = python_music_play_url(video);
 
     serde_json::json!({
         "aweme_id": video.aweme_id,
         "desc": video.desc,
         "create_time": video.create_time,
+        "media_type": media_type,
+        "media_urls": media_urls,
+        "bgm_url": bgm_url,
+        "images": video.image_urls.clone().unwrap_or_default(),
+        "live_photos": video.live_photo_urls.clone().unwrap_or_default(),
+        "has_live_photo": video.has_live_photo,
+        "is_image": video.is_image,
+        "raw_media_type": media_type,
         "author": {
             "uid": video.author.uid,
             "nickname": video.author.nickname,
@@ -296,40 +307,165 @@ pub fn parse_download_media_items(
 ) -> Vec<DownloadMediaItem> {
     let mut items = Vec::new();
 
-    if let Some(media_urls) = payload.get("media_urls").and_then(|value| value.as_array()) {
-        for media in media_urls {
-            let (media_type, url) = if let Some(url) = media.as_str() {
-                (
-                    infer_download_item_type(url.trim(), fallback_type),
-                    url.trim().to_string(),
-                )
-            } else {
-                let url = media
-                    .get("url")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                let media_type = media
-                    .get("type")
-                    .and_then(|value| value.as_str())
-                    .map(|value| value.trim().to_lowercase())
-                    .unwrap_or_else(|| infer_download_item_type(&url, fallback_type));
-                (media_type, url)
-            };
+    append_media_array(
+        &mut items,
+        payload.get("media_urls"),
+        fallback_type,
+        fallback_type,
+    );
+    append_media_array(
+        &mut items,
+        payload
+            .get("video")
+            .and_then(|video| video.get("media_urls")),
+        fallback_type,
+        fallback_type,
+    );
+    append_media_array(
+        &mut items,
+        payload.get("live_photos"),
+        MEDIA_TYPE_LIVE_PHOTO,
+        MEDIA_TYPE_LIVE_PHOTO,
+    );
+    append_media_array(
+        &mut items,
+        payload.get("live_photo_urls"),
+        MEDIA_TYPE_LIVE_PHOTO,
+        MEDIA_TYPE_LIVE_PHOTO,
+    );
+    append_media_array(
+        &mut items,
+        payload.get("images"),
+        MEDIA_TYPE_IMAGE,
+        MEDIA_TYPE_IMAGE,
+    );
+    append_media_array(
+        &mut items,
+        payload.get("image_urls"),
+        MEDIA_TYPE_IMAGE,
+        MEDIA_TYPE_IMAGE,
+    );
+    append_media_array(
+        &mut items,
+        payload.get("videos"),
+        fallback_type,
+        MEDIA_TYPE_VIDEO,
+    );
 
-            if url.is_empty() || media_type == MEDIA_TYPE_AUDIO {
-                continue;
+    if items.is_empty() {
+        for value in [
+            payload
+                .get("video")
+                .and_then(|video| video.get("download_addr")),
+            payload
+                .get("video")
+                .and_then(|video| video.get("play_addr")),
+            payload
+                .get("video")
+                .and_then(|video| video.get("preview_addr")),
+            payload.get("download_addr"),
+            payload.get("play_addr"),
+            payload.get("video_url"),
+            payload.get("url"),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(url) = extract_payload_url(value) {
+                push_download_item(&mut items, MEDIA_TYPE_VIDEO, &url, MEDIA_TYPE_VIDEO);
+                if !items.is_empty() {
+                    break;
+                }
             }
-
-            items.push(DownloadMediaItem {
-                r#type: media_type,
-                url,
-            });
         }
     }
 
     items
+}
+
+fn append_media_array(
+    items: &mut Vec<DownloadMediaItem>,
+    value: Option<&serde_json::Value>,
+    fallback_type: &str,
+    default_type: &str,
+) {
+    let Some(media_urls) = value.and_then(|value| value.as_array()) else {
+        return;
+    };
+
+    for media in media_urls {
+        if let Some(url) = media.as_str() {
+            push_download_item(items, default_type, url, fallback_type);
+            continue;
+        }
+
+        let media_type = media
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or(default_type);
+        if let Some(url) = extract_payload_url(media) {
+            push_download_item(items, media_type, &url, fallback_type);
+        }
+    }
+}
+
+fn extract_payload_url(value: &serde_json::Value) -> Option<String> {
+    if let Some(url) = value.as_str() {
+        let url = url.trim();
+        return (!url.is_empty()).then(|| url.to_string());
+    }
+
+    if let Some(values) = value.as_array() {
+        for value in values {
+            if let Some(url) = extract_payload_url(value) {
+                return Some(url);
+            }
+        }
+        return None;
+    }
+
+    for key in ["url", "play_url", "play_addr", "download_addr", "url_list"] {
+        if let Some(url) = value.get(key).and_then(extract_payload_url) {
+            return Some(url);
+        }
+    }
+
+    None
+}
+
+fn push_download_item(
+    items: &mut Vec<DownloadMediaItem>,
+    media_type: &str,
+    url: &str,
+    fallback_type: &str,
+) {
+    let url = url.trim();
+    if url.is_empty() {
+        return;
+    }
+
+    let media_type = match media_type.trim().to_lowercase().as_str() {
+        MEDIA_TYPE_IMAGE => MEDIA_TYPE_IMAGE.to_string(),
+        MEDIA_TYPE_LIVE_PHOTO | "livephoto" => MEDIA_TYPE_LIVE_PHOTO.to_string(),
+        MEDIA_TYPE_VIDEO => MEDIA_TYPE_VIDEO.to_string(),
+        MEDIA_TYPE_AUDIO => MEDIA_TYPE_AUDIO.to_string(),
+        _ => infer_download_item_type(url, fallback_type),
+    };
+
+    if media_type == MEDIA_TYPE_AUDIO {
+        return;
+    }
+    if items
+        .iter()
+        .any(|item| item.url == url && item.r#type == media_type)
+    {
+        return;
+    }
+
+    items.push(DownloadMediaItem {
+        r#type: media_type,
+        url: url.to_string(),
+    });
 }
 
 pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaItem> {

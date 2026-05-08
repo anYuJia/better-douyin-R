@@ -11,38 +11,25 @@ env:
 
 jobs:
   frontend-static-checks:
-    name: Frontend Static Checks
+    name: Frontend Build
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check JavaScript syntax
-        run: |
-          set -euo pipefail
-          for file in dist/js/*.js; do
-            node --check "$file"
-          done
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Check CSS braces
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const css = fs.readFileSync('dist/css/app.css', 'utf8');
-          let depth = 0;
-          for (let i = 0; i < css.length; i += 1) {
-            const ch = css[i];
-            if (ch === '{') depth += 1;
-            if (ch === '}') depth -= 1;
-            if (depth < 0) {
-              throw new Error(`Unexpected closing brace at offset ${i}`);
-            }
-          }
-          if (depth !== 0) {
-            throw new Error(`Unbalanced CSS braces: depth=${depth}`);
-          }
-          NODE
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build frontend
+        run: npm run build
 
   rust-checks:
     name: Rust Checks

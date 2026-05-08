@@ -1,18 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Douyin Downloader",
-  "version": "0.0.9",
+  "version": "0.0.14",
   "identifier": "com.douyin.downloader",
   "build": {
     "frontendDist": "../dist",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "抖音视频下载器",
+        "title": "Douyin Downloader",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
@@ -24,8 +25,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob: http://127.0.0.1:39143; media-src 'self' https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob: http://127.0.0.1:39143; media-src 'self' https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
       "dangerousDisableAssetCspModification": [
         "script-src"
       ]

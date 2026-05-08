@@ -10,7 +10,7 @@ use futures::StreamExt;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, COOKIE, RANGE, REFERER, USER_AGENT,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,6 +51,17 @@ pub struct DownloaderEvent {
     pub payload: serde_json::Value,
 }
 
+#[derive(Clone)]
+struct DownloadRuntime {
+    client: reqwest::Client,
+    config: AppConfig,
+    tasks: Arc<Mutex<Vec<DownloadTask>>>,
+    progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
+    cancel_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    pause_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    history: Arc<Mutex<HistoryManager>>,
+}
+
 /// 下载器
 #[derive(Clone)]
 pub struct Downloader {
@@ -58,8 +69,8 @@ pub struct Downloader {
     config: AppConfig,
     tasks: Arc<Mutex<Vec<DownloadTask>>>,
     progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
-    cancel_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
-    pause_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    cancel_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    pause_tokens: Arc<Mutex<HashMap<String, bool>>>,
     history: Arc<Mutex<HistoryManager>>,
 }
 
@@ -85,8 +96,8 @@ impl Downloader {
             config,
             tasks: Arc::new(Mutex::new(Vec::new())),
             progress_tx,
-            cancel_tokens: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            pause_tokens: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
+            pause_tokens: Arc::new(Mutex::new(HashMap::new())),
             history: Arc::new(Mutex::new(HistoryManager::load())),
         })
     }
@@ -254,84 +265,103 @@ impl Downloader {
 
     /// 开始下载
     pub async fn start_download(&self, task_id: &str) -> Result<()> {
-        let tasks = self.tasks.clone();
-        let progress_tx = self.progress_tx.clone();
-        let client = self.client.clone();
-        let config = self.config.clone();
-        let history = self.history.clone();
         let task_id_owned = task_id.to_string();
-        let cancel_tokens = self.cancel_tokens.clone();
+        let runtime = DownloadRuntime {
+            client: self.client.clone(),
+            config: self.config.clone(),
+            tasks: self.tasks.clone(),
+            progress_tx: self.progress_tx.clone(),
+            cancel_tokens: self.cancel_tokens.clone(),
+            pause_tokens: self.pause_tokens.clone(),
+            history: self.history.clone(),
+        };
 
-        cancel_tokens
+        runtime
+            .cancel_tokens
+            .lock()
+            .await
+            .insert(task_id_owned.clone(), false);
+        runtime
+            .pause_tokens
             .lock()
             .await
             .insert(task_id_owned.clone(), false);
 
         {
-            let mut tasks_lock = tasks.lock().await;
+            let mut tasks_lock = runtime.tasks.lock().await;
             if let Some(task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
                 task.status = DownloadStatus::Downloading;
             }
         }
 
         tokio::spawn(async move {
-            if let Err(error) = Self::download_media_group(
-                client,
-                config,
-                tasks.clone(),
-                task_id_owned.clone(),
-                progress_tx.clone(),
-                history,
-                cancel_tokens,
-            )
-            .await
+            if let Err(error) =
+                Self::download_media_group(runtime.clone(), task_id_owned.clone()).await
             {
-                log::error!("Download error: {}", error);
+                let is_cancelled = error.to_string().to_lowercase().contains("cancelled")
+                    || error.to_string().to_lowercase().contains("canceled")
+                    || *runtime
+                        .cancel_tokens
+                        .lock()
+                        .await
+                        .get(&task_id_owned)
+                        .unwrap_or(&false);
+                if !is_cancelled {
+                    log::error!("Download error: {}", error);
+                }
 
                 {
-                    let mut tasks_lock = tasks.lock().await;
+                    let mut tasks_lock = runtime.tasks.lock().await;
                     if let Some(task) = tasks_lock.iter_mut().find(|t| t.id == task_id_owned) {
-                        task.status = DownloadStatus::Failed;
+                        task.status = if is_cancelled {
+                            DownloadStatus::Cancelled
+                        } else {
+                            DownloadStatus::Failed
+                        };
                         task.error_msg = Some(error.to_string());
                     }
                 }
 
-                emit_event(
-                    &progress_tx,
-                    "download-failed",
-                    serde_json::json!({
-                        "task_id": task_id_owned,
-                        "error": format!("下载失败: {}", error)
-                    }),
-                )
-                .await;
+                if is_cancelled {
+                    emit_event(
+                        &runtime.progress_tx,
+                        "download-cancelled",
+                        serde_json::json!({
+                            "task_id": task_id_owned,
+                            "message": "下载已取消"
+                        }),
+                    )
+                    .await;
+                } else {
+                    emit_event(
+                        &runtime.progress_tx,
+                        "download-failed",
+                        serde_json::json!({
+                            "task_id": task_id_owned,
+                            "error": format!("下载失败: {}", error)
+                        }),
+                    )
+                    .await;
 
-                emit_event(
-                    &progress_tx,
-                    "download-error",
-                    serde_json::json!({
-                        "task_id": task_id_owned,
-                        "message": format!("下载失败: {}", error)
-                    }),
-                )
-                .await;
+                    emit_event(
+                        &runtime.progress_tx,
+                        "download-error",
+                        serde_json::json!({
+                            "task_id": task_id_owned,
+                            "message": format!("下载失败: {}", error)
+                        }),
+                    )
+                    .await;
+                }
             }
         });
 
         Ok(())
     }
 
-    async fn download_media_group(
-        client: reqwest::Client,
-        config: AppConfig,
-        tasks: Arc<Mutex<Vec<DownloadTask>>>,
-        task_id: String,
-        progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
-        history: Arc<Mutex<HistoryManager>>,
-        cancel_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
-    ) -> Result<()> {
+    async fn download_media_group(runtime: DownloadRuntime, task_id: String) -> Result<()> {
         let task = {
-            let tasks_lock = tasks.lock().await;
+            let tasks_lock = runtime.tasks.lock().await;
             tasks_lock
                 .iter()
                 .find(|t| t.id == task_id)
@@ -346,12 +376,12 @@ impl Downloader {
 
         let display_name = truncate_chars(&task.title, 8);
         let save_dir = PathBuf::from(&task.save_path);
-        let headers = build_download_headers(&config);
+        let headers = build_download_headers(&runtime.config);
 
         tokio::fs::create_dir_all(&save_dir).await?;
 
         emit_event(
-            &progress_tx,
+            &runtime.progress_tx,
             "download-started",
             serde_json::json!({
                 "task_id": task.id,
@@ -360,13 +390,14 @@ impl Downloader {
                 "type": "single_video",
                 "aweme_id": task.aweme_id,
                 "media_type": media_type_name(&task.media_type),
-                "media_count": media_count
+                "media_count": media_count,
+                "save_path": task.save_path
             }),
         )
         .await;
 
         emit_event(
-            &progress_tx,
+            &runtime.progress_tx,
             "download-progress",
             serde_json::json!({
                 "task_id": task.id,
@@ -375,7 +406,9 @@ impl Downloader {
                 "total": media_count,
                 "status": "starting",
                 "desc": task.title,
-                "display_name": display_name
+                "display_name": display_name,
+                "save_path": task.save_path,
+                "media_type": media_type_name(&task.media_type)
             }),
         )
         .await;
@@ -384,13 +417,21 @@ impl Downloader {
         let mut total_downloaded_size = 0u64;
 
         for (index, media) in task.media_urls.iter().enumerate() {
-            if *cancel_tokens.lock().await.get(&task_id).unwrap_or(&false) {
+            if *runtime
+                .cancel_tokens
+                .lock()
+                .await
+                .get(&task_id)
+                .unwrap_or(&false)
+            {
                 return Err(anyhow!("Download cancelled"));
             }
 
+            wait_if_paused(&runtime.pause_tokens, &runtime.cancel_tokens, &task_id).await?;
+
             let file_type_display = media_type_display(media.r#type.as_str());
             emit_event(
-                &progress_tx,
+                &runtime.progress_tx,
                 "download-log",
                 serde_json::json!({
                     "task_id": task.id,
@@ -401,7 +442,8 @@ impl Downloader {
             )
             .await;
 
-            let response = client
+            let response = runtime
+                .client
                 .get(&media.url)
                 .headers(headers.clone())
                 .send()
@@ -429,13 +471,21 @@ impl Downloader {
             downloaded_files.push(file_path.clone());
 
             while let Some(chunk_result) = stream.next().await {
-                if *cancel_tokens.lock().await.get(&task_id).unwrap_or(&false) {
+                if *runtime
+                    .cancel_tokens
+                    .lock()
+                    .await
+                    .get(&task_id)
+                    .unwrap_or(&false)
+                {
                     let _ = tokio::fs::remove_file(&file_path).await;
                     for downloaded_file in &downloaded_files {
                         let _ = tokio::fs::remove_file(downloaded_file).await;
                     }
                     return Err(anyhow!("Download cancelled"));
                 }
+
+                wait_if_paused(&runtime.pause_tokens, &runtime.cancel_tokens, &task_id).await?;
 
                 let chunk = chunk_result?;
                 file.write_all(&chunk).await?;
@@ -459,7 +509,7 @@ impl Downloader {
                 };
 
                 {
-                    let mut tasks_lock = tasks.lock().await;
+                    let mut tasks_lock = runtime.tasks.lock().await;
                     if let Some(current_task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
                         current_task.progress = overall_progress;
                         current_task.downloaded_size = total_downloaded_size;
@@ -473,7 +523,7 @@ impl Downloader {
 
                 if should_emit {
                     emit_event(
-                        &progress_tx,
+                        &runtime.progress_tx,
                         "download-progress",
                         serde_json::json!({
                             "task_id": task.id,
@@ -491,7 +541,10 @@ impl Downloader {
                             "speed_bps": speed_bps,
                             "eta_seconds": eta_seconds,
                             "file_type": media.r#type,
-                            "file_type_display": file_type_display
+                            "file_type_display": file_type_display,
+                            "save_path": task.save_path,
+                            "file_path": file_path.to_string_lossy().to_string(),
+                            "media_type": media_type_name(&task.media_type)
                         }),
                     )
                     .await;
@@ -501,7 +554,7 @@ impl Downloader {
             }
 
             {
-                let mut tasks_lock = tasks.lock().await;
+                let mut tasks_lock = runtime.tasks.lock().await;
                 if let Some(current_task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
                     current_task.completed_files = (index + 1) as u32;
                     current_task.progress = (((index + 1) as f32) / media_count as f32) * 100.0;
@@ -510,7 +563,7 @@ impl Downloader {
             }
 
             emit_event(
-                &progress_tx,
+                &runtime.progress_tx,
                 "download-progress",
                 serde_json::json!({
                     "task_id": task.id,
@@ -528,13 +581,16 @@ impl Downloader {
                     "speed_bps": 0,
                     "eta_seconds": 0,
                     "file_type": media.r#type,
-                    "file_type_display": file_type_display
+                    "file_type_display": file_type_display,
+                    "save_path": task.save_path,
+                    "file_path": file_path.to_string_lossy().to_string(),
+                    "media_type": media_type_name(&task.media_type)
                 }),
             )
             .await;
 
             emit_event(
-                &progress_tx,
+                &runtime.progress_tx,
                 "download-log",
                 serde_json::json!({
                     "task_id": task.id,
@@ -552,7 +608,7 @@ impl Downloader {
         }
 
         {
-            let mut tasks_lock = tasks.lock().await;
+            let mut tasks_lock = runtime.tasks.lock().await;
             if let Some(current_task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
                 current_task.status = DownloadStatus::Completed;
                 current_task.progress = 100.0;
@@ -564,7 +620,7 @@ impl Downloader {
         }
 
         if let Some(first_file) = downloaded_files.first() {
-            let mut history_lock = history.lock().await;
+            let mut history_lock = runtime.history.lock().await;
             let _ = history_lock.add(crate::api::DownloadHistory {
                 aweme_id: task.aweme_id.clone(),
                 title: task.title.clone(),
@@ -582,14 +638,18 @@ impl Downloader {
         let _ = record_downloaded(&save_dir, &task.aweme_id).await;
 
         emit_event(
-            &progress_tx,
+            &runtime.progress_tx,
             "download-completed",
             serde_json::json!({
                 "task_id": task.id,
                 "message": format!("下载成功: {}", task.title),
                 "aweme_id": task.aweme_id,
                 "media_type": media_type_name(&task.media_type),
-                "file_count": media_count
+                "file_count": media_count,
+                "display_name": display_name,
+                "save_path": task.save_path,
+                "file_path": downloaded_files.first().map(|p| p.to_string_lossy().to_string()),
+                "total_size": total_downloaded_size
             }),
         )
         .await;
@@ -617,10 +677,25 @@ impl Downloader {
         let mut tokens = self.pause_tokens.lock().await;
         tokens.insert(task_id.to_string(), true);
 
+        let mut progress = 0.0;
         let mut tasks = self.tasks.lock().await;
         if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
             task.status = DownloadStatus::Paused;
+            progress = task.progress;
         }
+        drop(tasks);
+
+        emit_event(
+            &self.progress_tx,
+            "download-progress",
+            serde_json::json!({
+                "task_id": task_id,
+                "progress": progress,
+                "status": "paused",
+                "speed_bps": 0
+            }),
+        )
+        .await;
 
         Ok(())
     }
@@ -629,12 +704,26 @@ impl Downloader {
         let mut tokens = self.pause_tokens.lock().await;
         tokens.insert(task_id.to_string(), false);
 
+        let mut progress = 0.0;
         let mut tasks = self.tasks.lock().await;
         if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
             if task.status == DownloadStatus::Paused {
-                task.status = DownloadStatus::Pending;
+                task.status = DownloadStatus::Downloading;
             }
+            progress = task.progress;
         }
+        drop(tasks);
+
+        emit_event(
+            &self.progress_tx,
+            "download-progress",
+            serde_json::json!({
+                "task_id": task_id,
+                "progress": progress,
+                "status": "downloading"
+            }),
+        )
+        .await;
 
         Ok(())
     }
@@ -867,7 +956,9 @@ impl Downloader {
                                     "task_id": batch_id,
                                     "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
                                     "current_downloaded": current,
-                                    "total_videos": total
+                                    "total_videos": total,
+                                    "processed": current,
+                                    "skipped": skipped.load(AtomicOrdering::SeqCst)
                                 }),
                             ).await;
 
@@ -917,13 +1008,6 @@ impl Downloader {
                                 let total =
                                     total_discovered.load(AtomicOrdering::SeqCst).max(estimated);
 
-                                // 计算速度
-                                let speed_mbps = if elapsed.as_secs() > 0 {
-                                    current as f64 / elapsed.as_secs_f64()
-                                } else {
-                                    0.0
-                                };
-
                                 emit_event(
                                     &progress_tx,
                                     "download-progress",
@@ -932,8 +1016,8 @@ impl Downloader {
                                         "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
                                         "current_downloaded": current,
                                         "total_videos": total,
-                                        "elapsed_seconds": elapsed.as_secs(),
-                                        "speed_mbps": (speed_mbps * 100.0).round() / 100.0
+                                        "processed": current,
+                                        "elapsed_seconds": elapsed.as_secs()
                                     }),
                                 ).await;
                             }
@@ -941,19 +1025,22 @@ impl Downloader {
                                 failed.fetch_add(1, AtomicOrdering::SeqCst);
                                 log::error!("Download error for {}: {}", aweme_id, e);
 
-                                let current = completed.load(AtomicOrdering::SeqCst);
+                                let current = completed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
                                 let total =
                                     total_discovered.load(AtomicOrdering::SeqCst).max(estimated);
 
                                 emit_event(
                                     &progress_tx,
                                     "download-progress",
-                                    serde_json::json!({
-                                        "task_id": batch_id,
-                                        "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
-                                        "current_downloaded": current,
-                                        "total_videos": total
-                                    }),
+	                            serde_json::json!({
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total,
+	                                "processed": current,
+	                                "failed": failed.load(AtomicOrdering::SeqCst),
+	                                "message": format!("下载失败: {}", aweme_id)
+	                            }),
                                 ).await;
                             }
                         }
@@ -1010,6 +1097,8 @@ impl Downloader {
                     "task_id": batch_task_id,
                     "total_videos": final_total,
                     "completed": final_completed,
+                    "processed": final_completed,
+                    "succeeded": final_completed.saturating_sub(final_skipped + final_failed),
                     "skipped": final_skipped,
                     "failed": final_failed,
                     "message": format!("下载完成: {} 个视频, {} 个跳过", final_completed, final_skipped)
@@ -1365,12 +1454,14 @@ impl Downloader {
                     &self.progress_tx,
                     "download-progress",
                     serde_json::json!({
-                        "task_id": batch_task_id,
-                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
-                        "current_downloaded": current,
-                        "total_videos": total_videos,
-                        "message": format!("跳过已下载: {}", video.desc.chars().take(15).collect::<String>())
-                    }),
+	                        "task_id": batch_task_id,
+	                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                        "current_downloaded": current,
+	                        "total_videos": total_videos,
+	                        "processed": current,
+	                        "skipped": skipped_count.load(AtomicOrdering::SeqCst),
+	                        "message": format!("跳过已下载: {}", video.desc.chars().take(15).collect::<String>())
+	                    }),
                 ).await;
 
                 drop(permit);
@@ -1393,6 +1484,21 @@ impl Downloader {
             // 收集媒体URL
             let media_urls = self.collect_download_media_items(&video);
             if media_urls.is_empty() {
+                failed_count.fetch_add(1, AtomicOrdering::SeqCst);
+                let current = completed_count.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                emit_event(
+                    &self.progress_tx,
+                    "download-progress",
+                    serde_json::json!({
+	                        "task_id": batch_task_id,
+	                        "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                        "current_downloaded": current,
+	                        "total_videos": total_videos,
+	                        "processed": current,
+	                        "failed": failed_count.load(AtomicOrdering::SeqCst),
+	                        "message": format!("无可下载媒体: {}", video.desc.chars().take(15).collect::<String>())
+	                    }),
+                ).await;
                 drop(permit);
                 continue;
             }
@@ -1461,17 +1567,19 @@ impl Downloader {
                             &progress_tx,
                             "download-progress",
                             serde_json::json!({
-                                "task_id": batch_id,
-                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
-                                "current_downloaded": current,
-                                "total_videos": total_videos,
-                                "message": format!("完成 {}/{}: {}", current, total_videos, display_name_for_log)
-                            }),
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total_videos,
+	                                "processed": current,
+	                                "message": format!("完成 {}/{}: {}", current, total_videos, display_name_for_log)
+	                            }),
                         ).await;
                     }
                     Err(e) => {
                         failed.fetch_add(1, AtomicOrdering::SeqCst);
                         log::error!("Download error for {}: {}", aweme_id, e);
+                        let current = completed.fetch_add(1, AtomicOrdering::SeqCst) + 1;
                         emit_event(
                             &progress_tx,
                             "download-log",
@@ -1482,6 +1590,19 @@ impl Downloader {
                             }),
                         )
                         .await;
+                        emit_event(
+                            &progress_tx,
+                            "download-progress",
+                            serde_json::json!({
+	                                "task_id": batch_id,
+	                                "overall_progress": (current as f32 / total_videos as f32 * 100.0) as u32,
+	                                "current_downloaded": current,
+	                                "total_videos": total_videos,
+	                                "processed": current,
+	                                "failed": failed.load(AtomicOrdering::SeqCst),
+	                                "message": format!("失败 {}/{}: {}", current, total_videos, display_name_for_log)
+	                            }),
+                        ).await;
                     }
                 }
             });
@@ -1522,6 +1643,8 @@ impl Downloader {
                     "task_id": batch_task_id,
                     "total_videos": total_videos,
                     "completed": final_completed,
+                    "processed": final_completed,
+                    "succeeded": final_completed.saturating_sub(final_skipped + final_failed),
                     "skipped": final_skipped,
                     "failed": final_failed,
                     "message": format!("下载完成: {} 个视频, {} 个跳过", final_completed, final_skipped)
@@ -1868,6 +1991,22 @@ async fn emit_event(
 ) {
     if let Some(tx) = sender {
         let _ = tx.send(DownloaderEvent { name, payload }).await;
+    }
+}
+
+async fn wait_if_paused(
+    pause_tokens: &Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    cancel_tokens: &Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    task_id: &str,
+) -> Result<()> {
+    loop {
+        if *cancel_tokens.lock().await.get(task_id).unwrap_or(&false) {
+            return Err(anyhow!("Download cancelled"));
+        }
+        if !*pause_tokens.lock().await.get(task_id).unwrap_or(&false) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
 }
 

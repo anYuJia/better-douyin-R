@@ -433,7 +433,10 @@ impl DouyinClient {
         let data = response
             .get("aweme_detail")
             .ok_or_else(|| anyhow!("No aweme_detail in response"))?;
-        let video_info = self.parse_video_info(data)?;
+        let mut video_info = self.parse_video_info(data)?;
+        if video_info.aweme_id.trim().is_empty() {
+            video_info.aweme_id = aweme_id.to_string();
+        }
 
         Ok(video_info)
     }
@@ -665,18 +668,31 @@ impl DouyinClient {
     }
 
     fn get_first_url(&self, data: &serde_json::Value) -> String {
-        data.as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
+        self.get_first_url_opt(data).unwrap_or_default()
     }
 
     fn get_first_url_opt(&self, data: &serde_json::Value) -> Option<String> {
-        data.as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+        if let Some(value) = data
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Some(value.to_string());
+        }
+
+        if let Some(arr) = data.as_array() {
+            return arr.iter().find_map(|value| self.get_first_url_opt(value));
+        }
+
+        if let Some(obj) = data.as_object() {
+            for key in ["url_list", "url", "download_url", "play_url", "display_url"] {
+                if let Some(url) = obj.get(key).and_then(|value| self.get_first_url_opt(value)) {
+                    return Some(url);
+                }
+            }
+        }
+
+        None
     }
 
     fn get_last_url_opt(&self, data: &serde_json::Value) -> Option<String> {
