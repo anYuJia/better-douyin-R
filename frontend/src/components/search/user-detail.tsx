@@ -244,23 +244,23 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
       initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 350, damping: 28 }}
-      className="relative overflow-hidden rounded-[18px] border border-slate-200 bg-white p-5 text-slate-950 shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
+      className="relative overflow-hidden rounded-[18px] border border-border bg-surface-solid/85 p-5 text-text shadow-[var(--shadow-md)]"
     >
       <div className="flex items-center gap-4 flex-wrap">
         <UserAvatar
           user={user}
-          className="w-[76px] h-[76px] border-[3px] border-white shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+          className="w-[76px] h-[76px] border-[3px] border-border-strong bg-background shadow-[0_10px_28px_rgba(0,0,0,0.22)]"
         />
 
         <div className="min-w-0 flex-1 sm:min-w-[220px]">
-          <h3 className="text-[1.2rem] font-[780] tracking-tight text-slate-950 mb-1.5">
+          <h3 className="text-[1.2rem] font-[780] tracking-tight text-text mb-1.5">
             {user.nickname}
           </h3>
-          <span className="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[0.72rem] font-mono text-slate-600">
+          <span className="inline-flex max-w-full items-center rounded-full border border-border bg-background-soft/70 px-2.5 py-1 text-[0.72rem] font-mono text-text-secondary">
             <span className="truncate">@{user.unique_id || user.sec_uid}</span>
           </span>
           {user.signature && (
-            <p className="text-[0.8rem] text-slate-600 mt-2 line-clamp-2 leading-relaxed">
+            <p className="text-[0.8rem] text-text-secondary mt-2 line-clamp-2 leading-relaxed">
               {user.signature}
             </p>
           )}
@@ -268,15 +268,15 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
 
         <div className="grid w-full shrink-0 grid-cols-2 gap-2 sm:w-auto sm:flex sm:items-center sm:gap-0">
           {stats.map((stat, index) => (
-            <div key={stat.label} className="relative flex items-baseline justify-center gap-1.5 rounded-[12px] bg-slate-50 px-3 py-2 sm:rounded-none sm:bg-transparent sm:px-4 sm:py-1">
-              <span className="text-[1.15rem] font-[780] tracking-tight text-slate-950 tabular-nums">
+            <div key={stat.label} className="relative flex items-baseline justify-center gap-1.5 rounded-[12px] border border-border bg-background-soft/70 px-3 py-2 sm:border-0 sm:bg-transparent sm:px-4 sm:py-1">
+              <span className="text-[1.15rem] font-[780] tracking-tight text-text tabular-nums">
                 {formatNumber(stat.value)}
               </span>
-              <span className="text-[0.75rem] font-medium text-slate-500">
+              <span className="text-[0.75rem] font-medium text-text-muted">
                 {stat.label}
               </span>
               {index < stats.length - 1 && (
-                <div className="absolute right-0 top-[20%] bottom-[20%] hidden w-px bg-gradient-to-b from-transparent via-slate-200 to-transparent sm:block" />
+                <div className="absolute right-0 top-[20%] bottom-[20%] hidden w-px bg-gradient-to-b from-transparent via-border to-transparent sm:block" />
               )}
             </div>
           ))}
