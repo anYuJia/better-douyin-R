@@ -44,6 +44,7 @@ import {
   type HistoryItem,
 } from "@/lib/tauri";
 import { cn, formatBytes } from "@/lib/utils";
+import { setHistoryRefreshCallback } from "@/lib/history-refresh";
 
 const FILE_PAGE_SIZE_OPTIONS = [12, 24, 48, 96] as const;
 type LocalMediaKind = "video" | "image" | "audio" | "media";
@@ -102,6 +103,17 @@ export function DownloadsView() {
   useEffect(() => {
     void loadDiskFiles();
   }, [loadDiskFiles]);
+
+  // 注册全局历史刷新回调，下载完成后自动刷新列表
+  useEffect(() => {
+    setHistoryRefreshCallback(() => {
+      void loadHistory();
+      void loadDiskFiles(true);
+    });
+    return () => {
+      setHistoryRefreshCallback(null);
+    };
+  }, [loadHistory, loadDiskFiles]);
 
   const handleRefresh = useCallback(() => {
     void syncTasks();

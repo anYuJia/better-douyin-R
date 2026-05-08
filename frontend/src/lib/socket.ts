@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useDownloadStore, useLogStore } from "@/stores/app-store";
 import type { DownloadTask } from "@/types";
 import { listenEvent } from "./tauri";
+import { triggerHistoryRefresh } from "./history-refresh";
 
 // ═══════════════════════════════════════════════
 // Tauri Event Listener Manager
@@ -324,6 +325,7 @@ export function useSocket() {
               finishedTime: Date.now(),
             });
             addLog(d.message || `下载完成: ${d.display_name || d.task_id}`, "success");
+            triggerHistoryRefresh();
           }
       );
 
@@ -360,6 +362,7 @@ export function useSocket() {
             errorMessage: status === "error" ? d.message || "批量下载失败" : undefined,
           });
           addLog(d.message || "批量下载已完成", failed > 0 ? "warning" : "success");
+          triggerHistoryRefresh();
         });
 
       // batch-download-cancelled

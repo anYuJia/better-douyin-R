@@ -10,6 +10,7 @@ import {
   Heart,
   Settings,
   Circle,
+  Star,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { id: "recommended", label: "推荐视频", icon: Sparkles },
   { id: "downloads", label: "我的下载", icon: FolderOpen },
   { id: "liked", label: "点赞视频", icon: Heart },
+  { id: "collected", label: "收藏内容", icon: Star },
   { id: "settings", label: "设置", icon: Settings },
 ];
 

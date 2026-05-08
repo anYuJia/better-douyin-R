@@ -11,6 +11,7 @@ import { RecommendedFeed } from "@/components/recommended/feed";
 import { DownloadsView } from "@/components/downloads/downloads-view";
 import { SettingsView } from "@/components/settings/settings-view";
 import { LikedView } from "@/components/liked/liked-view";
+import { CollectedView } from "@/components/collected/collected-view";
 import { AnimatePresence, motion } from "framer-motion";
 import { easeConfig } from "@/lib/utils";
 
@@ -90,6 +91,12 @@ function renderView(view: string) {
       return (
         <motion.div key="liked" {...variants} transition={transition} className="p-6">
           <LikedView />
+        </motion.div>
+      );
+    case "collected":
+      return (
+        <motion.div key="collected" {...variants} transition={transition} className="p-6">
+          <CollectedView />
         </motion.div>
       );
     case "settings":

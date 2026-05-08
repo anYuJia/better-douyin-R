@@ -219,6 +219,51 @@ export interface LikedAuthorsResponse extends ApiResponse {
   count?: number;
 }
 
+export interface CollectedVideosResponse extends ApiResponse {
+  data?: VideoInfo[];
+  videos?: VideoInfo[];
+  count?: number;
+  has_more?: boolean;
+  next_cursor?: number;
+  cursor?: number;
+}
+
+export interface CollectedMixItem {
+  mix_id: string;
+  mix_name: string;
+  desc?: string;
+  cover_url?: string;
+  author?: {
+    nickname?: string;
+    sec_uid?: string;
+    avatar_thumb?: string;
+  };
+  statis?: {
+    collect_vv?: number;
+    play_vv?: number;
+    updated_to_episode?: number;
+  };
+  create_time?: number;
+  update_time?: number;
+  mix_type?: number;
+}
+
+export interface CollectedMixesResponse extends ApiResponse {
+  data?: CollectedMixItem[];
+  count?: number;
+  has_more?: boolean;
+  next_cursor?: number;
+  cursor?: number;
+}
+
+export interface MixVideosResponse extends ApiResponse {
+  data?: VideoInfo[];
+  count?: number;
+  has_more?: boolean;
+  next_cursor?: number;
+  cursor?: number;
+}
+
 export interface DownloadProgress {
   task_id: string;
   desc?: string;
@@ -865,6 +910,45 @@ export async function getLikedAuthors(count: number): Promise<LikedAuthorsRespon
   return {
     ...result,
     data: Array.isArray(result.data) ? result.data.map(normalizeUser) : [],
+  };
+}
+
+export async function getCollectedVideos(cursor: number, count: number): Promise<CollectedVideosResponse> {
+  const result = await invoke<CollectedVideosResponse & { data?: unknown[] }>("get_collected_videos", { cursor, count });
+  return {
+    ...result,
+    success: result.success !== false,
+    data: Array.isArray(result.data)
+      ? result.data.map(normalizeVideo).filter(Boolean) as VideoInfo[]
+      : [],
+    videos: Array.isArray(result.videos)
+      ? result.videos.map(normalizeVideo).filter(Boolean) as VideoInfo[]
+      : undefined,
+  };
+}
+
+export async function getCollectedMixes(cursor: number, count: number): Promise<CollectedMixesResponse> {
+  const result = await invoke<CollectedMixesResponse & { data?: unknown[] }>("get_collected_mixes", { cursor, count });
+  return {
+    ...result,
+    success: result.success !== false,
+    data: Array.isArray(result.data) ? result.data : [],
+  };
+}
+
+export async function getMixVideos(seriesId: string, cursor: number, count: number): Promise<MixVideosResponse> {
+  const result = await invoke<MixVideosResponse & { data?: unknown[] }>("get_mix_videos", {
+    seriesId,
+    series_id: seriesId,
+    cursor,
+    count,
+  });
+  return {
+    ...result,
+    success: result.success !== false,
+    data: Array.isArray(result.data)
+      ? result.data.map(normalizeVideo).filter(Boolean) as VideoInfo[]
+      : [],
   };
 }
 
