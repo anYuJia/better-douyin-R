@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckSquare, Download, Grid3x3, Loader2, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ export function VideoGrid() {
   const [playerIndex, setPlayerIndex] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const showPlaceholder = currentUser && !loadingVideos && videos.length === 0;
   const openPlayer = (video: VideoInfo) => {
@@ -56,6 +57,24 @@ export function VideoGrid() {
       return next.size === current.size ? current : next;
     });
   }, [videos]);
+
+  useEffect(() => {
+    if (!hasMore || loadingVideos || loadingMore || videos.length === 0) return;
+    const node = loadMoreRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMore();
+        }
+      },
+      { root: null, rootMargin: "520px 0px", threshold: 0.01 }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore, loadingVideos, videos.length]);
 
   if (!currentUser) return null;
 
@@ -174,6 +193,8 @@ export function VideoGrid() {
                 />
               ))}
             </motion.div>
+
+            <div ref={loadMoreRef} className="h-px w-full" aria-hidden="true" />
 
             {hasMore && (
               <div className="flex justify-center mt-6">

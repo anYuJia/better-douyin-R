@@ -14,6 +14,7 @@ const PAGE_SIZE = 18;
 let latestSearchRequestId = 0;
 let latestUserRequestId = 0;
 let latestVideoRequestId = 0;
+let latestLoadMoreRequestId = 0;
 
 interface SearchStoreState {
   query: string;
@@ -91,6 +92,17 @@ function formatSearchErrorMessage(message: string | undefined, fallback = "搜�
   return text.length > 240 ? `${text.slice(0, 180)}...` : text;
 }
 
+function uniqueVideos(existing: VideoInfo[], incoming: VideoInfo[]) {
+  const seen = new Set(existing.map((video) => video.aweme_id).filter(Boolean));
+  const next = [...existing];
+  for (const video of incoming) {
+    if (!video?.aweme_id || seen.has(video.aweme_id)) continue;
+    seen.add(video.aweme_id);
+    next.push(video);
+  }
+  return next;
+}
+
 export const useSearchStore = create<SearchStoreState>((set, get) => ({
   ...initialState,
 
@@ -102,6 +114,9 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
     }
 
     const requestId = ++latestSearchRequestId;
+    latestUserRequestId += 1;
+    latestVideoRequestId += 1;
+    latestLoadMoreRequestId += 1;
     const addLog = useLogStore.getState().addLog;
     useAppStore.getState().setView("search");
 
@@ -175,6 +190,8 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
 
   selectUser: async (user) => {
     const requestId = ++latestUserRequestId;
+    latestVideoRequestId += 1;
+    latestLoadMoreRequestId += 1;
     const addLog = useLogStore.getState().addLog;
 
     set({
@@ -219,6 +236,8 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
     if (!state.currentUser || state.loadingVideos) return;
 
     const requestId = ++latestVideoRequestId;
+    latestLoadMoreRequestId += 1;
+    const secUid = state.currentUser.sec_uid;
     const addLog = useLogStore.getState().addLog;
     const keepExistingVideos = state.videos.length > 0;
     set({
@@ -230,8 +249,8 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
     addLog(`加载作品列表: ${state.currentUser.nickname}`, "info");
 
     try {
-      const result = await getUserVideos(state.currentUser.sec_uid, PAGE_SIZE, 0);
-      if (requestId !== latestVideoRequestId) return;
+      const result = await getUserVideos(secUid, PAGE_SIZE, 0);
+      if (requestId !== latestVideoRequestId || get().currentUser?.sec_uid !== secUid) return;
 
       if (!result.success) {
         const message = result.message || "获取作品列表失败";
@@ -264,10 +283,15 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
     }
 
     const addLog = useLogStore.getState().addLog;
+    const requestId = ++latestLoadMoreRequestId;
+    const secUid = state.currentUser.sec_uid;
+    const cursor = state.cursor;
     set({ loadingMore: true, error: null });
 
     try {
-      const result = await getUserVideos(state.currentUser.sec_uid, PAGE_SIZE, state.cursor);
+      const result = await getUserVideos(secUid, PAGE_SIZE, cursor);
+      if (requestId !== latestLoadMoreRequestId || get().currentUser?.sec_uid !== secUid) return;
+
       if (!result.success) {
         const message = result.message || "加载更多失败";
         set({ loadingMore: false, error: message });
@@ -275,14 +299,19 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
         return;
       }
 
-      set((current) => ({
-        loadingMore: false,
-        videos: [...current.videos, ...(result.videos || [])],
-        cursor: result.cursor || current.cursor,
-        hasMore: result.has_more ?? false,
-        error: null,
-      }));
+      set((current) => {
+        const nextVideos = uniqueVideos(current.videos, result.videos || []);
+        const addedCount = nextVideos.length - current.videos.length;
+        return {
+          loadingMore: false,
+          videos: nextVideos,
+          cursor: result.cursor || current.cursor,
+          hasMore: addedCount > 0 && (result.has_more ?? false),
+          error: null,
+        };
+      });
     } catch (error) {
+      if (requestId !== latestLoadMoreRequestId || get().currentUser?.sec_uid !== secUid) return;
       const message = error instanceof Error ? error.message : "加载更多失败";
       set({ loadingMore: false, error: message });
       addLog(message, "error");
