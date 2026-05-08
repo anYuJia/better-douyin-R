@@ -82,6 +82,11 @@
                                 <input type="number" class="form-control form-control-sm count-input" id="liked-authors-count" value="20" min="1" max="100">
                                 <button class="btn btn-sm btn-outline-primary" id="download-liked-authors-btn">获取</button>
                             </div>
+                            <div class="dropdown-item-compact">
+                                <span class="dropdown-item-label"><i class="bi bi-star-fill"></i> 收藏获取</span>
+                                <input type="number" class="form-control form-control-sm count-input" id="collected-videos-count" value="20" min="1" max="100">
+                                <button class="btn btn-sm btn-warning" id="download-collected-btn">获取</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -118,7 +123,7 @@
                     </div>
                     <h3 class="cookie-onboarding-title">登录抖音账号后再开始下载</h3>
                     <p class="cookie-onboarding-copy">
-                        配置后可稳定使用搜索、推荐、点赞列表和批量下载；完成后再搜索用户或粘贴链接。
+                        配置后可稳定使用搜索、推荐、点赞列表、收藏列表和批量下载；完成后再搜索用户或粘贴链接。
                     </p>
                     <button type="button" class="btn btn-primary cookie-onboarding-btn" onclick="showCookieSetupModal()">
                         <i class="bi bi-box-arrow-in-right"></i>
@@ -141,6 +146,10 @@
                     <div class="shortcut-card" onclick="document.getElementById('download-liked-btn').click()">
                         <i class="bi bi-heart"></i>
                         <span>点赞视频</span>
+                    </div>
+                    <div class="shortcut-card" onclick="document.getElementById('download-collected-btn').click()">
+                        <i class="bi bi-star"></i>
+                        <span>收藏视频</span>
                     </div>
                 </div>
             </div>
@@ -310,6 +319,29 @@
                     </div>
                     <div class="section-panel-body">
                         <div id="likedAuthorsList" class="row"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collected videos (hidden by default) -->
+            <div id="collectedVideosSection" class="mb-3" style="display: none;">
+                <div class="section-panel">
+                    <div class="section-panel-header section-panel-header--warning">
+                        <div class="section-panel-title">
+                            <i class="bi bi-star-fill"></i> 收藏视频列表
+                        </div>
+                        <div class="section-panel-actions">
+                            <span id="collectedVideoCount" class="badge section-count-badge">0 个视频</span>
+                            <button onclick="downloadAllCollectedVideos()" class="btn btn-outline-light btn-sm">
+                                <i class="bi bi-download"></i> 下载全部
+                            </button>
+                            <button onclick="goBackToHome()" class="btn btn-outline-light btn-sm">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="section-panel-body">
+                        <div id="collectedVideosList" class="row"></div>
                     </div>
                 </div>
             </div>
