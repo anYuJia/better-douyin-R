@@ -910,7 +910,6 @@ impl Downloader {
             let total_discovered = total_discovered.clone();
             let batch_id = batch_task_id.clone();
             let estimated = estimated_total;
-            let batch_started_at = batch_started_at;
 
             tokio::spawn(async move {
                 // 并发控制
@@ -1518,7 +1517,6 @@ impl Downloader {
             let completed = completed_count.clone();
             let failed = failed_count.clone();
             let aweme_id = video.aweme_id.clone();
-            let batch_started_at = batch_started_at;
 
             // 收集媒体URL
             let media_urls = self.collect_download_media_items(&video);
