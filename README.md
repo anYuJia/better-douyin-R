@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src-tauri/icons/icon.png" width="128" height="128" alt="Douyin Downloader Logo">
+<img src="frontend/public/animated_icon.svg" width="128" height="128" alt="Douyin Downloader Logo">
 
 # Douyin Downloader
 
@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=flat-square)](https://github.com/anYuJia/douyin-downloader-rust/releases/latest)
 
-基于 Rust + Tauri 2.0 的跨平台桌面版抖音下载工具，支持用户检索、批量下载、推荐视频浏览、点赞列表获取、多媒体作品下载与实时下载进度。
+基于 Rust + Tauri 2.0 的跨平台桌面版抖音下载工具，支持用户检索、链接解析、推荐视频浏览、收藏/点赞列表、分质量下载、多媒体作品下载与本地文件管理。
 
 <p>
   <a href="https://github.com/anYuJia/douyin-downloader-rust/releases/latest"><strong>下载最新版</strong></a>
@@ -39,7 +39,7 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 
 - **更轻量**：原生桌面应用，无需 Python 运行时
 - **更易分发**：支持 Windows / macOS / Linux 安装包与便携包
-- **更集中**：搜索、推荐、点赞、批量下载、历史管理集中在一个界面
+- **更集中**：搜索、解析、推荐、收藏、点赞、批量下载和本地管理集中在一个界面
 - **更清晰**：登录态、下载任务、文件位置和错误状态都有可见反馈
 
 ---
@@ -48,15 +48,17 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 
 | 能力 | 说明 |
 |:---|:---|
-| 用户检索 | 支持昵称、抖音号、分享链接搜索用户 |
-| 批量下载 | 支持下载用户作品、点赞作品、作者列表作品 |
-| 推荐视频 | 支持推荐 feed 浏览与沉浸式播放器预览 |
-| 点赞列表 | 支持获取并浏览自己的点赞视频与点赞作者 |
+| 用户检索 | 搜索用户独立成页，支持历史记录、分页、补全、清除记录与用户主页跳转 |
+| 链接解析 | 解析入口独立成页，支持历史补全、键盘选择、单条作品详情与下载 |
+| 批量下载 | 支持下载用户作品、收藏作品、点赞作品、作者列表作品 |
+| 推荐视频 | 支持推荐 feed 浏览、去重加载与沉浸式播放器预览 |
+| 收藏/点赞 | 支持浏览收藏视频、自己的点赞视频与点赞作者 |
 | 多媒体作品 | 支持视频、图集、Live Photo、混合媒体 |
-| 下载质量 | 支持最高质量、兼容优先、最小体积等策略 |
+| 下载质量 | 支持最高质量、兼容优先、最小体积等策略，并在单条与批量任务中生效 |
 | 实时进度 | 下载任务状态、当前进度、日志实时更新 |
 | 浏览器登录 | 内置登录窗口，用于获取可用 Cookie |
-| 本地管理 | 支持下载历史、文件搜索、批量打开和定位 |
+| 本地管理 | 支持文件模式/作品模式、全量搜索、播放器打开、定位文件夹和删除本地文件 |
+| 播放器 | 支持点击作者进入主页、滚轮切换上下视频和作品内媒体切换 |
 | 自动更新 | 基于 GitHub Release updater metadata 检查新版本 |
 
 ---
@@ -65,7 +67,7 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 
 ### 首页
 
-搜索用户、粘贴链接、进入推荐视频和我的下载入口。
+进入搜索用户、解析链接、推荐视频、收藏视频和本地下载管理入口。
 
 <p align="center">
   <a href="docs/home.png">
@@ -75,7 +77,7 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 
 ### 用户详情
 
-查看用户资料、作品列表，并执行批量下载或单个作品下载。
+查看用户资料、作品列表，并执行批量下载或单个作品下载。搜索用户页和用户主页已经拆分，从搜索、播放器作者名或其他入口进入时都会打开统一的用户主页。
 
 <p align="center">
   <a href="docs/user_detail.png">
@@ -85,7 +87,7 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 
 ### 播放器
 
-推荐视频和作品详情使用沉浸式预览，弱网场景会显示更明确的加载、重试和错误提示。
+推荐视频、作品详情和本地下载内容使用沉浸式预览。播放器支持滚轮切换上下视频、点击作者进入主页，弱网场景会显示更明确的加载、重试和错误提示。
 
 <p align="center">
   <a href="docs/playvideo.png">
@@ -116,9 +118,9 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 ### 首次使用
 
 1. 打开应用后，先在设置中完成 Cookie / 登录配置
-2. 使用搜索、推荐视频、点赞列表或粘贴链接解析内容
-3. 选择单个作品下载，或进入用户/点赞列表执行批量下载
-4. 在底部下载面板查看实时进度，在“我的下载”中管理本地文件
+2. 使用搜索用户、解析链接、推荐视频、收藏视频或点赞列表获取内容
+3. 选择单个作品下载，或进入用户/收藏/点赞列表执行批量下载
+4. 在底部下载面板查看实时进度，在“我的下载”中以文件模式或作品模式管理本地文件
 
 > **macOS 用户**
 >
@@ -135,7 +137,7 @@ Douyin Downloader 是 [DY_video_downloader](https://github.com/anYuJia/DY_video_
 - Cookie 仅用于本地请求抖音相关接口，不会上传到本项目的服务器
 - 下载历史、应用配置和缓存数据保存在本机应用数据目录
 - 下载文件默认保存在设置中配置的下载目录
-- 推荐视频、点赞列表和部分批量下载能力依赖有效登录态
+- 推荐视频、收藏视频、点赞列表和部分批量下载能力依赖有效登录态
 - 如果接口突然失效，优先检查 Cookie 是否过期、账号是否需要重新验证、网络是否可访问相关域名
 
 ---
@@ -205,7 +207,7 @@ npm run build
 
 ### 为什么有些功能需要登录？
 
-推荐视频、点赞列表、部分批量下载能力依赖有效 Cookie / 登录态。未登录时，接口可能拒绝访问或返回不完整数据。
+推荐视频、收藏视频、点赞列表、部分批量下载能力依赖有效 Cookie / 登录态。未登录时，接口可能拒绝访问或返回不完整数据。
 
 ### 可以只下载单个视频吗？
 
@@ -213,7 +215,7 @@ npm run build
 
 ### 下载文件保存到哪里？
 
-下载目录可以在设置中修改。历史记录和“我的下载”页面也支持直接打开文件或定位到文件夹。
+下载目录可以在设置中修改。历史记录和“我的下载”页面支持文件模式/作品模式、全量搜索、直接播放、定位文件夹和删除本地文件。
 
 ### 推荐视频接口为什么有时不稳定？
 
