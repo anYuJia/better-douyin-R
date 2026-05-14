@@ -4,8 +4,8 @@
   "description": "enables the default permissions",
   "remote": {
     "urls": [
-      "http://127.0.0.1:*",
-      "http://localhost:*"
+      "http://127.0.0.1:1420",
+      "http://localhost:1420"
     ]
   },
   "windows": [
@@ -14,7 +14,6 @@
   "permissions": [
     "core:default",
     "core:event:default",
-    "core:event:allow-listen",
-    "core:event:allow-emit"
+    "core:event:allow-listen"
   ]
 }

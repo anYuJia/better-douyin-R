@@ -10,7 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "Douyin Downloader",
@@ -25,11 +25,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
-      "dangerousDisableAssetCspModification": [
-        "script-src"
-      ]
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https: data: blob: http://127.0.0.1:39143; media-src 'self' asset: https: data: blob: http://127.0.0.1:39143; font-src 'self' data:; connect-src 'self' https: wss: ws: ipc: http://127.0.0.1:39143;"
     }
   },
   "bundle": {
@@ -53,9 +50,6 @@
     }
   },
   "plugins": {
-    "shell": {
-      "open": true
-    },
     "updater": {
       "endpoints": [
         "https://github.com/anYuJia/douyin-downloader-rust/releases/latest/download/latest.json"

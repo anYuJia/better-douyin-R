@@ -8,14 +8,17 @@ use anyhow::{anyhow, Result};
 use chrono::Local;
 use futures::StreamExt;
 use reqwest::header::{
-    HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, COOKIE, RANGE, REFERER, USER_AGENT,
+    HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE, COOKIE, RANGE, REFERER,
+    USER_AGENT,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
+use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DownloadQuality {
@@ -90,22 +93,27 @@ pub struct Downloader {
     history: Arc<Mutex<HistoryManager>>,
 }
 
+fn build_download_client(config: &AppConfig) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .danger_accept_invalid_certs(false);
+
+    if let Some(proxy) = &config.proxy {
+        let proxy = proxy.trim();
+        if !proxy.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy)?);
+        }
+    }
+
+    Ok(builder.build()?)
+}
+
 impl Downloader {
     pub fn new(
         config: AppConfig,
         progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
     ) -> Result<Self> {
-        let mut builder = reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
-            .danger_accept_invalid_certs(false);
-
-        if let Some(proxy) = &config.proxy {
-            if !proxy.is_empty() {
-                builder = builder.proxy(reqwest::Proxy::all(proxy)?);
-            }
-        }
-
-        let client = builder.build()?;
+        let client = build_download_client(&config)?;
 
         Ok(Self {
             client,
@@ -118,8 +126,12 @@ impl Downloader {
         })
     }
 
-    pub fn update_config(&mut self, config: AppConfig) {
+    pub fn update_config(&mut self, config: AppConfig) -> Result<()> {
+        if self.config.proxy != config.proxy {
+            self.client = build_download_client(&config)?;
+        }
         self.config = config;
+        Ok(())
     }
 
     /// 检查是否已下载（用于去重）
@@ -470,14 +482,19 @@ impl Downloader {
             }
 
             let response_size = response.content_length().unwrap_or(0);
-            let file_path = unique_output_path(
+            let content_type = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok());
+            let extension = media_extension(media.r#type.as_str(), &media.url, content_type);
+            let (file_path, mut file) = create_unique_output_file(
                 &save_dir,
                 &task.filename,
                 index,
                 task.media_urls.len(),
-                media.r#type.as_str(),
-            );
-            let mut file = tokio::fs::File::create(&file_path).await?;
+                &extension,
+            )
+            .await?;
             let mut file_downloaded_size = 0u64;
             let mut stream = response.bytes_stream();
             let file_started_at = Instant::now();
@@ -1235,19 +1252,14 @@ impl Downloader {
             }
 
             let content_length = response.content_length().unwrap_or(0);
-            let ext = if media.r#type == "image" {
-                "jpg"
-            } else {
-                "mp4"
-            };
-            let file_name = if total_files == 1 {
-                format!("{}.{}", filename, ext)
-            } else {
-                format!("{}_{:02}.{}", filename, index + 1, ext)
-            };
-            let file_path = author_dir.join(&file_name);
-
-            let mut file = tokio::fs::File::create(&file_path).await?;
+            let content_type = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok());
+            let extension = media_extension(media.r#type.as_str(), &media.url, content_type);
+            let (file_path, mut file) =
+                create_unique_output_file(&author_dir, &filename, index, total_files, &extension)
+                    .await?;
             let mut stream = response.bytes_stream();
             let mut file_size = 0u64;
             let mut last_emit = Instant::now();
@@ -1808,14 +1820,19 @@ impl Downloader {
             }
 
             let response_size = response.content_length().unwrap_or(0);
-            let file_path = unique_output_path(
+            let content_type = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok());
+            let extension = media_extension(media.r#type.as_str(), &media.url, content_type);
+            let (file_path, mut file) = create_unique_output_file(
                 &save_dir,
                 &task.filename,
                 index,
                 task.media_urls.len(),
-                media.r#type.as_str(),
-            );
-            let mut file = tokio::fs::File::create(&file_path).await?;
+                &extension,
+            )
+            .await?;
             let mut file_downloaded_size = 0u64;
             let mut stream = response.bytes_stream();
             let mut last_emit = Instant::now();
@@ -1953,7 +1970,7 @@ async fn load_downloaded_set(dir: &Path) -> HashSet<String> {
         return HashSet::new();
     }
     match tokio::fs::read_to_string(&record_path).await {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Ok(content) => parse_downloaded_set(&content),
         Err(_) => HashSet::new(),
     }
 }
@@ -1961,12 +1978,52 @@ async fn load_downloaded_set(dir: &Path) -> HashSet<String> {
 /// 将 aweme_id 写入作者目录的隐藏文件 `.downloaded`
 async fn record_downloaded(dir: &Path, aweme_id: &str) -> Result<()> {
     let record_path = dir.join(".downloaded");
+    tokio::fs::create_dir_all(dir).await?;
+
+    let aweme_id = aweme_id.trim();
+    if aweme_id.is_empty() {
+        return Ok(());
+    }
+
     let mut set = load_downloaded_set(dir).await;
     if set.insert(aweme_id.to_string()) {
-        let json = serde_json::to_string(&set)?;
-        tokio::fs::write(&record_path, json).await?;
+        let needs_leading_newline = tokio::fs::metadata(&record_path)
+            .await
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false);
+        let line = if needs_leading_newline {
+            format!("\n{}", aweme_id)
+        } else {
+            aweme_id.to_string()
+        };
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&record_path)
+            .await?;
+        file.write_all(line.as_bytes()).await?;
     }
     Ok(())
+}
+
+fn parse_downloaded_set(content: &str) -> HashSet<String> {
+    if let Ok(set) = serde_json::from_str::<HashSet<String>>(content) {
+        return set;
+    }
+
+    let mut set = HashSet::new();
+    for line in content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if let Ok(line_set) = serde_json::from_str::<HashSet<String>>(line) {
+            set.extend(line_set);
+        } else {
+            set.insert(line.to_string());
+        }
+    }
+    set
 }
 
 fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate> {
@@ -2109,11 +2166,78 @@ fn media_type_display(media_type: &str) -> &'static str {
     }
 }
 
-fn media_extension(media_type: &str) -> &'static str {
+fn media_extension(media_type: &str, url: &str, content_type: Option<&str>) -> String {
+    let normalized_content_type = content_type
+        .unwrap_or_default()
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    let from_content_type = match normalized_content_type.as_str() {
+        "image/jpeg" | "image/jpg" => Some("jpg"),
+        "image/png" => Some("png"),
+        "image/webp" => Some("webp"),
+        "image/gif" => Some("gif"),
+        "image/avif" => Some("avif"),
+        "image/heic" => Some("heic"),
+        "image/heif" => Some("heif"),
+        "video/mp4" => Some("mp4"),
+        "video/quicktime" => Some("mov"),
+        "video/webm" => Some("webm"),
+        "audio/mpeg" => Some("mp3"),
+        "audio/mp4" => Some("m4a"),
+        "audio/aac" => Some("aac"),
+        "audio/wav" => Some("wav"),
+        "audio/ogg" => Some("ogg"),
+        _ => None,
+    };
+    if let Some(extension) = from_content_type {
+        return extension.to_string();
+    }
+
+    if let Some(extension) = extension_from_url(url) {
+        return extension.to_string();
+    }
+
     match media_type {
-        "video" | "live_photo" => "mp4",
-        "audio" => "mp3",
-        _ => "jpg",
+        "video" | "live_photo" => "mp4".to_string(),
+        "audio" => "mp3".to_string(),
+        _ => "jpg".to_string(),
+    }
+}
+
+fn extension_from_url(url: &str) -> Option<&'static str> {
+    let path = Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.path_segments()?.next_back().map(str::to_string))
+        .or_else(|| {
+            url.split('?')
+                .next()
+                .and_then(|path| path.rsplit('/').next())
+                .map(str::to_string)
+        })?;
+    let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
+
+    match extension.as_str() {
+        "mp4" => Some("mp4"),
+        "mov" => Some("mov"),
+        "m4v" => Some("m4v"),
+        "webm" => Some("webm"),
+        "jpg" | "jpeg" => Some("jpg"),
+        "png" => Some("png"),
+        "webp" => Some("webp"),
+        "gif" => Some("gif"),
+        "avif" => Some("avif"),
+        "heic" => Some("heic"),
+        "heif" => Some("heif"),
+        "mp3" => Some("mp3"),
+        "m4a" => Some("m4a"),
+        "aac" => Some("aac"),
+        "wav" => Some("wav"),
+        "ogg" => Some("ogg"),
+        _ => None,
     }
 }
 
@@ -2122,14 +2246,14 @@ fn unique_output_path(
     base_name: &str,
     index: usize,
     total: usize,
-    media_type: &str,
+    extension: &str,
 ) -> PathBuf {
     let stem = if total <= 1 {
         sanitize_filename(base_name)
     } else {
         sanitize_filename(&format!("{}_{:02}", base_name, index + 1))
     };
-    let extension = media_extension(media_type);
+    let extension = sanitize_extension(extension);
     let mut path = save_dir.join(format!("{}.{}", stem, extension));
 
     if path.exists() {
@@ -2138,6 +2262,56 @@ fn unique_output_path(
     }
 
     path
+}
+
+async fn create_unique_output_file(
+    save_dir: &Path,
+    base_name: &str,
+    index: usize,
+    total: usize,
+    extension: &str,
+) -> Result<(PathBuf, File)> {
+    let extension = sanitize_extension(extension);
+    for attempt in 0..1000 {
+        let candidate = if attempt == 0 {
+            unique_output_path(save_dir, base_name, index, total, &extension)
+        } else {
+            let stem = if total <= 1 {
+                sanitize_filename(base_name)
+            } else {
+                sanitize_filename(&format!("{}_{:02}", base_name, index + 1))
+            };
+            save_dir.join(format!("{}_{}.{}", stem, attempt + 1, extension))
+        };
+
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+            .await
+        {
+            Ok(file) => return Ok((candidate, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    Err(anyhow!("Unable to reserve unique output file name"))
+}
+
+fn sanitize_extension(extension: &str) -> String {
+    let extension = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    if extension.chars().all(|ch| ch.is_ascii_alphanumeric())
+        && !extension.is_empty()
+        && extension.len() <= 8
+    {
+        extension
+    } else {
+        "bin".to_string()
+    }
 }
 
 /// 清理文件名
@@ -2289,7 +2463,7 @@ mod tests {
         );
 
         config.download_quality = "smallest".to_string();
-        downloader.update_config(config);
+        downloader.update_config(config).expect("update config");
 
         assert_eq!(
             downloader
@@ -2297,6 +2471,55 @@ mod tests {
                 .first()
                 .map(|item| item.url.as_str()),
             Some("lowbr")
+        );
+    }
+
+    #[test]
+    fn downloaded_set_parser_accepts_json_and_append_lines() {
+        let parsed = parse_downloaded_set("[\"1001\",\"1002\"]\n1003\n1004");
+
+        assert!(parsed.contains("1001"));
+        assert!(parsed.contains("1002"));
+        assert!(parsed.contains("1003"));
+        assert!(parsed.contains("1004"));
+    }
+
+    #[tokio::test]
+    async fn unique_output_file_does_not_overwrite_existing_file() {
+        let dir =
+            std::env::temp_dir().join(format!("douyin-downloader-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("create test dir");
+        let existing = dir.join("clip.mp4");
+        std::fs::write(&existing, b"existing").expect("write existing file");
+
+        let (created_path, created_file) = create_unique_output_file(&dir, "clip", 0, 1, "mp4")
+            .await
+            .expect("create unique file");
+        drop(created_file);
+
+        assert_ne!(created_path, existing);
+        assert!(created_path.exists());
+        assert_eq!(
+            std::fs::read(&existing).expect("read existing"),
+            b"existing"
+        );
+
+        std::fs::remove_dir_all(&dir).expect("cleanup test dir");
+    }
+
+    #[test]
+    fn media_extension_prefers_content_type_then_url_then_media_type() {
+        assert_eq!(
+            media_extension("image", "https://example.test/file", Some("image/webp")),
+            "webp"
+        );
+        assert_eq!(
+            media_extension("image", "https://example.test/file.png?x=1", None),
+            "png"
+        );
+        assert_eq!(
+            media_extension("live_photo", "https://example.test/play", None),
+            "mp4"
         );
     }
 }

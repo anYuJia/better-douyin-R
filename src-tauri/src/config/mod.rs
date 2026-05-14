@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 应用配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,8 +105,9 @@ impl AppConfig {
             fs::create_dir_all(parent)?;
         }
 
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(&config_path, content)?;
+        let mut content = serde_json::to_string_pretty(self)?;
+        content.push('\n');
+        write_file_atomically(&config_path, content.as_bytes())?;
 
         Ok(())
     }
@@ -158,6 +159,16 @@ impl AppConfig {
             .join("douyin-downloader")
             .join("config.json")
     }
+}
+
+fn write_file_atomically(path: &Path, content: &[u8]) -> anyhow::Result<()> {
+    let temp_path = path.with_extension("tmp");
+    fs::write(&temp_path, content)?;
+    if let Err(error) = fs::rename(&temp_path, path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 /// 抖音通用请求参数

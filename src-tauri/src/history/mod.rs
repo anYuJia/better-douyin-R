@@ -5,7 +5,7 @@ use anyhow::Result;
 use serde_json;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const MAX_HISTORY_ITEMS: usize = 1000;
 
@@ -54,8 +54,9 @@ impl HistoryManager {
             fs::create_dir_all(parent)?;
         }
 
-        let json = serde_json::to_string_pretty(&self.history)?;
-        fs::write(&self.file_path, json)?;
+        let mut json = serde_json::to_string_pretty(&self.history)?;
+        json.push('\n');
+        write_file_atomically(&self.file_path, json.as_bytes())?;
 
         Ok(())
     }
@@ -122,6 +123,16 @@ impl HistoryManager {
     }
 }
 
+fn write_file_atomically(path: &Path, content: &[u8]) -> Result<()> {
+    let temp_path = path.with_extension("tmp");
+    fs::write(&temp_path, content)?;
+    if let Err(error) = fs::rename(&temp_path, path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error.into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,11 +152,19 @@ mod tests {
         }
     }
 
+    fn test_history_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "douyin-downloader-{}-{}.json",
+            name,
+            uuid::Uuid::new_v4()
+        ))
+    }
+
     #[test]
     fn adds_and_checks_downloaded_status() {
         let mut mgr = HistoryManager {
             history: vec![],
-            file_path: PathBuf::from("/tmp/test_history.json"),
+            file_path: test_history_path("adds"),
             id_index: HashSet::new(),
         };
 
@@ -164,7 +183,7 @@ mod tests {
     fn deletes_record_and_updates_index() {
         let mut mgr = HistoryManager {
             history: vec![],
-            file_path: PathBuf::from("/tmp/test_history.json"),
+            file_path: test_history_path("deletes"),
             id_index: HashSet::new(),
         };
 
@@ -181,7 +200,7 @@ mod tests {
     fn truncates_history_and_rebuilds_index() {
         let mut mgr = HistoryManager {
             history: vec![],
-            file_path: PathBuf::from("/tmp/test_history.json"),
+            file_path: test_history_path("truncates"),
             id_index: HashSet::new(),
         };
 

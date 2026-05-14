@@ -273,7 +273,12 @@ async fn save_config(
             }
 
             if let Some(downloader) = state.downloader.lock().await.as_mut() {
-                downloader.update_config(next_config);
+                if let Err(error) = downloader.update_config(next_config) {
+                    log::warn!(
+                        "Failed to update downloader config after config save: {}",
+                        error
+                    );
+                }
             }
 
             Ok(serde_json::json!({ "success": true, "message": "配置保存成功" }))
@@ -592,7 +597,12 @@ async fn cookie_browser_login(
                             *client_state.lock().await = Some(client);
                         }
                         if let Some(downloader) = downloader_state.lock().await.as_mut() {
-                            downloader.update_config(next_config);
+                            if let Err(error) = downloader.update_config(next_config) {
+                                log::warn!(
+                                    "Failed to update downloader config after cookie login: {}",
+                                    error
+                                );
+                            }
                         }
 
                         let _ = window.close();
@@ -2724,9 +2734,7 @@ async fn download_update(app_handle: tauri::AppHandle) -> Result<serde_json::Val
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let log_level = if cfg!(debug_assertions) {

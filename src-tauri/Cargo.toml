@@ -2,9 +2,9 @@
 name = "douyin-downloader"
 version = "0.0.18"
 description = "抖音视频下载器"
-authors = ["you"]
-license = ""
-repository = ""
+authors = ["anYuJia"]
+license = "MIT"
+repository = "https://github.com/anYuJia/douyin-downloader-rust"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -21,9 +21,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
-tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-updater = "2"
 
 # HTTP 客户端
@@ -47,7 +45,7 @@ anyhow = "1"
 thiserror = "1"
 
 # 路径处理
-dirs = "5"
+dirs = "6"
 
 # 解析 HTML
 scraper = "0.19"

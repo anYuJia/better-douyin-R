@@ -260,15 +260,12 @@ impl DouyinClient {
         let params_str: String = all_params
             .iter()
             .map(|(k, v)| {
-                format!(
-                    "{}={}",
-                    k,
-                    if k.len() > 20 {
-                        &v[..20.min(v.len())]
-                    } else {
-                        v
-                    }
-                )
+                let preview = if v.chars().count() > 20 {
+                    format!("{}...", v.chars().take(20).collect::<String>())
+                } else {
+                    v.clone()
+                };
+                format!("{}={}", k, preview)
             })
             .collect::<Vec<_>>()
             .join(", ");
