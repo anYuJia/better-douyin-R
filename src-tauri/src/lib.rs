@@ -331,7 +331,7 @@ async fn open_verify_browser(
             if (!rawCookie) return;
             try {{
                 if (window.sessionStorage) {{
-                    sessionStorage.removeItem('__dy_verify_cookie_applied');
+                    if (sessionStorage.getItem('__dy_verify_cookie_applied') === '1') return;
                 }}
             }} catch (error) {{}}
             rawCookie.split(';').map(item => item.trim()).filter(Boolean).forEach(item => {{
@@ -341,7 +341,7 @@ async fn open_verify_browser(
             }});
             try {{
                 if (window.sessionStorage) {{
-                    sessionStorage.setItem('__dy_verify_cookie_applied', String(Date.now()));
+                    sessionStorage.setItem('__dy_verify_cookie_applied', '1');
                     setTimeout(() => window.location.reload(), 120);
                 }}
             }} catch (error) {{}}

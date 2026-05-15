@@ -20,6 +20,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 use url::Url;
 
+const MAX_FILENAME_CHARS: usize = 180;
+const MAX_FILENAME_BYTES: usize = 230;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DownloadQuality {
     Auto,
@@ -2449,7 +2452,13 @@ fn sanitize_filename(name: &str) -> String {
     for c in invalid_chars {
         result = result.replace(c, "_");
     }
-    truncate_filename_text(&result, "未命名作品", 120, 200, "")
+    truncate_filename_text(
+        &result,
+        "未命名作品",
+        MAX_FILENAME_CHARS,
+        MAX_FILENAME_BYTES,
+        "",
+    )
 }
 
 fn truncate_chars(value: &str, max_chars: usize) -> String {
@@ -2500,7 +2509,13 @@ fn generate_filename_with_config(
         sanitized
     };
 
-    truncate_filename_text(&candidate, &default, 120, 180, &protected_suffix)
+    truncate_filename_text(
+        &candidate,
+        &default,
+        MAX_FILENAME_CHARS,
+        MAX_FILENAME_BYTES,
+        &protected_suffix,
+    )
 }
 
 fn build_output_dir(
@@ -2705,7 +2720,27 @@ mod tests {
         );
 
         assert!(filename.ends_with(aweme_id));
-        assert!(filename.as_bytes().len() <= 180);
+        assert!(filename.as_bytes().len() <= MAX_FILENAME_BYTES);
+    }
+
+    #[test]
+    fn long_filename_template_keeps_more_safe_title_text() {
+        let config = AppConfig {
+            filename_template: "{title}_{aweme_id}".to_string(),
+            ..Default::default()
+        };
+        let aweme_id = "7380011223344556677";
+        let filename = generate_filename_with_config(
+            &config,
+            &"abcdefghijklmnopqrstuvwxyz".repeat(8),
+            aweme_id,
+            "作者",
+            "video",
+        );
+
+        assert!(filename.starts_with(&"abcdefghijklmnopqrstuvwxyz".repeat(6)));
+        assert!(filename.ends_with(aweme_id));
+        assert!(filename.as_bytes().len() <= MAX_FILENAME_BYTES);
     }
 
     #[test]
