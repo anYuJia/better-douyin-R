@@ -2099,7 +2099,7 @@ fn render_template(
 
         let mut token = String::new();
         let mut closed = false;
-        while let Some(next) = chars.next() {
+        for next in chars.by_ref() {
             if next == '}' {
                 closed = true;
                 break;
@@ -2136,15 +2136,13 @@ fn truncate_filename_text(
             .chars()
             .take(max_chars.saturating_sub(protected_suffix.chars().count()))
             .collect();
-        while !prefix.is_empty()
-            && format!("{}{}", prefix, protected_suffix).as_bytes().len() > max_bytes
-        {
+        while !prefix.is_empty() && format!("{}{}", prefix, protected_suffix).len() > max_bytes {
             prefix.pop();
         }
         text = format!("{}{}", prefix, protected_suffix);
     } else {
         text = text.chars().take(max_chars).collect();
-        while !text.is_empty() && text.as_bytes().len() > max_bytes {
+        while !text.is_empty() && text.len() > max_bytes {
             text.pop();
         }
     }
@@ -2720,7 +2718,7 @@ mod tests {
         );
 
         assert!(filename.ends_with(aweme_id));
-        assert!(filename.as_bytes().len() <= MAX_FILENAME_BYTES);
+        assert!(filename.len() <= MAX_FILENAME_BYTES);
     }
 
     #[test]
@@ -2740,7 +2738,7 @@ mod tests {
 
         assert!(filename.starts_with(&"abcdefghijklmnopqrstuvwxyz".repeat(6)));
         assert!(filename.ends_with(aweme_id));
-        assert!(filename.as_bytes().len() <= MAX_FILENAME_BYTES);
+        assert!(filename.len() <= MAX_FILENAME_BYTES);
     }
 
     #[test]
