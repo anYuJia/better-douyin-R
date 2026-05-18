@@ -213,6 +213,7 @@ pub fn python_video_detail_value(video: &VideoInfo) -> serde_json::Value {
             "comment_count": video.statistics.comment_count,
             "share_count": video.statistics.share_count,
             "play_count": video.statistics.play_count,
+            "collect_count": video.statistics.collect_count,
         },
         "media_type": media_type,
         "media_urls": media_urls.clone(),
@@ -268,6 +269,7 @@ pub fn python_recommended_video(video: &VideoInfo) -> serde_json::Value {
             "comment_count": video.statistics.comment_count,
             "share_count": video.statistics.share_count,
             "play_count": video.statistics.play_count,
+            "collect_count": video.statistics.collect_count,
         },
         "video": {
             "cover": video.video.cover,
