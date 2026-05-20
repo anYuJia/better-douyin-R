@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "douyin-downloader"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "axum",

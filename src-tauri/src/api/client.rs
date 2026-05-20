@@ -303,13 +303,25 @@ impl DouyinClient {
             return Err(anyhow!("HTTP error: {}", response.status()));
         }
 
-        let json = response.json::<T>().await.map_err(|e| {
+        let body = response.text().await.map_err(|e| {
             log::error!(
                 "API response decode failed: method={} url={} elapsed_ms={} error={}",
                 method,
                 url,
                 started_at.elapsed().as_millis(),
                 e
+            );
+            e
+        })?;
+        let json = Self::parse_json_response::<T>(&body).map_err(|e| {
+            let snippet: String = body.chars().take(120).collect();
+            log::error!(
+                "API response decode failed: method={} url={} elapsed_ms={} error={} body_prefix={}",
+                method,
+                url,
+                started_at.elapsed().as_millis(),
+                e,
+                snippet
             );
             e
         })?;
@@ -320,6 +332,19 @@ impl DouyinClient {
             started_at.elapsed().as_millis()
         );
         Ok(json)
+    }
+
+    fn parse_json_response<T: DeserializeOwned>(body: &str) -> serde_json::Result<T> {
+        let trimmed = body.trim_start();
+        let json_start = trimmed
+            .find('{')
+            .into_iter()
+            .chain(trimmed.find('['))
+            .min()
+            .unwrap_or(0);
+        let candidate = &trimmed[json_start..];
+        let mut deserializer = serde_json::Deserializer::from_str(candidate);
+        serde::Deserialize::deserialize(&mut deserializer)
     }
 
     /// 通用请求方法
@@ -1284,17 +1309,49 @@ impl DouyinClient {
         None
     }
 
-    fn json_count_value(value: &serde_json::Value, keys: &[&str]) -> i64 {
+    fn json_count_value(value: &serde_json::Value, keys: &[&str]) -> Option<i64> {
         for key in keys {
             let item = &value[*key];
+            if item.is_null() {
+                continue;
+            }
             if let Some(number) = item.as_i64() {
-                return number;
+                return Some(number.max(0));
+            }
+            if let Some(number) = item.as_f64() {
+                return Some(number.round().max(0.0) as i64);
             }
             if let Some(text) = item.as_str() {
-                let normalized = text.trim().replace(',', "");
-                if let Ok(number) = normalized.parse::<i64>() {
-                    return number;
+                let mut normalized = text.trim().replace(',', "");
+                if normalized.is_empty() {
+                    continue;
                 }
+                let mut multiplier = 1_i64;
+                if let Some(last) = normalized.chars().last() {
+                    match last {
+                        'w' | 'W' | '万' => {
+                            multiplier = 10_000;
+                            normalized.pop();
+                        }
+                        'k' | 'K' | '千' => {
+                            multiplier = 1_000;
+                            normalized.pop();
+                        }
+                        _ => {}
+                    }
+                }
+                if let Ok(number) = normalized.parse::<f64>() {
+                    return Some((number * multiplier as f64).round().max(0.0) as i64);
+                }
+            }
+        }
+        None
+    }
+
+    fn json_count_from_sources(sources: &[&serde_json::Value], keys: &[&str]) -> i64 {
+        for source in sources {
+            if let Some(value) = Self::json_count_value(source, keys) {
+                return value;
             }
         }
         0
@@ -1401,45 +1458,110 @@ impl DouyinClient {
             return Err(anyhow!("API error: {}", status_msg));
         }
 
-        let users: Vec<UserInfo> = response["user_list"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| {
-                        let user = if item["user_info"].is_object() {
-                            &item["user_info"]
-                        } else {
-                            item
-                        };
-                        Some(UserInfo {
-                            uid: user["uid"].as_str()?.to_string(),
-                            nickname: user["nickname"].as_str()?.to_string(),
-                            avatar_thumb: self.get_first_url(&user["avatar_thumb"]["url_list"]),
-                            avatar_medium: self.get_first_url(&user["avatar_medium"]["url_list"]),
-                            avatar_larger: self.get_first_url(&user["avatar_larger"]["url_list"]),
-                            signature: user["signature"].as_str().unwrap_or_default().to_string(),
-                            follower_count: user["follower_count"].as_i64().unwrap_or(0),
-                            following_count: user["following_count"].as_i64().unwrap_or(0),
-                            total_favorited: user["total_favorited"].as_i64().unwrap_or(0),
-                            aweme_count: Self::json_count_value(
-                                user,
-                                &[
-                                    "aweme_count",
-                                    "aweme_count_str",
-                                    "aweme_count_text",
-                                    "work_count",
-                                ],
-                            ),
-                            favoriting_count: user["favoriting_count"].as_i64().unwrap_or(0),
-                            is_follow: user["is_follow"].as_bool().unwrap_or(false),
-                            sec_uid: user["sec_uid"].as_str().unwrap_or_default().to_string(),
-                            unique_id: user["unique_id"].as_str().unwrap_or_default().to_string(),
-                            verify_status: user["verify_status"].as_i64().unwrap_or(0) as i32,
-                        })
-                    })
-                    .collect()
+        let mut user_items: Vec<&serde_json::Value> = Vec::new();
+        if let Some(items) = response["user_list"].as_array() {
+            user_items.extend(items);
+        }
+        if let Some(groups) = response["data"].as_array() {
+            for group in groups {
+                if let Some(items) = group["user_list"].as_array() {
+                    user_items.extend(items);
+                }
+            }
+        }
+
+        let users: Vec<UserInfo> = user_items
+            .into_iter()
+            .filter_map(|item| {
+                let user = if item["user_info"].is_object() {
+                    &item["user_info"]
+                } else {
+                    item
+                };
+                let stats = &user["stats"];
+                let card_info = &user["card_info"];
+                let extra = &user["extra"];
+                let item_stats = &item["stats"];
+                let item_card_info = &item["card_info"];
+                let count_sources = [
+                    user,
+                    stats,
+                    card_info,
+                    extra,
+                    item,
+                    item_stats,
+                    item_card_info,
+                ];
+                Some(UserInfo {
+                    uid: user["uid"].as_str()?.to_string(),
+                    nickname: user["nickname"].as_str()?.to_string(),
+                    avatar_thumb: self.get_first_url(&user["avatar_thumb"]["url_list"]),
+                    avatar_medium: self.get_first_url(&user["avatar_medium"]["url_list"]),
+                    avatar_larger: self.get_first_url(&user["avatar_larger"]["url_list"]),
+                    signature: user["signature"].as_str().unwrap_or_default().to_string(),
+                    follower_count: Self::json_count_from_sources(
+                        &count_sources,
+                        &[
+                            "follower_count",
+                            "follower_count_str",
+                            "follower_count_text",
+                            "fans_count",
+                            "fans_count_str",
+                            "fans_count_text",
+                        ],
+                    ),
+                    following_count: Self::json_count_from_sources(
+                        &count_sources,
+                        &[
+                            "following_count",
+                            "following_count_str",
+                            "following_count_text",
+                            "follow_count",
+                            "follow_count_str",
+                            "follow_count_text",
+                        ],
+                    ),
+                    total_favorited: Self::json_count_from_sources(
+                        &count_sources,
+                        &[
+                            "total_favorited",
+                            "total_favorited_str",
+                            "total_favorited_text",
+                            "favorited_count",
+                            "favorited_count_str",
+                            "like_count",
+                            "like_count_str",
+                        ],
+                    ),
+                    aweme_count: Self::json_count_from_sources(
+                        &count_sources,
+                        &[
+                            "aweme_count",
+                            "aweme_count_str",
+                            "aweme_count_text",
+                            "work_count",
+                            "work_count_str",
+                            "works_count",
+                            "works_count_str",
+                            "video_count",
+                            "video_count_str",
+                        ],
+                    ),
+                    favoriting_count: Self::json_count_from_sources(
+                        &count_sources,
+                        &[
+                            "favoriting_count",
+                            "favoriting_count_str",
+                            "favoriting_count_text",
+                        ],
+                    ),
+                    is_follow: user["is_follow"].as_bool().unwrap_or(false),
+                    sec_uid: user["sec_uid"].as_str().unwrap_or_default().to_string(),
+                    unique_id: user["unique_id"].as_str().unwrap_or_default().to_string(),
+                    verify_status: user["verify_status"].as_i64().unwrap_or(0) as i32,
+                })
             })
-            .unwrap_or_default();
+            .collect();
 
         if users.is_empty() {
             return Ok(SearchUserResult::NotFound);
@@ -1481,6 +1603,10 @@ impl DouyinClient {
         }
 
         let user_data = &response["user"];
+        let stats = &user_data["stats"];
+        let card_info = &user_data["card_info"];
+        let extra = &user_data["extra"];
+        let count_sources = [user_data, stats, card_info, extra];
 
         let info = UserInfo {
             uid: user_data["uid"].as_str().unwrap_or_default().to_string(),
@@ -1495,11 +1621,62 @@ impl DouyinClient {
                 .as_str()
                 .unwrap_or_default()
                 .to_string(),
-            follower_count: user_data["follower_count"].as_i64().unwrap_or(0),
-            following_count: user_data["following_count"].as_i64().unwrap_or(0),
-            total_favorited: user_data["total_favorited"].as_i64().unwrap_or(0),
-            aweme_count: user_data["aweme_count"].as_i64().unwrap_or(0),
-            favoriting_count: user_data["favoriting_count"].as_i64().unwrap_or(0),
+            follower_count: Self::json_count_from_sources(
+                &count_sources,
+                &[
+                    "follower_count",
+                    "follower_count_str",
+                    "follower_count_text",
+                    "fans_count",
+                    "fans_count_str",
+                    "fans_count_text",
+                ],
+            ),
+            following_count: Self::json_count_from_sources(
+                &count_sources,
+                &[
+                    "following_count",
+                    "following_count_str",
+                    "following_count_text",
+                    "follow_count",
+                    "follow_count_str",
+                    "follow_count_text",
+                ],
+            ),
+            total_favorited: Self::json_count_from_sources(
+                &count_sources,
+                &[
+                    "total_favorited",
+                    "total_favorited_str",
+                    "total_favorited_text",
+                    "favorited_count",
+                    "favorited_count_str",
+                    "like_count",
+                    "like_count_str",
+                ],
+            ),
+            aweme_count: Self::json_count_from_sources(
+                &count_sources,
+                &[
+                    "aweme_count",
+                    "aweme_count_str",
+                    "aweme_count_text",
+                    "work_count",
+                    "work_count_str",
+                    "works_count",
+                    "works_count_str",
+                    "video_count",
+                    "video_count_str",
+                ],
+            ),
+            favoriting_count: Self::json_count_from_sources(
+                &count_sources,
+                &[
+                    "favoriting_count",
+                    "favoriting_count_str",
+                    "favoriting_count_text",
+                ],
+            ),
             is_follow: user_data["is_follow"].as_bool().unwrap_or(false),
             sec_uid: user_data["sec_uid"]
                 .as_str()

@@ -825,7 +825,7 @@ async fn get_user_detail(
     sec_uid: String,
     nickname: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let _ = nickname;
+    let fallback_nickname = nickname.unwrap_or_default();
     let sec_uid = sec_uid.trim().to_string();
     if sec_uid.is_empty() {
         return Ok(serde_json::json!({
@@ -858,9 +858,21 @@ async fn get_user_detail(
                 )
                 .await)
             } else {
+                log::warn!(
+                    "get_user_detail failed, returning fallback user: sec_uid={} error={}",
+                    sec_uid,
+                    message
+                );
+                let fallback_user = UserInfo {
+                    sec_uid: sec_uid.clone(),
+                    nickname: fallback_nickname,
+                    ..Default::default()
+                };
                 Ok(serde_json::json!({
-                    "success": false,
-                    "message": format!("获取用户详情失败: {}", e)
+                    "success": true,
+                    "detail_unavailable": true,
+                    "message": format!("用户详情暂不可用: {}", e),
+                    "user": python_user_value(&fallback_user)
                 }))
             }
         }
