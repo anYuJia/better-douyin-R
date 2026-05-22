@@ -74,10 +74,19 @@ const mediaMotionVariants: Variants = {
     scale: 0.992,
   }),
 };
+// 模块级别的会话唯一缓存击碎器：只在页面加载时生成一次，在整个会话中保持稳定，
+// 避免组件重新渲染时生成新 URL 导致视频元素被反复重置。
+const SESSION_CACHE_BUSTER = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
 function playerMediaProxyUrl(url: string | null | undefined, mediaType: "video" | "image" | "audio", retryKey = 0): string {
   const proxied = mediaProxyUrl(url, mediaType);
-  if (!proxied || retryKey <= 0) return proxied;
+  if (!proxied) return "";
+  if (mediaType === "video" || mediaType === "audio") {
+    const sep = proxied.includes("?") ? "&" : "?";
+    const buster = retryKey > 0 ? `${SESSION_CACHE_BUSTER}_r${retryKey}` : SESSION_CACHE_BUSTER;
+    return `${proxied}${sep}t=${buster}`;
+  }
+  if (retryKey <= 0) return proxied;
   return `${proxied}${proxied.includes("?") ? "&" : "?"}player_retry=${encodeURIComponent(String(retryKey))}`;
 }
 

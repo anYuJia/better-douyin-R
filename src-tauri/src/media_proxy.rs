@@ -422,6 +422,12 @@ async fn media_proxy(
     Query(query): Query<MediaProxyQuery>,
     request_headers: HeaderMap,
 ) -> Response<Body> {
+    log::info!(
+        "media_proxy request received: url={} media_type={:?} Range={:?}",
+        query.url,
+        query.media_type,
+        request_headers.get(header::RANGE)
+    );
     let requested_media_type = query
         .media_type
         .as_deref()
@@ -449,8 +455,7 @@ async fn media_proxy(
     }
 
     let config = state.config.lock().await.clone();
-    let should_seed_video_range = request_range.is_none()
-        && (requested_media_type == "video" || query.url.contains("/play/"));
+    let should_seed_video_range = false; // 禁用对标准 GET 请求强制注入 Range 的行为，遵循 RFC 7233 规范，返回标准的 200 OK。
     let upstream_range_value = if let Some(range) = &request_range {
         range.to_str().ok().map(|value| value.to_string())
     } else if should_seed_video_range {
@@ -623,24 +628,9 @@ async fn media_proxy(
         .unwrap_or_default()
         .to_string();
 
-    let is_media = requested_media_type == "audio"
-        || requested_media_type == "video"
-        || upstream_content_type.to_lowercase().contains("video");
-
+    // 始终透传 Content-Length 头部，避免对大于 2MB 的媒体文件强制分块传输（Chunked Transfer Encoding）而导致浏览器播放器无法拖动进度条寻址。
     if let Some(content_length) = upstream_response.headers().get("content-length") {
-        let content_length_str = content_length.to_str().unwrap_or_default();
-        if !content_length_str.is_empty() {
-            match content_length_str.parse::<u64>() {
-                Ok(length) => {
-                    if length < 2 * 1024 * 1024 || !is_media {
-                        response_headers.insert(header::CONTENT_LENGTH, content_length.clone());
-                    }
-                }
-                Err(_) => {
-                    response_headers.insert(header::CONTENT_LENGTH, content_length.clone());
-                }
-            }
-        }
+        response_headers.insert(header::CONTENT_LENGTH, content_length.clone());
     }
 
     if let Some(content_type) =
@@ -662,6 +652,14 @@ async fn media_proxy(
     response_headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=3600"),
+    );
+
+    log::info!(
+        "media_proxy response: status={} content_type={:?} content_length={:?} content_range={:?}",
+        status,
+        response_headers.get(header::CONTENT_TYPE),
+        response_headers.get(header::CONTENT_LENGTH),
+        response_headers.get(header::CONTENT_RANGE)
     );
 
     let stream = upstream_response

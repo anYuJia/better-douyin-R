@@ -520,15 +520,8 @@ impl DouyinClient {
         // 视频数据 - 参考 Python 版本从 bit_rate[0]["play_addr"] 获取视频 URL
         let video_data = &data["video"];
 
-        // 优先从 bit_rate[0]["play_addr"] 获取视频 URL（参考 Python 版本）
-        let play_addr = video_data["bit_rate"]
-            .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|br| br["play_addr"]["url_list"].as_array())
-            .and_then(|urls| urls.first())
-            .and_then(|u| u.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| self.get_first_url(&video_data["play_addr"]["url_list"]));
+        // 直接使用首选的动态重定向播放地址（支持 Cookie 验证与 Range 播放器寻址）
+        let play_addr = self.get_first_url(&video_data["play_addr"]["url_list"]);
 
         let video = VideoData {
             preview_addr: Some(play_addr.clone()),
