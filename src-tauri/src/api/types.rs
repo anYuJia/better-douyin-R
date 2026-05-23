@@ -228,9 +228,13 @@ pub struct LikedVideoItem {
     pub comment_count: i64,
     pub share_count: i64,
     pub cover_url: String,
+    pub duration: i64,
     pub media_type: String,
+    pub raw_media_type: String,
     pub media_urls: Vec<LikedVideoMediaUrl>,
     pub bgm_url: Option<String>,
+    pub statistics: Statistics,
+    pub video: VideoData,
     pub author: LikedVideoAuthor,
 }
 

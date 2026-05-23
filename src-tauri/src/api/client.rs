@@ -889,6 +889,8 @@ impl DouyinClient {
     fn build_liked_video_item(&self, post: &serde_json::Value) -> Option<LikedVideoItem> {
         let aweme_id = post.get("aweme_id")?.as_str()?.to_string();
         let (media_type, media_urls) = self.extract_liked_media_info(post);
+        let video_data = &post["video"];
+        let play_addr = self.get_first_url(&video_data["play_addr"]["url_list"]);
 
         let cover_url = post
             .get("video")
@@ -903,6 +905,44 @@ impl DouyinClient {
                     .and_then(|value| self.get_last_url_opt(value))
             })
             .unwrap_or_default();
+        let fallback_media_url = media_urls
+            .first()
+            .map(|media| media.url.clone())
+            .unwrap_or_default();
+        let preview_addr = if play_addr.is_empty() {
+            fallback_media_url.clone()
+        } else {
+            play_addr.clone()
+        };
+        let duration = video_data["duration"].as_i64().unwrap_or(0);
+        let bit_rate = video_data["bit_rate"].as_array().and_then(|arr| {
+            let items = arr
+                .iter()
+                .filter_map(|b| {
+                    let play_addr = self.get_first_url_opt(&b["play_addr"]["url_list"]);
+                    let play_addr_h264 = self.get_first_url_opt(&b["play_addr_h264"]["url_list"]);
+                    if play_addr.is_none() && play_addr_h264.is_none() {
+                        return None;
+                    }
+                    Some(BitRateInfo {
+                        gear_name: b["gear_name"].as_str().unwrap_or_default().to_string(),
+                        bit_rate: b["bit_rate"].as_i64().unwrap_or(0),
+                        quality_type: b["quality_type"].as_i64().unwrap_or(0) as i32,
+                        is_h265: b["is_h265"].as_bool().unwrap_or(false),
+                        data_size: b["data_size"].as_i64().unwrap_or(0),
+                        width: b["width"].as_i64().unwrap_or(0) as i32,
+                        height: b["height"].as_i64().unwrap_or(0) as i32,
+                        play_addr,
+                        play_addr_h264,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if items.is_empty() {
+                None
+            } else {
+                Some(items)
+            }
+        });
 
         Some(LikedVideoItem {
             aweme_id,
@@ -911,10 +951,47 @@ impl DouyinClient {
             digg_count: post["statistics"]["digg_count"].as_i64().unwrap_or(0),
             comment_count: post["statistics"]["comment_count"].as_i64().unwrap_or(0),
             share_count: post["statistics"]["share_count"].as_i64().unwrap_or(0),
-            cover_url,
-            media_type,
+            cover_url: cover_url.clone(),
+            duration,
+            media_type: media_type.clone(),
+            raw_media_type: media_type,
             media_urls,
             bgm_url: self.extract_liked_bgm_url(post),
+            statistics: Statistics {
+                digg_count: post["statistics"]["digg_count"].as_i64().unwrap_or(0),
+                comment_count: post["statistics"]["comment_count"].as_i64().unwrap_or(0),
+                share_count: post["statistics"]["share_count"].as_i64().unwrap_or(0),
+                play_count: post["statistics"]["play_count"].as_i64().unwrap_or(0),
+                collect_count: post["statistics"]["collect_count"].as_i64().unwrap_or(0),
+                ..Default::default()
+            },
+            video: VideoData {
+                preview_addr: if preview_addr.is_empty() {
+                    None
+                } else {
+                    Some(preview_addr.clone())
+                },
+                play_addr: if play_addr.is_empty() {
+                    fallback_media_url.clone()
+                } else {
+                    play_addr
+                },
+                play_addr_h264: self.get_first_url_opt(&video_data["play_addr_h264"]["url_list"]),
+                play_addr_lowbr: self.get_first_url_opt(&video_data["play_addr_lowbr"]["url_list"]),
+                download_addr: self.get_first_url_opt(&video_data["download_addr"]["url_list"]),
+                cover: cover_url.clone(),
+                dynamic_cover: self
+                    .get_first_url_opt(&video_data["dynamic_cover"]["url_list"])
+                    .unwrap_or_else(|| cover_url.clone()),
+                origin_cover: self
+                    .get_first_url_opt(&video_data["origin_cover"]["url_list"])
+                    .unwrap_or_else(|| cover_url.clone()),
+                width: video_data["width"].as_i64().unwrap_or(0) as i32,
+                height: video_data["height"].as_i64().unwrap_or(0) as i32,
+                duration,
+                ratio: video_data["ratio"].as_str().unwrap_or_default().to_string(),
+                bit_rate,
+            },
             author: LikedVideoAuthor {
                 nickname: post["author"]["nickname"]
                     .as_str()
