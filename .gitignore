@@ -17,5 +17,8 @@ Thumbs.db
 # Local runtime logs
 .runlogs/
 
+# Generated package-manager manifests
+packaging/package-managers/generated/
+
 # Claude
 .claude/
