@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Douyin Downloader",
-  "version": "1.0.18",
-  "identifier": "com.douyin.downloader",
+  "version": "1.0.19",
+  "identifier": "com.anyujia.douyin-downloader.rust",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:1420",

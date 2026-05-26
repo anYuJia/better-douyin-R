@@ -3042,6 +3042,21 @@ mod tests {
         assert_eq!(build_output_dir(&config, &base, "作者", "video"), base);
     }
 
+    #[test]
+    fn author_name_with_asterisk_is_sanitized_for_output_dir() {
+        let base = PathBuf::from("/tmp/douyin");
+        let config = AppConfig {
+            folder_name_template: "{author}".to_string(),
+            auto_create_folder: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            build_output_dir(&config, &base, "作者*星号", "video"),
+            base.join("作者_星号")
+        );
+    }
+
     #[tokio::test]
     async fn unique_output_file_does_not_overwrite_existing_file() {
         let dir =
