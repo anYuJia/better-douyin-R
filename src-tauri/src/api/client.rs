@@ -2233,8 +2233,10 @@ mod tests {
 
     #[test]
     fn configured_video_selection_honors_smallest_quality() {
-        let mut config = AppConfig::default();
-        config.download_quality = "smallest".to_string();
+        let config = AppConfig {
+            download_quality: "smallest".to_string(),
+            ..Default::default()
+        };
         let client = DouyinClient::new(config).expect("client");
         let video = json!({
             "play_addr": { "url_list": ["https://example.com/default.mp4"] },
