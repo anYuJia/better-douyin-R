@@ -13,10 +13,10 @@ Recommended order:
 
 | Channel | Asset |
 |:---|:---|
-| Homebrew Cask arm64 | `Douyin.Downloader_{{VERSION}}_aarch64.dmg` |
-| Homebrew Cask x64 | `Douyin.Downloader_{{VERSION}}_x64.dmg` |
-| Scoop | `Douyin-Downloader_{{VERSION}}_x64_portable.exe` |
-| winget installer | `Douyin.Downloader_{{VERSION}}_x64-setup.exe` |
+| Homebrew Cask arm64 | `Douyin-Downloader-v{{VERSION}}-macos-arm64.dmg` |
+| Homebrew Cask x64 | `Douyin-Downloader-v{{VERSION}}-macos-x64.dmg` |
+| Scoop | `Douyin-Downloader-v{{VERSION}}-windows-x64-portable.zip` |
+| winget installer | `Douyin-Downloader-v{{VERSION}}-windows-x64-installer.exe` |
 
 ## Hashes
 
@@ -24,7 +24,7 @@ Download the release assets:
 
 ```bash
 VERSION=v0.0.12
-gh release download "$VERSION" --pattern 'Douyin.Downloader_*' --pattern 'Douyin-Downloader_*'
+gh release download "$VERSION" --pattern 'Douyin-Downloader-v*'
 ```
 
 Then generate version-pinned manifests:

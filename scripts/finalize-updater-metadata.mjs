@@ -19,14 +19,6 @@ const previous = fs.existsSync('latest.json')
   ? JSON.parse(fs.readFileSync('latest.json', 'utf8'))
   : {};
 
-function findFile(pattern, label) {
-  const found = fs.readdirSync(process.cwd()).find((file) => pattern.test(file));
-  if (!found) {
-    throw new Error(`Missing ${label}`);
-  }
-  return found;
-}
-
 function readSignature(assetName) {
   const sigPath = `${assetName}.sig`;
   if (!fs.existsSync(sigPath)) {
@@ -36,21 +28,18 @@ function readSignature(assetName) {
 }
 
 const assets = {
-  darwinArmApp: 'Douyin.Downloader_aarch64.app.tar.gz',
-  darwinX64App: 'Douyin.Downloader_x64.app.tar.gz',
-  windowsInstaller: `Douyin.Downloader_${appVersion}_x64-setup.exe`,
-  windowsPortable: `Douyin-Downloader_${appVersion}_x64_portable.exe`,
-  linuxAppImage: `Douyin.Downloader_${appVersion}_amd64.AppImage`,
-  linuxDeb: `Douyin.Downloader_${appVersion}_amd64.deb`,
-  linuxRpm: findFile(
-    new RegExp(`^Douyin\\.Downloader-${appVersion.replaceAll('.', '\\.')}-\\d+\\.x86_64\\.rpm\\.sig$`),
-    'RPM signature'
-  ).replace(/\.sig$/, '')
+  darwinArmApp: `Douyin-Downloader-v${appVersion}-macos-arm64-updater.tar.gz`,
+  darwinX64App: `Douyin-Downloader-v${appVersion}-macos-x64-updater.tar.gz`,
+  windowsInstaller: `Douyin-Downloader-v${appVersion}-windows-x64-installer.exe`,
+  windowsPortable: `Douyin-Downloader-v${appVersion}-windows-x64-portable-updater.exe`,
+  linuxAppImage: `Douyin-Downloader-v${appVersion}-linux-x64.AppImage`,
+  linuxDeb: `Douyin-Downloader-v${appVersion}-linux-x64.deb`,
+  linuxRpm: `Douyin-Downloader-v${appVersion}-linux-x64.rpm`
 };
 
 const metadata = {
   version: appVersion,
-  notes: previous.notes || '',
+  notes: process.env.RELEASE_BODY || previous.notes || '',
   pub_date: previous.pub_date || '',
   platforms: {
     'darwin-aarch64': {

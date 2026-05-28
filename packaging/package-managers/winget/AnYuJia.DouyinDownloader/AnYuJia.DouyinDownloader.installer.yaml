@@ -5,7 +5,7 @@ MinimumOSVersion: 10.0.17763.0
 Installers:
   - Architecture: x64
     InstallerType: nullsoft
-    InstallerUrl: https://github.com/anYuJia/douyin-downloader-rust/releases/download/v{{VERSION}}/Douyin.Downloader_{{VERSION}}_x64-setup.exe
+    InstallerUrl: https://github.com/anYuJia/douyin-downloader-rust/releases/download/v{{VERSION}}/Douyin-Downloader-v{{VERSION}}-windows-x64-installer.exe
     InstallerSha256: {{SHA256_WINDOWS_INSTALLER}}
 ManifestType: installer
 ManifestVersion: 1.9.0

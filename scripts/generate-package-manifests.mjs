@@ -30,10 +30,10 @@ function writeGenerated(relativePath, content) {
 
 const replacements = {
   '{{VERSION}}': version,
-  '{{SHA256_DMG_ARM64}}': sha256(`Douyin.Downloader_${version}_aarch64.dmg`),
-  '{{SHA256_DMG_X64}}': sha256(`Douyin.Downloader_${version}_x64.dmg`),
-  '{{SHA256_WINDOWS_INSTALLER}}': sha256(`Douyin.Downloader_${version}_x64-setup.exe`).toUpperCase(),
-  '{{SHA256_WINDOWS_PORTABLE}}': sha256(`Douyin-Downloader_${version}_x64_portable.exe`)
+  '{{SHA256_DMG_ARM64}}': sha256(`Douyin-Downloader-v${version}-macos-arm64.dmg`),
+  '{{SHA256_DMG_X64}}': sha256(`Douyin-Downloader-v${version}-macos-x64.dmg`),
+  '{{SHA256_WINDOWS_INSTALLER}}': sha256(`Douyin-Downloader-v${version}-windows-x64-installer.exe`).toUpperCase(),
+  '{{SHA256_WINDOWS_PORTABLE}}': sha256(`Douyin-Downloader-v${version}-windows-x64-portable.zip`)
 };
 
 function applyReplacements(content) {

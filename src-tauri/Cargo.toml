@@ -1,6 +1,6 @@
 [package]
 name = "douyin-downloader"
-version = "1.0.21"
+version = "1.0.22"
 description = "抖音视频下载器"
 authors = ["anYuJia"]
 license = "MIT"

@@ -15,15 +15,15 @@ env:
   RELEASE_BODY: |
     ## 下载建议
 
-    - Windows 常规安装：下载 `Douyin.Downloader_*_x64-setup.exe`
-    - Windows 便携版：下载 `Douyin-Downloader_*_x64_portable.zip`，解压后运行里面的 exe
-    - macOS Apple Silicon：下载 `Douyin.Downloader_*_aarch64.dmg` 或 `*_macos-arm64_portable.zip`
-    - macOS Intel：下载 `Douyin.Downloader_*_x64.dmg` 或 `*_macos-x64_portable.zip`
-    - Linux Debian/Ubuntu：下载 `Douyin.Downloader_*_amd64.deb`
-    - Linux Fedora/openSUSE/RHEL：下载 `Douyin.Downloader-*-1.x86_64.rpm`
-    - Linux 通用便携：下载 `Douyin.Downloader_*_amd64.AppImage`
+    - Windows 安装版（推荐大多数用户）：下载 `Douyin-Downloader-v*-windows-x64-installer.exe`
+    - Windows 便携版（免安装）：下载 `Douyin-Downloader-v*-windows-x64-portable.zip`，解压后运行里面的 exe
+    - macOS Apple Silicon / M 系列：下载 `Douyin-Downloader-v*-macos-arm64.dmg`，免安装可下 `Douyin-Downloader-v*-macos-arm64-portable.zip`
+    - macOS Intel：下载 `Douyin-Downloader-v*-macos-x64.dmg`，免安装可下 `Douyin-Downloader-v*-macos-x64-portable.zip`
+    - Linux Debian/Ubuntu：下载 `Douyin-Downloader-v*-linux-x64.deb`
+    - Linux Fedora/openSUSE/RHEL：下载 `Douyin-Downloader-v*-linux-x64.rpm`
+    - Linux 通用便携：下载 `Douyin-Downloader-v*-linux-x64.AppImage`
 
-    `.sig` 和 `latest.json` / `windows.json` / `darwin.json` / `linux.json` 主要用于自动更新和签名校验，普通安装通常不需要手动下载。
+    `*-updater.*`、`.sig` 和 `latest.json` / `windows.json` / `darwin.json` / `linux.json` 主要用于自动更新和签名校验，普通安装通常不需要手动下载。
 
 jobs:
   build-macos:
@@ -81,6 +81,13 @@ jobs:
           retryAttempts: 5
           args: --target ${{ matrix.target }} -b app -b dmg
 
+      - name: Normalize release asset names
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/rename-release-assets.mjs
+
       - name: Package portable macOS zip
         shell: bash
         run: |
@@ -92,7 +99,7 @@ jobs:
             find "src-tauri/target" -maxdepth 6 -name "*.app" -print || true
             exit 1
           fi
-          DEST="Douyin-Downloader_${VERSION}_${{ matrix.label }}_portable.zip"
+          DEST="Douyin-Downloader-v${VERSION}-${{ matrix.label }}-portable.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$DEST"
           echo "Created: $DEST"
 
@@ -101,7 +108,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: false
-          files: Douyin-Downloader_*_${{ matrix.label }}_portable.zip
+          files: Douyin-Downloader-v*-${{ matrix.label }}-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -151,6 +158,13 @@ jobs:
           prerelease: false
           retryAttempts: 5
           args: --target x86_64-pc-windows-msvc -b nsis
+
+      - name: Normalize release asset names
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/rename-release-assets.mjs
 
   build-windows-portable:
     runs-on: windows-latest
@@ -212,22 +226,25 @@ jobs:
           }
 
           $version = "${{ github.ref_name }}" -replace '^v',''
-          $dest = "Douyin-Downloader_${version}_x64_portable.exe"
-          Copy-Item $exePath $dest
-          Write-Output "Created: $dest"
+          $updaterExe = "Douyin-Downloader-v${version}-windows-x64-portable.exe"
+          $portableExe = "Douyin-Downloader.exe"
+          Copy-Item $exePath $updaterExe
+          Copy-Item $exePath $portableExe
+          Write-Output "Created: $updaterExe"
+          Write-Output "Created: $portableExe"
 
           $readme = @"
           Douyin Downloader Windows portable
           =================================
 
-          解压后双击 $dest 即可启动。
+          解压后双击 $portableExe 即可启动。
 
           如果程序没有窗口或无法启动，请先安装 Microsoft Edge WebView2 Runtime：
           https://developer.microsoft.com/microsoft-edge/webview2/
           "@
           $readme | Set-Content -Path "README-Windows-Portable.txt" -Encoding UTF8
-          Compress-Archive -Path $dest, "README-Windows-Portable.txt" -DestinationPath "Douyin-Downloader_${version}_x64_portable.zip" -Force
-          Write-Output "Created: Douyin-Downloader_${version}_x64_portable.zip"
+          Compress-Archive -Path $portableExe, "README-Windows-Portable.txt" -DestinationPath "Douyin-Downloader-v${version}-windows-x64-portable.zip" -Force
+          Write-Output "Created: Douyin-Downloader-v${version}-windows-x64-portable.zip"
 
       - name: Sign portable assets
         shell: pwsh
@@ -235,14 +252,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $portable = Get-ChildItem -Path . -Filter "Douyin-Downloader_*_x64_portable.exe" -File | Select-Object -First 1
+          $portable = Get-ChildItem -Path . -Filter "Douyin-Downloader-v*-windows-x64-portable.exe" -File | Select-Object -First 1
           if (-not $portable) {
             Write-Error "Could not find portable exe to sign"
             exit 1
           }
           cargo tauri signer sign $portable.FullName
 
-          $portableZip = Get-ChildItem -Path . -Filter "Douyin-Downloader_*_x64_portable.zip" -File | Select-Object -First 1
+          $portableZip = Get-ChildItem -Path . -Filter "Douyin-Downloader-v*-windows-x64-portable.zip" -File | Select-Object -First 1
           if (-not $portableZip) {
             Write-Error "Could not find portable zip to sign"
             exit 1
@@ -255,10 +272,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: false
           files: |
-            Douyin-Downloader_*_x64_portable.exe
-            Douyin-Downloader_*_x64_portable.exe.sig
-            Douyin-Downloader_*_x64_portable.zip
-            Douyin-Downloader_*_x64_portable.zip.sig
+            Douyin-Downloader-v*-windows-x64-portable.exe
+            Douyin-Downloader-v*-windows-x64-portable.exe.sig
+            Douyin-Downloader-v*-windows-x64-portable.zip
+            Douyin-Downloader-v*-windows-x64-portable.zip.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -314,6 +331,13 @@ jobs:
           retryAttempts: 5
           args: --target x86_64-unknown-linux-gnu -b deb -b rpm -b appimage
 
+      - name: Normalize release asset names
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/rename-release-assets.mjs
+
   finalize-updater:
     runs-on: ubuntu-latest
     needs:
@@ -342,6 +366,7 @@ jobs:
           gh release download "$VERSION" \
             --repo "${{ github.repository }}" \
             --pattern '*.sig'
+          node scripts/rename-release-assets.mjs
           node scripts/finalize-updater-metadata.mjs
 
           gh release upload "$VERSION" latest.json darwin.json windows.json linux.json \

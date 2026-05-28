@@ -5,7 +5,7 @@
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v{{VERSION}}/Douyin-Downloader_{{VERSION}}_x64_portable.exe#/Douyin-Downloader.exe",
+      "url": "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v{{VERSION}}/Douyin-Downloader-v{{VERSION}}-windows-x64-portable.zip",
       "hash": "{{SHA256_WINDOWS_PORTABLE}}"
     }
   },
@@ -27,7 +27,7 @@
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v$version/Douyin-Downloader_$version_x64_portable.exe#/Douyin-Downloader.exe"
+        "url": "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v$version/Douyin-Downloader-v$version-windows-x64-portable.zip"
       }
     }
   }

@@ -3,12 +3,12 @@ cask "douyin-downloader" do
 
   on_arm do
     sha256 "{{SHA256_DMG_ARM64}}"
-    url "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v#{version}/Douyin.Downloader_#{version}_aarch64.dmg"
+    url "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v#{version}/Douyin-Downloader-v#{version}-macos-arm64.dmg"
   end
 
   on_intel do
     sha256 "{{SHA256_DMG_X64}}"
-    url "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v#{version}/Douyin.Downloader_#{version}_x64.dmg"
+    url "https://github.com/anYuJia/douyin-downloader-rust/releases/download/v#{version}/Douyin-Downloader-v#{version}-macos-x64.dmg"
   end
 
   name "Douyin Downloader"
