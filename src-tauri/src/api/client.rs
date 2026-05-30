@@ -3,6 +3,7 @@
 use crate::config::{get_user_agent, AppConfig};
 use crate::sign;
 use anyhow::{anyhow, Result};
+use base64::Engine;
 use rand::{distributions::Alphanumeric, Rng};
 use regex::Regex;
 use reqwest::redirect::Policy;
@@ -87,6 +88,53 @@ impl DouyinClient {
         }
 
         cookie_dict
+    }
+
+    fn ticket_guard_headers_from_cookie(cookie_str: &str) -> HashMap<String, String> {
+        let cookie_dict = Self::cookies_to_dict(cookie_str);
+        let mut headers = HashMap::new();
+
+        let raw_client_data = cookie_dict
+            .get("bd_ticket_guard_client_data")
+            .or_else(|| cookie_dict.get("bd_ticket_guard_client_data_v2"));
+        let Some(raw_client_data) = raw_client_data else {
+            return headers;
+        };
+
+        let decoded = urlencoding::decode(raw_client_data)
+            .map(|value| value.into_owned())
+            .unwrap_or_else(|_| raw_client_data.clone());
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(decoded.as_bytes()) else {
+            return headers;
+        };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return headers;
+        };
+
+        if let Some(object) = value.as_object() {
+            for (key, value) in object {
+                if key.starts_with("bd-ticket-guard-") {
+                    if let Some(value) = value.as_str() {
+                        headers.insert(key.clone(), value.to_string());
+                    } else if value.is_number() || value.is_boolean() {
+                        headers.insert(key.clone(), value.to_string());
+                    }
+                }
+            }
+
+            if !headers.contains_key("bd-ticket-guard-ree-public-key") {
+                if let Some(public_key) =
+                    value.get("ree_public_key").and_then(|value| value.as_str())
+                {
+                    headers.insert(
+                        "bd-ticket-guard-ree-public-key".to_string(),
+                        public_key.to_string(),
+                    );
+                }
+            }
+        }
+
+        headers
     }
 
     fn generate_ms_token() -> String {
@@ -2343,6 +2391,7 @@ impl DouyinClient {
 
         let mut query_params = crate::config::get_common_params();
         let mut headers = crate::config::get_common_headers(&self.config.cookie);
+        headers.extend(Self::ticket_guard_headers_from_cookie(&self.config.cookie));
         headers.insert(
             "Referer".to_string(),
             format!(
