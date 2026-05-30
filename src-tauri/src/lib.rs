@@ -147,6 +147,13 @@ fn strip_internal_login_cookies(
         .collect()
 }
 
+fn relation_signer_ready(signer: &Option<RelationSignerConfig>) -> bool {
+    signer
+        .as_ref()
+        .map(|signer| !signer.dtrait.trim().is_empty())
+        .unwrap_or(false)
+}
+
 fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
     let script = r#"
         (() => {
@@ -183,8 +190,9 @@ fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
                 };
                 try {
                     const xhr = new XMLHttpRequest();
-                    xhr.open("POST", "https://www-hj.douyin.com/aweme/v1/web/commit/item/digg/?device_platform=webapp&aid=6383&channel=channel_pc_web");
+                    xhr.open("POST", "https://www-hj.douyin.com/aweme/v1/web/commit/item/digg/?device_platform=webapp&aid=6383&channel=channel_pc_web&pc_client_type=1&pc_libra_divert=Mac&update_version_code=170400&support_h265=1&support_dash=1&version_code=170400&version_name=17.4.0&cookie_enabled=true&browser_language=zh-CN&browser_platform=MacIntel&browser_name=Chrome&browser_version=148.0.0.0&browser_online=true&engine_name=Blink&engine_version=148.0.0.0&os_name=Mac%20OS&os_version=10.15.7&cpu_core_num=8&device_memory=16&platform=PC");
                     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+                    xhr.setRequestHeader("x-secsdk-csrf-token", "DOWNGRADE");
                     xhr.onloadend = () => setTimeout(() => finish(""), 0);
                     xhr.onerror = () => setTimeout(() => finish(""), 0);
                     xhr.send("aweme_id=0&item_type=0&type=0");
@@ -208,7 +216,7 @@ fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
                         dtrait: "",
                     };
                     payload.dtrait = await captureDtrait();
-                    if (payload.ticket && payload.ts_sign && payload.public_key && payload.ecdh_key && payload.uid) {
+                    if (payload.ticket && payload.ts_sign && payload.public_key && payload.ecdh_key && payload.uid && payload.dtrait) {
                         save(payload);
                     } else {
                         window.__dyRelationSignerProbeStarted = false;
@@ -777,7 +785,7 @@ async fn cookie_browser_login(
                     );
 
                     if has_douyin_login_cookie(&cookies) {
-                        if relation_signer.is_none() {
+                        if !relation_signer_ready(&relation_signer) {
                             inject_relation_signer_probe(&window);
                         }
                         let should_verify = last_verify_attempt
@@ -825,6 +833,18 @@ async fn cookie_browser_login(
                             current_user.uid,
                             current_user.nickname
                         );
+                        if !relation_signer_ready(&relation_signer) {
+                            emit_cookie_login_status(
+                                &app,
+                                serde_json::json!({
+                                    "event": "pending",
+                                    "message": "登录态已通过，正在采集点赞安全参数"
+                                }),
+                            )
+                            .await;
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            continue;
+                        }
                         let mut next_config = config_state.lock().await.clone();
                         next_config.cookie = cookie_string.clone();
                         next_config.relation_signer = relation_signer;
