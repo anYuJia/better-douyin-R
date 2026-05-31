@@ -97,8 +97,8 @@ impl DouyinClient {
         let mut headers = HashMap::new();
 
         let raw_client_data_v2 = cookie_dict.get("bd_ticket_guard_client_data_v2");
-        let raw_client_data = raw_client_data_v2
-            .or_else(|| cookie_dict.get("bd_ticket_guard_client_data"));
+        let raw_client_data =
+            raw_client_data_v2.or_else(|| cookie_dict.get("bd_ticket_guard_client_data"));
         let Some(raw_client_data) = raw_client_data else {
             return headers;
         };
@@ -140,7 +140,14 @@ impl DouyinClient {
 
             headers
                 .entry("bd-ticket-guard-web-sign-type".to_string())
-                .or_insert_with(|| if raw_client_data_v2.is_some() { "1" } else { "0" }.to_string());
+                .or_insert_with(|| {
+                    if raw_client_data_v2.is_some() {
+                        "1"
+                    } else {
+                        "0"
+                    }
+                    .to_string()
+                });
         }
 
         headers
@@ -2527,7 +2534,8 @@ impl DouyinClient {
         );
         headers.insert(
             "sec-ch-ua".to_string(),
-            "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"".to_string(),
+            "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+                .to_string(),
         );
         if let Some(dtrait) = self.relation_dtrait() {
             headers.insert("x-tt-session-dtrait".to_string(), dtrait);
@@ -2706,7 +2714,10 @@ impl DouyinClient {
                         user_name: None,
                         user_id: None,
                         expires_at: None,
-                        message: format!("Cookie 已保存但登录态校验失败，请重新登录或完成验证: {}", e),
+                        message: format!(
+                            "Cookie 已保存但登录态校验失败，请重新登录或完成验证: {}",
+                            e
+                        ),
                     });
                 }
 

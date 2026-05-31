@@ -154,6 +154,22 @@ fn relation_signer_ready(signer: &Option<RelationSignerConfig>) -> bool {
         .unwrap_or(false)
 }
 
+fn relation_signer_ready_for_uid(signer: &Option<RelationSignerConfig>, uid: &str) -> bool {
+    let uid = uid.trim();
+    signer
+        .as_ref()
+        .map(|signer| {
+            !uid.is_empty()
+                && signer.uid.trim() == uid
+                && !signer.ticket.trim().is_empty()
+                && !signer.ts_sign.trim().is_empty()
+                && !signer.public_key.trim().is_empty()
+                && !signer.ecdh_key.trim().is_empty()
+                && !signer.dtrait.trim().is_empty()
+        })
+        .unwrap_or(false)
+}
+
 fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
     let script = r#"
         (() => {
@@ -188,30 +204,45 @@ fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
                 } catch (error) {}
                 return "";
             };
+            const patchDtraitCapture = (onValue) => {
+                if (window.__dyRelationDtraitPatched) return;
+                window.__dyRelationDtraitPatched = true;
+                try {
+                    const originalSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+                    XMLHttpRequest.prototype.setRequestHeader = function(key, value) {
+                        if (String(key).toLowerCase() === "x-tt-session-dtrait" && value) {
+                            try { onValue(String(value)); } catch (error) {}
+                        }
+                        return originalSetHeader.apply(this, arguments);
+                    };
+                } catch (error) {}
+                try {
+                    const originalFetch = window.fetch;
+                    window.fetch = function(input, init) {
+                        try {
+                            const headers = init && init.headers;
+                            let value = "";
+                            if (headers && typeof headers.get === "function") {
+                                value = headers.get("x-tt-session-dtrait") || "";
+                            } else if (headers && typeof headers === "object") {
+                                value = headers["x-tt-session-dtrait"] || headers["X-Tt-Session-Dtrait"] || "";
+                            }
+                            if (value) onValue(String(value));
+                        } catch (error) {}
+                        return originalFetch.apply(this, arguments);
+                    };
+                } catch (error) {}
+            };
             const captureDtrait = () => new Promise((resolve) => {
                 let resolved = false;
-                const originalSetHeader = XMLHttpRequest.prototype.setRequestHeader;
                 const finish = (value) => {
                     if (resolved) return;
                     resolved = true;
-                    try { XMLHttpRequest.prototype.setRequestHeader = originalSetHeader; } catch (error) {}
                     resolve(value || "");
                 };
-                XMLHttpRequest.prototype.setRequestHeader = function(key, value) {
-                    if (String(key).toLowerCase() === "x-tt-session-dtrait") {
-                        try { originalSetHeader.apply(this, arguments); } catch (error) {}
-                        try { this.abort(); } catch (error) {}
-                        finish(String(value || ""));
-                        return;
-                    }
-                    return originalSetHeader.apply(this, arguments);
-                };
+                patchDtraitCapture(finish);
                 try {
-                    const awemeId = findAwemeId();
-                    if (!awemeId) {
-                        finish("");
-                        return;
-                    }
+                    const awemeId = findAwemeId() || "7640032041598198757";
                     const xhr = new XMLHttpRequest();
                     xhr.open("POST", "https://www-hj.douyin.com/aweme/v1/web/commit/item/digg/?device_platform=webapp&aid=6383&channel=channel_pc_web&pc_client_type=1&pc_libra_divert=Mac&update_version_code=170400&support_h265=1&support_dash=1&version_code=170400&version_name=17.4.0&cookie_enabled=true&browser_language=zh-CN&browser_platform=MacIntel&browser_name=Chrome&browser_version=148.0.0.0&browser_online=true&engine_name=Blink&engine_version=148.0.0.0&os_name=Mac%20OS&os_version=10.15.7&cpu_core_num=8&device_memory=16&platform=PC");
                     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
@@ -238,6 +269,10 @@ fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
                         uid: window.SSR_RENDER_DATA && window.SSR_RENDER_DATA.app && window.SSR_RENDER_DATA.app.odin && window.SSR_RENDER_DATA.app.odin.user_id || "",
                         dtrait: "",
                     };
+                    patchDtraitCapture((value) => {
+                        payload.dtrait = value || payload.dtrait;
+                        if (payload.ticket && payload.ts_sign && payload.public_key && payload.ecdh_key && payload.dtrait) save(payload);
+                    });
                     payload.dtrait = await captureDtrait();
                     if (payload.ticket && payload.ts_sign && payload.public_key && payload.ecdh_key) {
                         save(payload);
@@ -797,7 +832,7 @@ async fn cookie_browser_login(
                         .collect();
                     let mut relation_signer = extract_relation_signer_cookie(&cookies);
                     let public_cookies = strip_internal_login_cookies(&cookies);
-                    let cookie_string = serialize_cookie_string(&public_cookies);
+                    let mut cookie_string = serialize_cookie_string(&public_cookies);
                     log::info!(
                         "cookie browser login poll: cookie_count={} names={}",
                         cookies.len(),
@@ -858,11 +893,101 @@ async fn cookie_browser_login(
                             current_user.nickname
                         );
                         let mut next_config = config_state.lock().await.clone();
-                        if current_user.uid.trim().is_empty() == false {
-                            let signer = relation_signer.get_or_insert_with(Default::default);
-                            if signer.uid.trim().is_empty() {
+                        if !current_user.uid.trim().is_empty() {
+                            if !relation_signer_ready_for_uid(&relation_signer, &current_user.uid) {
+                                emit_cookie_login_status(
+                                    &app,
+                                    serde_json::json!({
+                                        "event": "pending",
+                                        "message": "登录已确认，正在采集点赞安全参数"
+                                    }),
+                                )
+                                .await;
+                                if let Ok(target_url) =
+                                    Url::parse("https://www.douyin.com/?recommend=1")
+                                {
+                                    let _ = window.navigate(target_url);
+                                }
+                                for _ in 0..20 {
+                                    inject_relation_signer_probe(&window);
+                                    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+                                    if let Ok(latest_cookies) = window.cookies() {
+                                        let latest_cookies: Vec<_> = latest_cookies
+                                            .into_iter()
+                                            .filter(|cookie| {
+                                                let name = cookie.name();
+                                                cookie
+                                                    .domain()
+                                                    .map(|domain| {
+                                                        let domain = domain
+                                                            .trim()
+                                                            .trim_start_matches('.')
+                                                            .to_ascii_lowercase();
+                                                        "www.douyin.com" == domain
+                                                            || "www.douyin.com"
+                                                                .ends_with(&format!(".{}", domain))
+                                                    })
+                                                    .unwrap_or_else(|| {
+                                                        matches!(
+                                                            name,
+                                                            "sessionid"
+                                                                | "sessionid_ss"
+                                                                | "sid_guard"
+                                                                | "uid_tt"
+                                                                | "passport_csrf_token"
+                                                                | "passport_auth_status"
+                                                                | "ttwid"
+                                                                | "msToken"
+                                                                | "s_v_web_id"
+                                                        )
+                                                    })
+                                            })
+                                            .collect();
+                                        if let Some(mut signer) =
+                                            extract_relation_signer_cookie(&latest_cookies)
+                                        {
+                                            signer.uid = current_user.uid.clone();
+                                            relation_signer = Some(signer);
+                                        }
+                                        let latest_public =
+                                            strip_internal_login_cookies(&latest_cookies);
+                                        let latest_cookie_string =
+                                            serialize_cookie_string(&latest_public);
+                                        if !latest_cookie_string.trim().is_empty() {
+                                            cookie_string = latest_cookie_string;
+                                        }
+                                        if relation_signer_ready_for_uid(
+                                            &relation_signer,
+                                            &current_user.uid,
+                                        ) {
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else if let Some(signer) = relation_signer.as_mut() {
                                 signer.uid = current_user.uid.clone();
                             }
+                        }
+                        if let Some(signer) = relation_signer.as_ref() {
+                            log::info!(
+                                "cookie browser relation signer captured: uid={} ticket_len={} ts_sign_len={} public_key_len={} ecdh_key_len={} dtrait_len={}",
+                                signer.uid,
+                                signer.ticket.len(),
+                                signer.ts_sign.len(),
+                                signer.public_key.len(),
+                                signer.ecdh_key.len(),
+                                signer.dtrait.len()
+                            );
+                        }
+                        if !relation_signer_ready_for_uid(&relation_signer, &current_user.uid) {
+                            relation_signer = if relation_signer_ready_for_uid(
+                                &next_config.relation_signer,
+                                &current_user.uid,
+                            ) {
+                                next_config.relation_signer.clone()
+                            } else {
+                                None
+                            };
                         }
                         next_config.cookie = cookie_string.clone();
                         next_config.relation_signer = relation_signer;
