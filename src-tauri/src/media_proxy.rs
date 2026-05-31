@@ -523,6 +523,11 @@ async fn media_proxy(
         let mut upstream = state
             .media_http_client
             .get(&upstream_url)
+            .timeout(if requested_media_type == "image" {
+                tokio::time::Duration::from_secs(8)
+            } else {
+                tokio::time::Duration::from_secs(45)
+            })
             .header("User-Agent", get_user_agent())
             .header("Referer", "https://www.douyin.com/")
             .header("Accept", "*/*")
