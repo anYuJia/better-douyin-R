@@ -22,6 +22,11 @@ fn looks_watermarked_media_url(url: &str) -> bool {
     lower.contains("watermark=1") || lower.contains("playwm") || lower.contains("logo_name=")
 }
 
+fn looks_dash_video_only_media_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.contains("media-video") || lower.contains("media_video")
+}
+
 fn clean_video_media_url(url: &str) -> String {
     url.trim()
         .replace("watermark=1", "watermark=0")
@@ -1164,7 +1169,11 @@ impl DouyinClient {
                 return;
             };
             let url = clean_video_media_url(&url);
-            if url.is_empty() || looks_watermarked_media_url(&url) || !seen.insert(url.clone()) {
+            if url.is_empty()
+                || looks_watermarked_media_url(&url)
+                || looks_dash_video_only_media_url(&url)
+                || !seen.insert(url.clone())
+            {
                 return;
             }
             candidates.push(Candidate {
@@ -2902,6 +2911,24 @@ mod tests {
         assert_eq!(
             client.select_configured_video_url(&video).as_deref(),
             Some("https://example.com/clean.mp4")
+        );
+    }
+
+    #[test]
+    fn configured_video_selection_skips_dash_video_only_addr() {
+        let client = DouyinClient::new(AppConfig::default()).expect("client");
+        let video = json!({
+            "play_addr": { "url_list": ["https://example.com/media-video-avc1/dash.mp4"] },
+            "play_addr_h264": { "url_list": ["https://example.com/progressive.mp4"] },
+            "bit_rate": [{
+                "data_size": 1000,
+                "play_addr": { "url_list": ["https://example.com/media-video-avc1/high.mp4"] }
+            }]
+        });
+
+        assert_eq!(
+            client.select_configured_video_url(&video).as_deref(),
+            Some("https://example.com/progressive.mp4")
         );
     }
 
