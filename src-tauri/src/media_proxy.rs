@@ -18,6 +18,7 @@ pub const MEDIA_PROXY_PORT: u16 = 39143;
 const INITIAL_VIDEO_RANGE: &str = "bytes=0-1048575";
 const LOCAL_MEDIA_INITIAL_RANGE_BYTES: u64 = 1024 * 1024;
 const LOCAL_MEDIA_MAX_RANGE_BYTES: u64 = 4 * 1024 * 1024;
+const REMOTE_MEDIA_MAX_RANGE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_RETRIES: usize = 3;
 
 #[derive(Debug, Deserialize)]
@@ -269,6 +270,35 @@ fn parse_byte_range(range_header: &str, file_size: u64) -> Option<(u64, u64)> {
     }
 }
 
+fn cap_remote_media_range(range_header: &str, requested_media_type: &str) -> Option<String> {
+    if requested_media_type != "video" && requested_media_type != "audio" {
+        return None;
+    }
+
+    let value = range_header.trim();
+    let bytes = value.strip_prefix("bytes=")?.trim();
+    let first = bytes.split(',').next()?.trim();
+    let (start_raw, end_raw) = first.split_once('-')?;
+    if start_raw.trim().is_empty() {
+        return None;
+    }
+
+    let start = start_raw.trim().parse::<u64>().ok()?;
+    let requested_end = end_raw.trim().parse::<u64>().ok();
+    let capped_end = start.saturating_add(REMOTE_MEDIA_MAX_RANGE_BYTES - 1);
+    let end = requested_end.map_or(capped_end, |value| value.min(capped_end));
+    if end < start {
+        return None;
+    }
+
+    let capped = format!("bytes={}-{}", start, end);
+    if capped == value {
+        None
+    } else {
+        Some(capped)
+    }
+}
+
 async fn allowed_local_media_path(state: &AppState, raw_path: &str) -> Result<PathBuf, StatusCode> {
     let trimmed = raw_path.trim();
     if trimmed.is_empty() {
@@ -488,7 +518,10 @@ async fn media_proxy(
     let config = state.config.lock().await.clone();
     let should_seed_video_range = false; // 禁用对标准 GET 请求强制注入 Range 的行为，遵循 RFC 7233 规范，返回标准的 200 OK。
     let upstream_range_value = if let Some(range) = &request_range {
-        range.to_str().ok().map(|value| value.to_string())
+        range.to_str().ok().map(|value| {
+            cap_remote_media_range(value, &requested_media_type)
+                .unwrap_or_else(|| value.to_string())
+        })
     } else if should_seed_video_range {
         Some(INITIAL_VIDEO_RANGE.to_string())
     } else {
@@ -826,5 +859,15 @@ mod tests {
             HeaderValue::from_static("https://evil.example"),
         );
         assert!(allowed_request_origin(&headers).is_none());
+    }
+
+    #[test]
+    fn caps_large_remote_video_ranges() {
+        assert_eq!(
+            cap_remote_media_range("bytes=196608-90483921", "video").as_deref(),
+            Some("bytes=196608-4390911")
+        );
+        assert_eq!(cap_remote_media_range("bytes=0-1", "video"), None);
+        assert_eq!(cap_remote_media_range("bytes=0-90483921", "image"), None);
     }
 }

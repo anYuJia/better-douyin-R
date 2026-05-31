@@ -1203,6 +1203,7 @@ export function FullscreenPlayer({
 
   const preloadMediaItem = useCallback((media: VideoMediaItem | null | undefined, _full = false) => {
     if (!media) return;
+    if (media.type !== "image") return;
 
     const proxiedUrl = mediaProxyUrl(media.url, getMediaProxyType(media));
     const key = `${media.type}::${proxiedUrl}`;
