@@ -486,9 +486,7 @@ async fn api_login_or_verify_error_response(
     let message = error.to_string();
     if looks_like_relation_security_error(&message) {
         relation_security_blocked_response(prefix, &message)
-    } else if looks_like_login_error(&message) {
-        login_or_verify_response(client, &format!("{}: {}", prefix, message), verify_url).await
-    } else if looks_like_verify_error(&message) {
+    } else if looks_like_login_error(&message) || looks_like_verify_error(&message) {
         login_or_verify_response(client, &format!("{}: {}", prefix, message), verify_url).await
     } else {
         serde_json::json!({
@@ -1336,9 +1334,7 @@ async fn search_user(
         })),
         Err(e) => {
             let message = e.to_string();
-            if looks_like_login_error(&message) {
-                Ok(login_or_verify_response(&client, &message, "https://www.douyin.com/").await)
-            } else if looks_like_verify_error(&message) {
+            if looks_like_login_error(&message) || looks_like_verify_error(&message) {
                 Ok(login_or_verify_response(&client, &message, "https://www.douyin.com/").await)
             } else {
                 Ok(serde_json::json!({
