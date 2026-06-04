@@ -61,6 +61,11 @@ pub struct RelationSignerConfig {
     pub ecdh_key: String,
     pub uid: String,
     pub dtrait: String,
+    pub client_cert: String,
+    pub private_key: String,
+    pub creator_ticket: String,
+    pub creator_ts_sign: String,
+    pub creator_client_cert: String,
 }
 
 fn default_true() -> bool {

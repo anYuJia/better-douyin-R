@@ -36,6 +36,7 @@ urlencoding = "2"
 hmac = "0.12"
 sha2 = "0.10"
 md5 = "0.7"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 
 # 时间处理
 chrono = { version = "0.4", features = ["serde"] }

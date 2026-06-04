@@ -5,6 +5,9 @@ use crate::sign;
 use anyhow::{anyhow, Result};
 use base64::Engine;
 use hmac::{Hmac, Mac};
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::{Signature, SigningKey};
+use p256::pkcs8::DecodePrivateKey;
 use rand::{distributions::Alphanumeric, Rng};
 use regex::Regex;
 use reqwest::redirect::Policy;
@@ -14,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
+use super::im_proto;
 use super::types::*;
 
 fn looks_watermarked_media_url(url: &str) -> bool {
@@ -234,6 +239,189 @@ impl DouyinClient {
         } else {
             Some(value.to_string())
         }
+    }
+
+    fn im_proto_signer(&self) -> Result<&crate::config::RelationSignerConfig> {
+        let signer =
+            self.config.relation_signer.as_ref().ok_or_else(|| {
+                anyhow!("私信安全参数未采集完整，请在设置中重新登录 Cookie 后重试")
+            })?;
+        if signer.ticket.trim().is_empty()
+            || signer.ts_sign.trim().is_empty()
+            || signer.client_cert.trim().is_empty()
+            || signer.private_key.trim().is_empty()
+        {
+            return Err(anyhow!(
+                "私信安全参数未采集完整，请在设置中重新登录 Cookie 后重试"
+            ));
+        }
+        Ok(signer)
+    }
+
+    fn ecdsa_request_sign(value: &str, private_key: &str) -> Result<String> {
+        let pem = private_key.trim().replace("\\n", "\n");
+        let key = SigningKey::from_pkcs8_pem(&pem)
+            .map_err(|error| anyhow!("私信签名生成失败: {}", error))?;
+        let signature: Signature = key.sign(value.as_bytes());
+        Ok(base64::engine::general_purpose::STANDARD.encode(signature.to_der().as_bytes()))
+    }
+
+    fn build_im_request_common_headers(&self) -> HashMap<String, String> {
+        let cookie_dict = Self::cookies_to_dict(&self.config.cookie);
+        let user_agent = get_user_agent();
+        HashMap::from([
+            ("session_aid".to_string(), "6383".to_string()),
+            ("session_did".to_string(), "0".to_string()),
+            ("app_name".to_string(), "douyin_pc".to_string()),
+            ("priority_region".to_string(), "cn".to_string()),
+            ("user_agent".to_string(), user_agent.to_string()),
+            ("cookie_enabled".to_string(), "true".to_string()),
+            ("browser_language".to_string(), "zh-CN".to_string()),
+            ("browser_platform".to_string(), "Win32".to_string()),
+            ("browser_name".to_string(), "Mozilla".to_string()),
+            (
+                "browser_version".to_string(),
+                user_agent
+                    .split_once("Mozilla/")
+                    .map(|(_, value)| value.to_string())
+                    .unwrap_or_else(|| user_agent.to_string()),
+            ),
+            ("browser_online".to_string(), "true".to_string()),
+            ("screen_width".to_string(), "1680".to_string()),
+            ("screen_height".to_string(), "1050".to_string()),
+            ("referer".to_string(), "".to_string()),
+            ("timezone_name".to_string(), "Etc/GMT-8".to_string()),
+            ("deviceId".to_string(), "0".to_string()),
+            (
+                "webid".to_string(),
+                cookie_dict
+                    .get("webid")
+                    .or_else(|| cookie_dict.get("ttwid"))
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
+            (
+                "fp".to_string(),
+                cookie_dict
+                    .get("s_v_web_id")
+                    .cloned()
+                    .unwrap_or_else(Self::generate_verify_fp),
+            ),
+            ("is-retry".to_string(), "0".to_string()),
+        ])
+    }
+
+    fn build_im_proto_request(
+        &self,
+        cmd: i64,
+        body: &[u8],
+        request_sign: &str,
+        sdk_version: &str,
+        build_number: &str,
+    ) -> Result<Vec<u8>> {
+        let signer = self.im_proto_signer()?;
+        let sdk_cert =
+            base64::engine::general_purpose::STANDARD.encode(signer.client_cert.as_bytes());
+        Ok(im_proto::build_request(
+            cmd,
+            signer.ticket.trim(),
+            signer.ts_sign.trim(),
+            &sdk_cert,
+            request_sign,
+            body,
+            &self.build_im_request_common_headers(),
+            rand::thread_rng().gen_range(10000..=11000),
+            sdk_version,
+            build_number,
+        ))
+    }
+
+    fn build_im_pc_proto_request(&self, cmd: i64, body: &[u8]) -> Result<Vec<u8>> {
+        self.build_im_proto_request(cmd, body, "", "0.1.6", "fef1a80:p/lzg/store")
+    }
+
+    async fn post_im_proto(
+        &self,
+        url: &str,
+        payload: Vec<u8>,
+        with_signed_query: bool,
+    ) -> Result<serde_json::Value> {
+        let headers = HashMap::from([
+            ("User-Agent".to_string(), get_user_agent().to_string()),
+            ("Cookie".to_string(), self.config.cookie.clone()),
+            ("accept".to_string(), "application/x-protobuf".to_string()),
+            (
+                "content-type".to_string(),
+                "application/x-protobuf".to_string(),
+            ),
+            ("referer".to_string(), "https://www.douyin.com/".to_string()),
+            ("origin".to_string(), "https://www.douyin.com".to_string()),
+        ]);
+        let mut req = self.client.post(url);
+        if with_signed_query {
+            let cookie_dict = Self::cookies_to_dict(&self.config.cookie);
+            let fp = cookie_dict
+                .get("s_v_web_id")
+                .cloned()
+                .unwrap_or_else(Self::generate_verify_fp);
+            let mut query_params = HashMap::from([
+                ("verifyFp".to_string(), fp.clone()),
+                ("fp".to_string(), fp),
+                ("msToken".to_string(), Self::generate_ms_token()),
+            ]);
+            let params_str = serde_urlencoded::to_string(&query_params)?;
+            let user_agent = headers
+                .get("User-Agent")
+                .map(String::as_str)
+                .unwrap_or_else(|| get_user_agent());
+            query_params.insert(
+                "a_bogus".to_string(),
+                sign::sign_detail(&params_str, user_agent),
+            );
+            req = req.query(&query_params);
+        }
+        for (key, value) in &headers {
+            req = req.header(key, value);
+        }
+        let response = req.body(payload).send().await?;
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "IM protobuf 接口失败（HTTP {}）",
+                response.status()
+            ));
+        }
+        let bytes = response.bytes().await?;
+        if bytes.is_empty() {
+            return Err(anyhow!("IM protobuf 接口失败（响应为空）"));
+        }
+        let parsed = im_proto::parse_response(&bytes);
+        let response_message = parsed
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let message_is_error = !response_message.is_empty()
+            && !matches!(
+                response_message.to_ascii_lowercase().as_str(),
+                "ok" | "success"
+            );
+        if parsed
+            .get("error_desc")
+            .and_then(|value| value.as_str())
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+            || message_is_error
+        {
+            let message = parsed
+                .get("error_desc")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| parsed.get("message").and_then(|value| value.as_str()))
+                .unwrap_or("IM protobuf 接口返回错误");
+            return Err(anyhow!("{}", message));
+        }
+        Ok(parsed)
     }
 
     fn generate_ms_token() -> String {
@@ -2606,6 +2794,285 @@ impl DouyinClient {
         .await
     }
 
+    pub async fn create_im_conversation(&self, to_user_id: &str) -> Result<serde_json::Value> {
+        let signer = self.im_proto_signer()?;
+        let current_user = self.get_current_user().await?;
+        let to_uid = to_user_id
+            .trim()
+            .parse::<i64>()
+            .map_err(|_| anyhow!("缺少可用的数字 uid，无法创建私信会话"))?;
+        let my_uid = current_user
+            .uid
+            .trim()
+            .parse::<i64>()
+            .map_err(|_| anyhow!("缺少可用的数字 uid，无法创建私信会话"))?;
+        if to_uid == 0 || my_uid == 0 {
+            return Err(anyhow!("缺少可用的数字 uid，无法创建私信会话"));
+        }
+
+        let sign_data = format!("avatar_url=&idempotent_id=&name=&participants={to_uid},{my_uid}");
+        let request_sign = Self::ecdsa_request_sign(&sign_data, &signer.private_key)?;
+        let body = im_proto::build_create_conversation_body(to_uid, my_uid);
+        let payload = self.build_im_proto_request(
+            609,
+            &body,
+            &request_sign,
+            "1.1.3",
+            "5fa6ff1:Detached: 5fa6ff1111fd53aafc4c753505d3c93daad74d27",
+        )?;
+        let response = self
+            .post_im_proto(
+                "https://imapi.douyin.com/v2/conversation/create",
+                payload,
+                false,
+            )
+            .await?;
+        let conversation = im_proto::first_conversation(&response)
+            .ok_or_else(|| anyhow!("创建会话成功但未返回会话信息"))?;
+        Ok(serde_json::json!({
+            "conversation_id": conversation.conversation_id,
+            "conversation_short_id": conversation.conversation_short_id,
+            "conversation_type": conversation.conversation_type,
+            "ticket": conversation.ticket,
+            "raw": response,
+        }))
+    }
+
+    pub async fn send_im_text_message(
+        &self,
+        to_user_id: &str,
+        content: &str,
+    ) -> Result<serde_json::Value> {
+        let message = content.trim();
+        if message.is_empty() {
+            return Err(anyhow!("消息内容不能为空"));
+        }
+        let conversation = self.create_im_conversation(to_user_id).await?;
+        let signer = self.im_proto_signer()?;
+        let client_message_id = Uuid::new_v4().to_string();
+        let msg_content = serde_json::json!({
+            "mention_users": [],
+            "aweType": 700,
+            "richTextInfos": [],
+            "text": message,
+        })
+        .to_string();
+        let conversation_id = conversation
+            .get("conversation_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let conversation_short_id = conversation
+            .get("conversation_short_id")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
+        let ticket = conversation
+            .get("ticket")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let sign_data = format!(
+            "content={msg_content}&conversation_id={conversation_id}&conversation_short_id={conversation_short_id}"
+        );
+        let request_sign = Self::ecdsa_request_sign(&sign_data, &signer.private_key)?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let body = im_proto::build_send_message_body(
+            conversation_id,
+            conversation_short_id,
+            ticket,
+            &msg_content,
+            &client_message_id,
+            now_ms,
+        );
+        let payload = self.build_im_proto_request(
+            100,
+            &body,
+            &request_sign,
+            "1.1.3",
+            "5fa6ff1:Detached: 5fa6ff1111fd53aafc4c753505d3c93daad74d27",
+        )?;
+        let response = self
+            .post_im_proto("https://imapi.douyin.com/v1/message/send", payload, true)
+            .await?;
+        let Some(sent_message) = im_proto::sent_message(&response) else {
+            return Ok(serde_json::json!({
+                "message": "发送请求已提交，等待私信通道确认",
+                "client_message_id": client_message_id,
+                "pending_ack": true,
+                "conversation": conversation,
+                "raw": response,
+            }));
+        };
+        Ok(serde_json::json!({
+            "message": "发送成功",
+            "client_message_id": client_message_id,
+            "message_id": sent_message.server_message_id,
+            "conversation_id": sent_message.conversation_id,
+            "conversation_short_id": sent_message.conversation_short_id,
+            "conversation_type": sent_message.conversation_type,
+            "conversation": conversation,
+            "raw": response,
+        }))
+    }
+
+    fn normalize_im_messages(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+        messages
+            .iter()
+            .filter_map(|item| {
+                let object = item.as_object()?;
+                let raw_content = object
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let text = serde_json::from_str::<serde_json::Value>(&raw_content)
+                    .ok()
+                    .and_then(|parsed| {
+                        parsed
+                            .get("text")
+                            .or_else(|| parsed.get("tips"))
+                            .or_else(|| parsed.get("hint_text"))
+                            .and_then(|value| value.as_str())
+                            .map(ToString::to_string)
+                    })
+                    .unwrap_or_else(|| raw_content.clone());
+                let ext = object.get("ext").and_then(|value| value.as_object());
+                let mut create_time = object
+                    .get("create_time")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default();
+                if create_time == 0 {
+                    create_time = ext
+                        .and_then(|ext| {
+                            ext.get("s:server_message_create_time")
+                                .or_else(|| ext.get("server_message_create_time"))
+                        })
+                        .and_then(|value| {
+                            value
+                                .as_i64()
+                                .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+                        })
+                        .unwrap_or_default();
+                }
+                Some(serde_json::json!({
+                    "conversation_id": object.get("conversation_id").cloned().unwrap_or_default(),
+                    "conversation_short_id": object.get("conversation_short_id").cloned().unwrap_or_default(),
+                    "conversation_type": object.get("conversation_type").cloned().unwrap_or_default(),
+                    "server_message_id": object.get("server_message_id").cloned().unwrap_or_default(),
+                    "index_in_conversation": object.get("index_in_conversation").cloned().unwrap_or_default(),
+                    "sender_uid": object.get("sender").cloned().unwrap_or_default().to_string().trim_matches('"').to_string(),
+                    "content": text,
+                    "raw_content": raw_content,
+                    "message_type": object.get("message_type").cloned().unwrap_or_default(),
+                    "create_time": create_time,
+                }))
+            })
+            .collect()
+    }
+
+    async fn get_im_recent_user_messages(&self, cursor: i64) -> Result<serde_json::Value> {
+        self.im_proto_signer()?;
+        let body = im_proto::build_get_user_message_body(cursor.max(0));
+        let payload = self.build_im_pc_proto_request(128, &body)?;
+        let response = self
+            .post_im_proto(
+                "https://imapi.douyin.com/v1/message/get_user_message",
+                payload,
+                false,
+            )
+            .await?;
+        let body = response
+            .pointer("/body/get_user_message_body")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let messages = body
+            .get("messages")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(serde_json::json!({
+            "message": "获取历史消息成功",
+            "messages": Self::normalize_im_messages(&messages),
+            "next_cursor": body.get("next_cursor").cloned().unwrap_or_default(),
+            "has_more": body.get("has_more").and_then(|value| value.as_bool()).unwrap_or(false),
+        }))
+    }
+
+    pub async fn get_im_history_messages(
+        &self,
+        cursor: i64,
+        to_user_id: Option<&str>,
+        conversation_id: Option<&str>,
+        conversation_short_id: Option<i64>,
+        conversation_type: i64,
+    ) -> Result<serde_json::Value> {
+        self.im_proto_signer()?;
+        let conversation = if let (Some(conversation_id), Some(short_id)) = (
+            conversation_id.filter(|value| !value.trim().is_empty()),
+            conversation_short_id.filter(|value| *value > 0),
+        ) {
+            Some(serde_json::json!({
+                "conversation_id": conversation_id,
+                "conversation_short_id": short_id,
+                "conversation_type": if conversation_type > 0 { conversation_type } else { 1 },
+            }))
+        } else if let Some(uid) = to_user_id.filter(|value| !value.trim().is_empty()) {
+            Some(self.create_im_conversation(uid).await?)
+        } else {
+            None
+        };
+
+        let Some(conversation) = conversation else {
+            return self.get_im_recent_user_messages(cursor).await;
+        };
+
+        let conversation_id = conversation
+            .get("conversation_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        let conversation_short_id = conversation
+            .get("conversation_short_id")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
+        let conversation_type = conversation
+            .get("conversation_type")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(1);
+        let body = im_proto::build_get_by_conversation_body(
+            conversation_id,
+            conversation_short_id,
+            conversation_type,
+            cursor.max(0),
+            50,
+        );
+        let payload = self.build_im_pc_proto_request(301, &body)?;
+        let response = self
+            .post_im_proto(
+                "https://imapi.douyin.com/v1/message/get_by_conversation",
+                payload,
+                false,
+            )
+            .await?;
+        let body = response
+            .pointer("/body/get_by_conversation_body")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let messages = body
+            .get("messages")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(serde_json::json!({
+            "message": "获取历史消息成功",
+            "messages": Self::normalize_im_messages(&messages),
+            "next_cursor": body.get("next_cursor").cloned().unwrap_or_default(),
+            "has_more": body.get("has_more").and_then(|value| value.as_bool()).unwrap_or(false),
+            "conversation": {
+                "conversation_id": conversation_id,
+                "conversation_short_id": conversation_short_id,
+                "conversation_type": conversation_type,
+            },
+        }))
+    }
+
     pub async fn get_im_spotlight_relation_sec_user_ids(
         &self,
         limit: usize,
@@ -2936,10 +3403,13 @@ impl DouyinClient {
                 valid: true,
                 user_name: Some(user.nickname),
                 user_id: Some(if user.uid.is_empty() {
-                    user.sec_uid
+                    user.sec_uid.clone()
                 } else {
-                    user.uid
+                    user.uid.clone()
                 }),
+                avatar_thumb: Some(user.avatar_thumb),
+                avatar_medium: Some(user.avatar_medium),
+                avatar_larger: Some(user.avatar_larger),
                 expires_at: None,
                 message: "Cookie 有效".to_string(),
             }),
@@ -2953,6 +3423,9 @@ impl DouyinClient {
                                 valid: false,
                                 user_name: None,
                                 user_id: None,
+                                avatar_thumb: None,
+                                avatar_medium: None,
+                                avatar_larger: None,
                                 expires_at: None,
                                 message: format!("Cookie 会话已过期，请重新登录: {}", message),
                             });
@@ -2970,6 +3443,9 @@ impl DouyinClient {
                         valid: false,
                         user_name: None,
                         user_id: None,
+                        avatar_thumb: None,
+                        avatar_medium: None,
+                        avatar_larger: None,
                         expires_at: None,
                         message: format!(
                             "Cookie 已保存但登录态校验失败，请重新登录或完成验证: {}",
@@ -2982,6 +3458,9 @@ impl DouyinClient {
                     valid: false,
                     user_name: None,
                     user_id: None,
+                    avatar_thumb: None,
+                    avatar_medium: None,
+                    avatar_larger: None,
                     expires_at: None,
                     message: if looks_like_logged_out_error(&e.to_string()) {
                         "用户未登录，请在设置中重新登录并刷新 Cookie".to_string()

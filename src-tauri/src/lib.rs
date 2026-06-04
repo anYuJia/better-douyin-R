@@ -167,6 +167,163 @@ fn sanitize_sec_user_ids(ids: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn friend_chat_state_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("douyin-downloader")
+        .join("friend_chat_state.json")
+}
+
+fn coerce_i64(value: Option<&serde_json::Value>, default: i64) -> i64 {
+    value
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().map(|value| value as i64))
+                .or_else(|| value.as_f64().map(|value| value as i64))
+                .or_else(|| {
+                    value
+                        .as_str()
+                        .and_then(|text| text.trim().parse::<i64>().ok())
+                })
+        })
+        .unwrap_or(default)
+}
+
+fn sanitize_friend_chat_message(value: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+    let object = value?.as_object()?;
+    let text = object
+        .get("text")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim();
+    if text.is_empty() {
+        return None;
+    }
+    let created_at = coerce_i64(
+        object.get("createdAt").or_else(|| object.get("created_at")),
+        0,
+    );
+    if created_at <= 0 {
+        return None;
+    }
+    let direction = object
+        .get("direction")
+        .and_then(|value| value.as_str())
+        .filter(|value| *value == "in" || *value == "out")
+        .unwrap_or("out");
+    let status = object
+        .get("status")
+        .and_then(|value| value.as_str())
+        .filter(|value| matches!(*value, "pending" | "sent" | "error"))
+        .unwrap_or("sent");
+    let id = object
+        .get("id")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.chars().take(160).collect::<String>())
+        .unwrap_or_else(|| format!("message-{created_at}"));
+    let sender_uid = object
+        .get("senderUid")
+        .or_else(|| object.get("sender_uid"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .chars()
+        .take(80)
+        .collect::<String>();
+    Some(serde_json::json!({
+        "id": id,
+        "text": text.chars().take(1000).collect::<String>(),
+        "createdAt": created_at,
+        "status": status,
+        "direction": direction,
+        "senderUid": sender_uid,
+    }))
+}
+
+fn sanitize_friend_chat_state(value: serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object() else {
+        return serde_json::json!({"summaries": {}, "unreadCounts": {}});
+    };
+    let raw_summaries = object
+        .get("summaries")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let raw_unread = object
+        .get("unreadCounts")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let mut summaries = serde_json::Map::new();
+    let mut unread_counts = serde_json::Map::new();
+
+    for (raw_sec_uid, raw_summary) in raw_summaries {
+        let sec_uid = raw_sec_uid.trim().to_string();
+        let Some(summary) = raw_summary.as_object() else {
+            continue;
+        };
+        if sec_uid.is_empty() || sec_uid.chars().count() > 220 {
+            continue;
+        }
+        let latest_message = sanitize_friend_chat_message(summary.get("latestMessage"));
+        let mut latest_at = coerce_i64(summary.get("latestMessageAt"), 0);
+        let unread_count = coerce_i64(summary.get("unreadCount"), 0).clamp(0, 999);
+        if let Some(latest) = latest_message.as_ref() {
+            latest_at = latest_at.max(coerce_i64(latest.get("createdAt"), 0));
+        }
+        if latest_at <= 0 && unread_count <= 0 {
+            continue;
+        }
+        summaries.insert(
+            sec_uid.clone(),
+            serde_json::json!({
+                "latestMessage": latest_message,
+                "latestMessageAt": latest_at,
+                "unreadCount": unread_count,
+            }),
+        );
+        if unread_count > 0 {
+            unread_counts.insert(sec_uid, serde_json::Value::Number(unread_count.into()));
+        }
+    }
+
+    for (raw_sec_uid, raw_count) in raw_unread {
+        let sec_uid = raw_sec_uid.trim().to_string();
+        if sec_uid.is_empty() || sec_uid.chars().count() > 220 {
+            continue;
+        }
+        let count = coerce_i64(Some(&raw_count), 0).clamp(0, 999);
+        if count > 0 {
+            unread_counts.insert(sec_uid.clone(), serde_json::Value::Number(count.into()));
+            if let Some(summary) = summaries
+                .get_mut(&sec_uid)
+                .and_then(|value| value.as_object_mut())
+            {
+                let current = coerce_i64(summary.get("unreadCount"), 0);
+                summary.insert(
+                    "unreadCount".to_string(),
+                    serde_json::Value::Number(current.max(count).into()),
+                );
+            }
+        }
+    }
+
+    serde_json::json!({
+        "summaries": serde_json::Value::Object(summaries),
+        "unreadCounts": serde_json::Value::Object(unread_counts),
+    })
+}
+
+fn json_object_with_success(mut value: serde_json::Value) -> serde_json::Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert("success".to_string(), serde_json::Value::Bool(true));
+        value
+    } else {
+        serde_json::json!({"success": true, "data": value})
+    }
+}
+
 fn relation_signer_ready(signer: &Option<RelationSignerConfig>) -> bool {
     signer
         .as_ref()
@@ -281,10 +438,20 @@ fn inject_relation_signer_probe(window: &tauri::WebviewWindow) {
                     if (!crypto) throw new Error("security sdk not ready");
                     const info = await crypto.getKeysInfoWithOrigin({ certType: "header", scene: "web_protect" });
                     const ecdh = await crypto.initECDHKey();
+                    let privateKey = "";
+                    try {
+                        const storedCrypto = window.localStorage && window.localStorage.getItem("security-sdk/s_sdk_crypt_sdk") || "";
+                        const outer = storedCrypto ? JSON.parse(storedCrypto) : {};
+                        const inner = outer && outer.data ? JSON.parse(outer.data) : {};
+                        privateKey = inner && inner.ec_privateKey || "";
+                    } catch (error) {}
+                    const clientCert = info && info.sign && info.sign.client_cert || "";
                     const payload = {
                         ticket: info && info.sign && info.sign.ticket || "",
                         ts_sign: info && info.sign && info.sign.ts_sign || "",
-                        public_key: info && (info.b64PubKey || (info.sign && info.sign.client_cert || "").replace(/^pub\./, "")) || "",
+                        public_key: info && (info.b64PubKey || clientCert.replace(/^pub\./, "")) || "",
+                        client_cert: clientCert,
+                        private_key: privateKey,
                         ecdh_key: bytesToBase64(ecdh),
                         uid: window.SSR_RENDER_DATA && window.SSR_RENDER_DATA.app && window.SSR_RENDER_DATA.app.odin && window.SSR_RENDER_DATA.app.odin.user_id || "",
                         dtrait: "",
@@ -2068,6 +2235,133 @@ async fn get_friend_online_status(
     }))
 }
 
+/// 发送文本私信。
+#[tauri::command]
+async fn send_friend_message(
+    state: State<'_, AppState>,
+    to_user_id: Option<String>,
+    uid: Option<String>,
+    content: String,
+) -> Result<serde_json::Value, String> {
+    let to_user_id = to_user_id.or(uid).unwrap_or_default();
+    if to_user_id.trim().is_empty() {
+        return Ok(serde_json::json!({
+            "success": false,
+            "message": "缺少好友数字 uid，无法发送私信"
+        }));
+    }
+    if content.trim().is_empty() {
+        return Ok(serde_json::json!({
+            "success": false,
+            "message": "消息内容不能为空"
+        }));
+    }
+    let client = match get_client(&state).await {
+        Ok(client) => client,
+        Err(_) => return Ok(cookie_required_response()),
+    };
+    match client.send_im_text_message(&to_user_id, &content).await {
+        Ok(result) => Ok(json_object_with_success(result)),
+        Err(error) => Ok(api_login_or_verify_error_response(
+            &client,
+            "发送私信失败",
+            error,
+            "https://www.douyin.com/",
+        )
+        .await),
+    }
+}
+
+/// 获取最近的 IM 历史消息。
+#[tauri::command]
+async fn get_friend_message_history(
+    state: State<'_, AppState>,
+    cursor: Option<i64>,
+    to_user_id: Option<String>,
+    uid: Option<String>,
+    conversation_id: Option<String>,
+    conversation_short_id: Option<serde_json::Value>,
+    conversation_type: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let client = match get_client(&state).await {
+        Ok(client) => client,
+        Err(_) => return Ok(cookie_required_response()),
+    };
+    let to_user_id = to_user_id.or(uid);
+    let conversation_short_id = coerce_i64(conversation_short_id.as_ref(), 0);
+    let conversation_type = coerce_i64(conversation_type.as_ref(), 1).max(1);
+    match client
+        .get_im_history_messages(
+            cursor.unwrap_or_default().max(0),
+            to_user_id.as_deref(),
+            conversation_id.as_deref(),
+            if conversation_short_id > 0 {
+                Some(conversation_short_id)
+            } else {
+                None
+            },
+            conversation_type,
+        )
+        .await
+    {
+        Ok(result) => Ok(json_object_with_success(result)),
+        Err(error) => Ok(api_login_or_verify_error_response(
+            &client,
+            "获取历史消息失败",
+            error,
+            "https://www.douyin.com/",
+        )
+        .await),
+    }
+}
+
+/// 读取好友聊天列表状态。
+#[tauri::command]
+async fn get_friend_chat_state() -> Result<serde_json::Value, String> {
+    let path = friend_chat_state_path();
+    if !path.exists() {
+        return Ok(serde_json::json!({
+            "success": true,
+            "summaries": {},
+            "unreadCounts": {}
+        }));
+    }
+    match fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+    {
+        Some(value) => {
+            let state = sanitize_friend_chat_state(value);
+            Ok(json_object_with_success(state))
+        }
+        None => Ok(serde_json::json!({
+            "success": true,
+            "summaries": {},
+            "unreadCounts": {}
+        })),
+    }
+}
+
+/// 保存好友聊天列表状态。
+#[tauri::command]
+async fn save_friend_chat_state(payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    let state = sanitize_friend_chat_state(payload);
+    let path = friend_chat_state_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("保存好友聊天状态失败: {}", error))?;
+    }
+    let temp_path = path.with_extension("json.tmp");
+    let mut content = serde_json::to_string_pretty(&state)
+        .map_err(|error| format!("保存好友聊天状态失败: {}", error))?;
+    content.push('\n');
+    fs::write(&temp_path, content).map_err(|error| format!("保存好友聊天状态失败: {}", error))?;
+    fs::rename(&temp_path, &path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        format!("保存好友聊天状态失败: {}", error)
+    })?;
+    Ok(serde_json::json!({"success": true}))
+}
+
 /// 获取推荐视频
 #[tauri::command]
 async fn get_recommended(
@@ -3732,6 +4026,10 @@ pub fn run() {
             get_mix_videos,
             get_liked_authors,
             get_friend_online_status,
+            send_friend_message,
+            get_friend_message_history,
+            get_friend_chat_state,
+            save_friend_chat_state,
             get_recommended,
             get_comments,
             verify_cookie,
