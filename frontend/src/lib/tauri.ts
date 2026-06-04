@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════
 
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
 import type {
   AppConfig,
   ApiResponse,
@@ -73,23 +75,24 @@ declare global {
         listen?: <T>(event: string, cb: (ev: { payload: T }) => void) => Promise<() => void>;
       };
     };
+    __TAURI_INTERNALS__?: unknown;
     io?: (options?: { transports?: string[] }) => BrowserSocket;
     SOCKET_TRANSPORTS?: string[];
   }
 }
 
 function isTauriRuntime() {
-  return Boolean(window.__TAURI__?.core?.invoke);
+  return Boolean(window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__);
 }
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  const tauriInvoke = window.__TAURI__?.core?.invoke;
+  const invokeFn = window.__TAURI__?.core?.invoke || tauriInvoke;
 
-  if (!tauriInvoke) {
+  if (!isTauriRuntime()) {
     return Promise.reject(new Error("Tauri API unavailable"));
   }
 
-  return tauriInvoke<T>(command, args)
+  return invokeFn<T>(command, args)
     .then((result) => {
       emitCookieInvalidIfNeeded(result);
       return result;
@@ -409,9 +412,9 @@ function shouldUseBrowserBridge() {
 }
 
 export async function listenEvent<T>(event: string, handler: EventHandler<T>): Promise<TauriUnlisten> {
-  const tauriListen = window.__TAURI__?.event?.listen;
-  if (tauriListen) {
-    return tauriListen(event, (ev) => handler(ev.payload as T));
+  const listenFn = window.__TAURI__?.event?.listen || tauriListen;
+  if (isTauriRuntime()) {
+    return listenFn<T>(event, (ev) => handler(ev.payload as T));
   }
 
   const socket = getBrowserSocket();

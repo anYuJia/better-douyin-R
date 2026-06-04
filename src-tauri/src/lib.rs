@@ -495,6 +495,7 @@ pub struct AppState {
     pub(crate) media_range_cache: Arc<Mutex<HashMap<String, media_proxy::CachedMediaRange>>>,
     pub(crate) download_file_index: Arc<Mutex<Option<DownloadFileIndexCache>>>,
     pub(crate) im_message_listener: Arc<Mutex<Option<JoinHandle<()>>>>,
+    pub(crate) im_message_listener_attempted_at: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Clone)]
@@ -526,6 +527,7 @@ impl AppState {
             media_range_cache: Arc::new(Mutex::new(HashMap::new())),
             download_file_index: Arc::new(Mutex::new(None)),
             im_message_listener: Arc::new(Mutex::new(None)),
+            im_message_listener_attempted_at: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -818,7 +820,7 @@ async fn run_im_message_listener(
     );
     headers.insert("User-Agent", crate::config::get_user_agent().parse()?);
     headers.insert("Cache-Control", "no-cache".parse()?);
-    headers.insert("Sec-WebSocket-Protocol", "binary, base64, pbbp2".parse()?);
+    headers.insert("Sec-WebSocket-Protocol", "pbbp2".parse()?);
     headers.insert(
         "Sec-WebSocket-Extensions",
         "permessage-deflate; client_max_window_bits".parse()?,
@@ -858,6 +860,16 @@ async fn ensure_im_message_listener(state: &AppState, client: DouyinClient) {
     {
         return;
     }
+    let mut attempted_at = state.im_message_listener_attempted_at.lock().await;
+    if attempted_at
+        .as_ref()
+        .map(|instant| instant.elapsed() < Duration::from_secs(10))
+        .unwrap_or(false)
+    {
+        return;
+    }
+    *attempted_at = Some(Instant::now());
+    drop(attempted_at);
     *listener = Some(tokio::spawn(async move {
         if let Err(error) = run_im_message_listener(app.clone(), client).await {
             log::warn!("Douyin IM WebSocket listener exited: {}", error);
