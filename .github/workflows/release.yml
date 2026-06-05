@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      tag_name:
+        description: 'Release tag, for example v1.0.25'
+        required: true
+        type: string
       release_notes:
         description: '新版本内容，会显示在应用内更新提示和 Release 正文顶部'
         required: false
@@ -17,6 +21,8 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '## 新版本内容\n\n- 本次更新内容稍后补充。' }}
   DOWNLOAD_GUIDE: |
     ## 下载建议
 
@@ -78,9 +84,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: 'better-douyin-R ${{ github.ref_name }}'
-          releaseBody: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '## 新版本内容\n\n- 本次更新内容稍后补充。' }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: 'better-douyin-R ${{ env.RELEASE_TAG }}'
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
@@ -89,14 +95,14 @@ jobs:
       - name: Normalize release asset names
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/rename-release-assets.mjs
 
       - name: Package portable macOS zip
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
           APP_PATH="$(find "$APP_DIR" -maxdepth 1 -name "*.app" -print -quit)"
           if [ -z "$APP_PATH" ]; then
@@ -111,7 +117,7 @@ jobs:
       - name: Upload portable macOS zip to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           files: better-douyin-R-v*-${{ matrix.label }}-portable.zip
         env:
@@ -156,9 +162,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: 'better-douyin-R ${{ github.ref_name }}'
-          releaseBody: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '## 新版本内容\n\n- 本次更新内容稍后补充。' }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: 'better-douyin-R ${{ env.RELEASE_TAG }}'
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
@@ -167,7 +173,7 @@ jobs:
       - name: Normalize release asset names
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/rename-release-assets.mjs
 
@@ -230,7 +236,7 @@ jobs:
             exit 1
           }
 
-          $version = "${{ github.ref_name }}" -replace '^v',''
+          $version = "${env:RELEASE_TAG}" -replace '^v',''
           $updaterExe = "better-douyin-R-v${version}-windows-x64-portable.exe"
           $portableExe = "better-douyin-R.exe"
           Copy-Item $exePath $updaterExe
@@ -274,7 +280,7 @@ jobs:
       - name: Upload portable assets to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           files: |
             better-douyin-R-v*-windows-x64-portable.exe
@@ -328,9 +334,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: 'better-douyin-R ${{ github.ref_name }}'
-          releaseBody: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '## 新版本内容\n\n- 本次更新内容稍后补充。' }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: 'better-douyin-R ${{ env.RELEASE_TAG }}'
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false
           retryAttempts: 5
@@ -339,7 +345,7 @@ jobs:
       - name: Normalize release asset names
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/rename-release-assets.mjs
 
@@ -359,8 +365,7 @@ jobs:
       - name: Verify and publish updater metadata aliases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.ref_name }}
-          RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '## 新版本内容\n\n- 本次更新内容稍后补充。' }}
+          VERSION: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
 
