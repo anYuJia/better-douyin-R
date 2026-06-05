@@ -44,9 +44,11 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             label: macos-arm64
+            runner: macos-14
           - target: x86_64-apple-darwin
             label: macos-x64
-    runs-on: macos-latest
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
     steps:
