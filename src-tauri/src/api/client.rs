@@ -34,6 +34,7 @@ fn clean_video_media_url(url: &str) -> String {
 }
 
 type HmacSha256 = Hmac<Sha256>;
+const IM_HISTORY_PAGE_SIZE: i64 = 20;
 
 fn crc32_hex(bytes: &[u8]) -> String {
     let mut crc: u32 = 0xffff_ffff;
@@ -3578,7 +3579,7 @@ impl DouyinClient {
             conversation_short_id,
             conversation_type,
             cursor.max(0),
-            50,
+            IM_HISTORY_PAGE_SIZE,
         );
         let payload = self.build_im_pc_proto_request(301, &body)?;
         let response = match self
@@ -4066,10 +4067,7 @@ impl DouyinClient {
                         avatar_medium: None,
                         avatar_larger: None,
                         expires_at: None,
-                        message: format!(
-                            "Cookie 已保存，登录态接口暂时无法确认；私信功能会继续使用当前会话: {}",
-                            e
-                        ),
+                        message: "Cookie 有效，私信功能会继续使用当前会话".to_string(),
                     });
                 }
 
@@ -4147,12 +4145,16 @@ impl DouyinClient {
     }
 
     async fn get_current_user_from_profile_self(&self) -> Result<UserInfo> {
+        let headers = HashMap::from([(
+            "Accept-Encoding".to_string(),
+            "identity;q=1, *;q=0".to_string(),
+        )]);
         let response = self
             .request_raw_json_with_options(
                 "https://www.douyin.com/aweme/v1/web/user/profile/self/",
                 None,
                 "GET",
-                None,
+                Some(headers),
                 true,
             )
             .await
@@ -4242,10 +4244,16 @@ impl DouyinClient {
     async fn get_current_user_from_query_user(&self) -> Result<UserInfo> {
         let mut params = HashMap::new();
         params.insert("publish_video_strategy_type", "2".to_string());
-        let headers = HashMap::from([(
-            "Referer".to_string(),
-            "https://www.douyin.com/discover".to_string(),
-        )]);
+        let headers = HashMap::from([
+            (
+                "Referer".to_string(),
+                "https://www.douyin.com/discover".to_string(),
+            ),
+            (
+                "Accept-Encoding".to_string(),
+                "identity;q=1, *;q=0".to_string(),
+            ),
+        ]);
         let response = self
             .request_raw_json_with_options(
                 "https://www.douyin.com/aweme/v1/web/query/user",

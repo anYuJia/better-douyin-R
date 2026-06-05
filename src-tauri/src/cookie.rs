@@ -82,8 +82,7 @@ pub fn has_douyin_login_cookie(cookies: &[Cookie<'static>]) -> bool {
 
 pub fn has_douyin_session_cookie(cookies: &[Cookie<'static>]) -> bool {
     cookies.iter().any(|cookie| {
-        matches!(cookie.name(), "sessionid" | "sessionid_ss")
-            && !cookie.value().trim().is_empty()
+        matches!(cookie.name(), "sessionid" | "sessionid_ss") && !cookie.value().trim().is_empty()
     })
 }
 

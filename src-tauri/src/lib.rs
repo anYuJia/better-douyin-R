@@ -13,8 +13,8 @@ use api::{CookieStatus, DouyinClient, DownloadHistory, UserInfo, VideoInfo};
 use base64::Engine;
 use config::{AppConfig, RelationSignerConfig};
 use cookie::{
-    has_douyin_login_cookie, has_douyin_session_cookie, parse_cookie_string, serialize_cookie_string,
-    verify_douyin_login_cookie, CookieLoginSession,
+    has_douyin_login_cookie, has_douyin_session_cookie, parse_cookie_string,
+    serialize_cookie_string, verify_douyin_login_cookie, CookieLoginSession,
 };
 use downloader::{Downloader, DownloaderEvent};
 use futures::StreamExt;
@@ -151,6 +151,33 @@ fn strip_internal_login_cookies(
         })
         .cloned()
         .collect()
+}
+
+fn is_login_cookie_candidate(cookie: &tauri::webview::Cookie<'static>) -> bool {
+    let name = cookie.name();
+    if name == RELATION_SIGNER_COOKIE_NAME || name.starts_with(IM_FRIEND_IDS_COOKIE_PREFIX) {
+        return true;
+    }
+    cookie
+        .domain()
+        .map(|domain| {
+            let domain = domain.trim().trim_start_matches('.').to_ascii_lowercase();
+            "www.douyin.com" == domain || "www.douyin.com".ends_with(&format!(".{}", domain))
+        })
+        .unwrap_or_else(|| {
+            matches!(
+                name,
+                "sessionid"
+                    | "sessionid_ss"
+                    | "sid_guard"
+                    | "uid_tt"
+                    | "passport_csrf_token"
+                    | "passport_auth_status"
+                    | "ttwid"
+                    | "msToken"
+                    | "s_v_web_id"
+            )
+        })
 }
 
 fn sanitize_sec_user_ids(ids: Vec<String>) -> Vec<String> {
@@ -1240,31 +1267,7 @@ async fn cookie_browser_login(
                 Ok(cookies) => {
                     let cookies: Vec<_> = cookies
                         .into_iter()
-                        .filter(|cookie| {
-                            let name = cookie.name();
-                            cookie
-                                .domain()
-                                .map(|domain| {
-                                    let domain =
-                                        domain.trim().trim_start_matches('.').to_ascii_lowercase();
-                                    "www.douyin.com" == domain
-                                        || "www.douyin.com".ends_with(&format!(".{}", domain))
-                                })
-                                .unwrap_or_else(|| {
-                                    matches!(
-                                        name,
-                                        "sessionid"
-                                            | "sessionid_ss"
-                                            | "sid_guard"
-                                            | "uid_tt"
-                                            | "passport_csrf_token"
-                                            | "passport_auth_status"
-                                            | "ttwid"
-                                            | "msToken"
-                                            | "s_v_web_id"
-                                    )
-                                })
-                        })
+                        .filter(is_login_cookie_candidate)
                         .collect();
                     let mut relation_signer = extract_relation_signer_cookie(&cookies);
                     let public_cookies = strip_internal_login_cookies(&cookies);
@@ -1339,7 +1342,7 @@ async fn cookie_browser_login(
                                     &app,
                                     serde_json::json!({
                                         "event": "pending",
-                                        "message": "登录已确认，正在采集点赞安全参数"
+                                        "message": "登录已确认，正在采集私信安全参数"
                                     }),
                                 )
                                 .await;
@@ -1354,34 +1357,7 @@ async fn cookie_browser_login(
                                     if let Ok(latest_cookies) = window.cookies() {
                                         let latest_cookies: Vec<_> = latest_cookies
                                             .into_iter()
-                                            .filter(|cookie| {
-                                                let name = cookie.name();
-                                                cookie
-                                                    .domain()
-                                                    .map(|domain| {
-                                                        let domain = domain
-                                                            .trim()
-                                                            .trim_start_matches('.')
-                                                            .to_ascii_lowercase();
-                                                        "www.douyin.com" == domain
-                                                            || "www.douyin.com"
-                                                                .ends_with(&format!(".{}", domain))
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        matches!(
-                                                            name,
-                                                            "sessionid"
-                                                                | "sessionid_ss"
-                                                                | "sid_guard"
-                                                                | "uid_tt"
-                                                                | "passport_csrf_token"
-                                                                | "passport_auth_status"
-                                                                | "ttwid"
-                                                                | "msToken"
-                                                                | "s_v_web_id"
-                                                        )
-                                                    })
-                                            })
+                                            .filter(is_login_cookie_candidate)
                                             .collect();
                                         if let Some(mut signer) =
                                             extract_relation_signer_cookie(&latest_cookies)
@@ -1410,13 +1386,15 @@ async fn cookie_browser_login(
                         }
                         if let Some(signer) = relation_signer.as_ref() {
                             log::info!(
-                                "cookie browser relation signer captured: uid={} ticket_len={} ts_sign_len={} public_key_len={} ecdh_key_len={} dtrait_len={}",
+                                "cookie browser relation signer captured: uid={} ticket_len={} ts_sign_len={} public_key_len={} ecdh_key_len={} dtrait_len={} client_cert_len={} private_key_len={}",
                                 signer.uid,
                                 signer.ticket.len(),
                                 signer.ts_sign.len(),
                                 signer.public_key.len(),
                                 signer.ecdh_key.len(),
-                                signer.dtrait.len()
+                                signer.dtrait.len(),
+                                signer.client_cert.len(),
+                                signer.private_key.len()
                             );
                         }
                         if !relation_signer_ready_for_uid(&relation_signer, &current_user.uid) {
@@ -1540,7 +1518,7 @@ async fn cookie_browser_login(
                                 "message": if relation_signer_ready(&next_config.relation_signer) {
                                     format!("Cookie 获取成功！已登录为 {}，已采集 {} 个好友ID", current_user.nickname, next_config.im_friend_sec_user_ids.len())
                                 } else {
-                                    format!("Cookie 获取成功！已登录为 {}，已采集 {} 个好友ID，点赞安全参数未采集完整", current_user.nickname, next_config.im_friend_sec_user_ids.len())
+                                    format!("Cookie 获取成功！已登录为 {}，已采集 {} 个好友ID，私信安全参数未采集完整", current_user.nickname, next_config.im_friend_sec_user_ids.len())
                                 },
                                 "cookie_set": true,
                                 "friend_sec_user_id_count": next_config.im_friend_sec_user_ids.len()

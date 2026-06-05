@@ -768,7 +768,7 @@ export function FriendsStatusView() {
       return 0;
     }), [chatMessages, chatSummaries, friends, unreadCounts]);
   const selectedFriend = useMemo(
-    () => friendItems.find((friend) => friend.secUid === selectedFriendId) || friendItems[0] || null,
+    () => friendItems.find((friend) => friend.secUid === selectedFriendId) || null,
     [friendItems, selectedFriendId],
   );
   const selectedMessages = selectedFriend ? chatMessages[selectedFriend.secUid] || [] : [];
@@ -1138,6 +1138,7 @@ export function FriendsStatusView() {
     const current = historyState[friend.secUid];
     if (current?.loading) return;
     if (cursor > 0 && current?.hasMore === false) return;
+    const currentMessages = chatMessages[friend.secUid] || [];
     setHistoryState((state) => ({
       ...state,
       [friend.secUid]: {
@@ -1170,15 +1171,17 @@ export function FriendsStatusView() {
       setHistoryState((state) => ({
         ...state,
         [friend.secUid]: {
-          loaded: Boolean(state[friend.secUid]?.loaded),
+          loaded: cursor === 0 ? true : Boolean(state[friend.secUid]?.loaded),
           loading: false,
           nextCursor: state[friend.secUid]?.nextCursor || 0,
-          hasMore: state[friend.secUid]?.hasMore ?? true,
-          error: caught instanceof Error ? caught.message : "获取历史消息失败",
+          hasMore: false,
+          error: cursor === 0 && currentMessages.length === 0
+            ? caught instanceof Error ? caught.message : "获取历史消息失败"
+            : "",
         },
       }));
     }
-  }, [historyState, mergeHistoryMessages]);
+  }, [chatMessages, historyState, mergeHistoryMessages]);
 
   useEffect(() => {
     if (!selectedFriend || !selectedFriend.uid) return;
@@ -1269,10 +1272,10 @@ export function FriendsStatusView() {
       setSelectedFriendId("");
       return;
     }
-    if (!selectedFriendId || !friends.some((friend) => friend.secUid === selectedFriendId)) {
-      setSelectedFriendId(friendItems[0]?.secUid || friends[0].secUid);
+    if (selectedFriendId && !friends.some((friend) => friend.secUid === selectedFriendId)) {
+      setSelectedFriendId("");
     }
-  }, [friendItems, friends, selectedFriendId]);
+  }, [friends, selectedFriendId]);
 
   useEffect(() => {
     if (selectedFriend) {
@@ -1625,7 +1628,7 @@ export function FriendsStatusView() {
               <FriendRow
                 key={friend.secUid}
                 friend={friend}
-                selected={friend.secUid === selectedFriend?.secUid}
+                selected={friend.secUid === selectedFriendId}
                 onSelect={selectFriend}
                 onOpenProfile={openFriendProfile}
               />
@@ -2083,12 +2086,12 @@ function ChatWorkspace({
             </div>
           ) : (
             <div className="flex h-full min-h-[280px] flex-col items-center justify-center text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-[16px] border border-border bg-surface">
-                <MessageCircle className="h-5 w-5 text-text-muted" />
+              <div className="mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-[18px] border border-border bg-surface">
+                <img src="/animated_icon.svg" alt="" className="h-14 w-14 object-contain opacity-90" />
               </div>
-              <p className="text-[0.88rem] font-semibold text-text">暂无会话</p>
+              <p className="text-[0.88rem] font-semibold text-text">未选择会话</p>
               <p className="mt-1 max-w-sm text-[0.74rem] leading-relaxed text-text-muted">
-                刷新好友状态后，选择一个好友开始聊天。
+                左侧选择好友后再加载聊天内容。
               </p>
             </div>
           )}
