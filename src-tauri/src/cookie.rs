@@ -98,7 +98,7 @@ pub async fn verify_douyin_login_cookie(
         .map_err(|error| format!("创建 Cookie 校验客户端失败: {}", error))?;
 
     client
-        .get_current_user()
+        .get_current_user_strict_profile()
         .await
         .map_err(|error| format!("登录态校验失败: {}", error))
 }

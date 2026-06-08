@@ -2839,6 +2839,9 @@ impl DouyinClient {
         if text.is_empty() {
             return Err(anyhow!("评论内容不能为空"));
         }
+        self.get_current_user_strict_profile()
+            .await
+            .map_err(|error| anyhow!("用户未登录，请在设置中重新登录并刷新 Cookie: {}", error))?;
 
         let url = "https://www.douyin.com/aweme/v1/web/comment/publish";
         let mut query_params = crate::config::get_common_params();
@@ -4963,11 +4966,11 @@ impl DouyinClient {
                         }
                     }
                     log::warn!(
-                        "Douyin profile cookie check failed, but login cookies are present: {}",
+                        "Douyin profile cookie check failed; treating saved cookie as unavailable for action APIs: {}",
                         e
                     );
                     return Ok(CookieStatus {
-                        valid: true,
+                        valid: false,
                         user_name: None,
                         user_id: None,
                         sec_uid: None,
@@ -4975,7 +4978,7 @@ impl DouyinClient {
                         avatar_medium: None,
                         avatar_larger: None,
                         expires_at: None,
-                        message: "Cookie 有效，私信功能会继续使用当前会话".to_string(),
+                        message: format!("用户未登录，请在设置中重新登录并刷新 Cookie: {}", e),
                     });
                 }
 
@@ -5050,6 +5053,11 @@ impl DouyinClient {
                 self.get_current_user_from_query_user().await
             }
         }
+    }
+
+    /// 获取当前用户信息，不使用 query/user 兜底。动作接口必须通过该强校验。
+    pub async fn get_current_user_strict_profile(&self) -> Result<UserInfo> {
+        self.get_current_user_from_profile_self().await
     }
 
     async fn get_current_user_from_profile_self(&self) -> Result<UserInfo> {
