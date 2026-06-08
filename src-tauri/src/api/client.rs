@@ -14,6 +14,7 @@ use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -112,6 +113,27 @@ impl DouyinClient {
         let cookie_dict = Self::cookies_to_dict(cookie_str);
         let mut headers = HashMap::new();
 
+        if let Some(raw_legacy_client_data) = cookie_dict.get("bd_ticket_guard_client_data") {
+            let legacy_decoded = urlencoding::decode(raw_legacy_client_data)
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|_| raw_legacy_client_data.clone());
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(legacy_decoded.as_bytes()) {
+                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    if let Some(object) = value.as_object() {
+                        for (key, value) in object {
+                            if key.starts_with("bd-ticket-guard-") {
+                                if let Some(value) = value.as_str() {
+                                    headers.insert(key.clone(), value.to_string());
+                                } else if value.is_number() || value.is_boolean() {
+                                    headers.insert(key.clone(), value.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let raw_client_data_v2 = cookie_dict.get("bd_ticket_guard_client_data_v2");
         let raw_client_data =
             raw_client_data_v2.or_else(|| cookie_dict.get("bd_ticket_guard_client_data"));
@@ -167,6 +189,14 @@ impl DouyinClient {
         }
 
         headers
+    }
+
+    fn cookie_string_from_dict(cookie_dict: &HashMap<String, String>) -> String {
+        cookie_dict
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     fn decode_relation_ecdh_key(value: &str) -> Option<Vec<u8>> {
@@ -237,6 +267,46 @@ impl DouyinClient {
             ),
             ("bd-ticket-guard-client-data".to_string(), client_data),
         ])
+    }
+
+    fn spider_ticket_guard_headers(&self, path: &str) -> Result<HashMap<String, String>> {
+        let signer = self
+            .config
+            .relation_signer
+            .as_ref()
+            .ok_or_else(|| anyhow!("评论发布安全参数缺失，请重新登录获取 Cookie"))?;
+        let ticket = signer.ticket.trim();
+        let ts_sign = signer.ts_sign.trim();
+        let private_key = signer.private_key.trim();
+        if ticket.is_empty() || ts_sign.is_empty() || private_key.is_empty() {
+            return Err(anyhow!("评论发布安全参数不完整，请重新登录获取 Cookie"));
+        }
+
+        let timestamp = chrono::Utc::now().timestamp();
+        let sign_data = format!("ticket={ticket}&path={path}&timestamp={timestamp}");
+        let req_sign = Self::ecdsa_request_sign(&sign_data, private_key)?;
+        let client_data = serde_json::json!({
+            "ts_sign": ts_sign,
+            "req_content": "ticket,path,timestamp",
+            "req_sign": req_sign,
+            "timestamp": timestamp,
+        });
+        let client_data = base64::engine::general_purpose::URL_SAFE
+            .encode(serde_json::to_vec(&client_data).unwrap_or_default());
+
+        Ok(HashMap::from([
+            ("bd-ticket-guard-client-data".to_string(), client_data),
+            (
+                "bd-ticket-guard-iteration-version".to_string(),
+                "1".to_string(),
+            ),
+            (
+                "bd-ticket-guard-ree-public-key".to_string(),
+                signer.public_key.trim().to_string(),
+            ),
+            ("bd-ticket-guard-version".to_string(), "2".to_string()),
+            ("bd-ticket-guard-web-version".to_string(), "1".to_string()),
+        ]))
     }
 
     fn relation_uid_hash(&self) -> Option<String> {
@@ -504,6 +574,61 @@ impl DouyinClient {
         format!("verify_0{}", random_str)
     }
 
+    fn generate_fake_webid() -> String {
+        const DIGITS: &[u8] = b"0123456789";
+        let mut rng = rand::thread_rng();
+        (0..19)
+            .map(|_| DIGITS[rng.gen_range(0..DIGITS.len())] as char)
+            .collect()
+    }
+
+    fn sign_spider_a_bogus(query: &str, body: &str) -> Result<String> {
+        let api_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
+        let dy_ab_path = api_root.join("static/dy_ab.js");
+        if !dy_ab_path.exists() {
+            return Err(anyhow!(
+                "Spider 签名脚本不存在: {}",
+                dy_ab_path.display()
+            ));
+        }
+
+        let runner = r#"
+const fs = require('fs');
+const vm = require('vm');
+const scriptPath = process.argv[1];
+const query = process.argv[2] || '';
+const body = process.argv[3] || '';
+vm.runInThisContext(fs.readFileSync(scriptPath, 'utf8'), { filename: scriptPath });
+process.stdout.write(String(get_ab(query, body)));
+"#;
+        let output = Command::new("node")
+            .arg("-e")
+            .arg(runner)
+            .arg(&dy_ab_path)
+            .arg(query)
+            .arg(body)
+            .current_dir(&api_root)
+            .output()
+            .map_err(|error| anyhow!("执行 Spider a_bogus 签名失败: {}", error))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(anyhow!(
+                "Spider a_bogus 签名失败: {}",
+                if stderr.is_empty() {
+                    output.status.to_string()
+                } else {
+                    stderr
+                }
+            ));
+        }
+
+        let signature = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if signature.is_empty() {
+            return Err(anyhow!("Spider a_bogus 签名结果为空"));
+        }
+        Ok(signature)
+    }
+
     fn aws_quote(value: &str) -> String {
         urlencoding::encode(value)
             .replace('+', "%20")
@@ -659,6 +784,41 @@ impl DouyinClient {
         None
     }
 
+    async fn get_csrf_token(&self, headers: &HashMap<String, String>) -> Option<String> {
+        let mut request_headers = headers.clone();
+        request_headers.insert("accept".to_string(), "*/*".to_string());
+        request_headers.insert("cache-control".to_string(), "no-cache".to_string());
+        request_headers.insert("pragma".to_string(), "no-cache".to_string());
+        request_headers.insert("referer".to_string(), "https://www.douyin.com/?recommend=1".to_string());
+        request_headers.insert("x-secsdk-csrf-request".to_string(), "1".to_string());
+        request_headers.insert("x-secsdk-csrf-version".to_string(), "1.2.22".to_string());
+        request_headers.remove("content-type");
+        request_headers.remove("Content-Type");
+
+        let mut req = self
+            .client
+            .head("https://www.douyin.com/service/2/abtest_config/");
+        for (key, value) in &request_headers {
+            req = req.header(key, value);
+        }
+        let response = req.send().await.ok()?;
+        let raw_token = response
+            .headers()
+            .get("x-ware-csrf-token")
+            .or_else(|| response.headers().get("X-Ware-Csrf-Token"))?
+            .to_str()
+            .ok()?;
+        let parts = raw_token
+            .split(',')
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        parts
+            .get(1)
+            .filter(|value| !value.is_empty())
+            .or_else(|| parts.iter().find(|value| value.len() > 16))
+            .map(|value| value.to_string())
+    }
+
     async fn enrich_request(
         &self,
         params: &mut HashMap<String, String>,
@@ -674,11 +834,15 @@ impl DouyinClient {
             return;
         }
 
-        let cookie_dict = Self::cookies_to_dict(&cookie);
+        let mut cookie_dict = Self::cookies_to_dict(&cookie);
 
         params
             .entry("msToken".to_string())
             .or_insert_with(Self::generate_ms_token);
+        if let Some(ms_token) = params.get("msToken").cloned() {
+            cookie_dict.insert("msToken".to_string(), ms_token);
+            headers.insert("Cookie".to_string(), Self::cookie_string_from_dict(&cookie_dict));
+        }
         params.insert(
             "screen_width".to_string(),
             cookie_dict.get("dy_swidth").cloned().unwrap_or_else(|| {
@@ -734,9 +898,11 @@ impl DouyinClient {
             params.insert("uifid".to_string(), uifid.clone());
         }
 
-        if let Some(webid) = self.get_webid(headers).await {
-            params.insert("webid".to_string(), webid);
-        }
+        let webid = self
+            .get_webid(headers)
+            .await
+            .unwrap_or_else(Self::generate_fake_webid);
+        params.insert("webid".to_string(), webid);
     }
 
     async fn request_with_options<T: DeserializeOwned>(
@@ -2729,6 +2895,35 @@ impl DouyinClient {
         })
     }
 
+    async fn post_form_parts(
+        &self,
+        url: &str,
+        query_params: &[(String, String)],
+        body_params: &[(String, String)],
+        headers: &HashMap<String, String>,
+    ) -> Result<(reqwest::StatusCode, reqwest::header::HeaderMap, Vec<u8>)> {
+        let mut req = self.client.post(url).query(query_params).form(body_params);
+        for (key, value) in headers {
+            req = req.header(key, value);
+        }
+        let response = req
+            .send()
+            .await
+            .map_err(|error| anyhow!("HTTP request failed: {}", error))?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response.bytes().await?.to_vec();
+        Ok((status, headers, body))
+    }
+
+    fn header_value(headers: &reqwest::header::HeaderMap, key: &str) -> String {
+        headers
+            .get(key)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    }
+
     pub async fn set_comment_liked(
         &self,
         aweme_id: &str,
@@ -2843,89 +3038,221 @@ impl DouyinClient {
             .await
             .map_err(|error| anyhow!("用户未登录，请在设置中重新登录并刷新 Cookie: {}", error))?;
 
+        let path = "/aweme/v1/web/comment/publish";
         let url = "https://www.douyin.com/aweme/v1/web/comment/publish";
-        let mut query_params = crate::config::get_common_params();
-        query_params.insert("app_name".to_string(), "aweme".to_string());
-        query_params.insert("enter_from".to_string(), "discover".to_string());
-        query_params.insert("previous_page".to_string(), "discover".to_string());
-        query_params.insert("update_version_code".to_string(), "170400".to_string());
-        query_params.insert("version_code".to_string(), "170400".to_string());
-        query_params.insert("version_name".to_string(), "17.4.0".to_string());
-        query_params.insert("browser_name".to_string(), "Chrome".to_string());
-        query_params.insert("browser_version".to_string(), "148.0.0.0".to_string());
-        query_params.insert("engine_version".to_string(), "148.0.0.0".to_string());
-        query_params.insert("device_memory".to_string(), "16".to_string());
-
-        let mut body_params = HashMap::new();
-        body_params.insert("aweme_id".to_string(), aweme_id.to_string());
-        body_params.insert("text".to_string(), text.to_string());
-        body_params.insert("text_extra".to_string(), "[]".to_string());
-        body_params.insert("paste_edit_method".to_string(), "non_paste".to_string());
-        body_params.insert("comment_send_celltime".to_string(), "3000".to_string());
-        body_params.insert("comment_video_celltime".to_string(), "2000".to_string());
-        body_params.insert("one_level_comment_rank".to_string(), "1".to_string());
         let reply_id = reply_id.trim();
+        let reply_to_reply_id = reply_to_reply_id.trim();
+
+        let mut spider_headers = HashMap::from([
+            ("user-agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0".to_string()),
+            ("cache-control".to_string(), "no-cache".to_string()),
+            ("pragma".to_string(), "no-cache".to_string()),
+            ("sec-ch-ua".to_string(), "\"Microsoft Edge\";v=\"125\", \"Chromium\";v=\"125\", \"Not.A/Brand\";v=\"24\"".to_string()),
+            ("sec-ch-ua-mobile".to_string(), "?0".to_string()),
+            ("sec-ch-ua-platform".to_string(), "\"Windows\"".to_string()),
+            ("sec-fetch-dest".to_string(), "empty".to_string()),
+            ("sec-fetch-mode".to_string(), "cors".to_string()),
+            ("sec-fetch-site".to_string(), "same-origin".to_string()),
+            ("priority".to_string(), "u=1, i".to_string()),
+            ("accept".to_string(), "application/json, text/plain, */*".to_string()),
+            ("accept-language".to_string(), "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6".to_string()),
+            ("content-type".to_string(), "application/x-www-form-urlencoded; charset=UTF-8".to_string()),
+            ("Origin".to_string(), "https://www.douyin.com".to_string()),
+            ("referer".to_string(), format!("https://www.douyin.com/discover?modal_id={aweme_id}")),
+            ("Cookie".to_string(), self.config.cookie.clone()),
+        ]);
+        if let Ok(ticket_headers) = self.spider_ticket_guard_headers(path) {
+            spider_headers.extend(ticket_headers);
+        }
+
+        let mut spider_query = HashMap::from([
+            ("app_name".to_string(), "aweme".to_string()),
+            ("enter_from".to_string(), "discover".to_string()),
+            ("previous_page".to_string(), "discover".to_string()),
+            ("device_platform".to_string(), "webapp".to_string()),
+            ("aid".to_string(), "6383".to_string()),
+            ("channel".to_string(), "channel_pc_web".to_string()),
+            ("pc_client_type".to_string(), "1".to_string()),
+            ("update_version_code".to_string(), "170400".to_string()),
+            ("version_code".to_string(), "170400".to_string()),
+            ("version_name".to_string(), "17.4.0".to_string()),
+            ("cookie_enabled".to_string(), "true".to_string()),
+            ("screen_width".to_string(), "1707".to_string()),
+            ("screen_height".to_string(), "960".to_string()),
+            ("browser_language".to_string(), "zh-CN".to_string()),
+            ("browser_platform".to_string(), "Win32".to_string()),
+            ("browser_name".to_string(), "Edge".to_string()),
+            ("browser_version".to_string(), "125.0.0.0".to_string()),
+            ("browser_online".to_string(), "true".to_string()),
+            ("engine_name".to_string(), "Blink".to_string()),
+            ("engine_version".to_string(), "125.0.0.0".to_string()),
+            ("os_name".to_string(), "Windows".to_string()),
+            ("os_version".to_string(), "10".to_string()),
+            ("cpu_core_num".to_string(), "32".to_string()),
+            ("device_memory".to_string(), "8".to_string()),
+            ("platform".to_string(), "PC".to_string()),
+            ("downlink".to_string(), "10".to_string()),
+            ("effective_type".to_string(), "4g".to_string()),
+            ("round_trip_time".to_string(), "100".to_string()),
+        ]);
+        self.enrich_request(&mut spider_query, &mut spider_headers).await;
+        if let Some(csrf_token) = self.get_csrf_token(&spider_headers).await {
+            spider_headers.insert("x-secsdk-csrf-token".to_string(), csrf_token);
+        }
+
+        let mut spider_body = vec![
+            ("aweme_id".to_string(), aweme_id.to_string()),
+            ("comment_send_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
+            ("comment_video_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
+        ];
         if !reply_id.is_empty() {
-            body_params.insert("reply_id".to_string(), reply_id.to_string());
-            body_params.insert(
-                "reply_to_reply_id".to_string(),
-                if reply_to_reply_id.trim().is_empty() {
-                    "0".to_string()
-                } else {
-                    reply_to_reply_id.trim().to_string()
-                },
+            spider_body.push(("reply_id".to_string(), reply_id.to_string()));
+        }
+        spider_body.push(("text".to_string(), text.to_string()));
+        spider_body.push(("text_extra".to_string(), "[]".to_string()));
+
+        let spider_query_str = serde_urlencoded::to_string(&spider_query)?;
+        let spider_body_str = serde_urlencoded::to_string(&spider_body)?;
+        spider_query.insert(
+            "a_bogus".to_string(),
+            Self::sign_spider_a_bogus(&spider_query_str, &spider_body_str)?,
+        );
+        let spider_query_parts = spider_query.into_iter().collect::<Vec<(String, String)>>();
+
+        let (mut status, mut response_headers, mut body) = self
+            .post_form_parts(url, &spider_query_parts, &spider_body, &spider_headers)
+            .await?;
+        let first_ticket_guard_result =
+            Self::header_value(&response_headers, "bd-ticket-guard-result");
+        log::info!(
+            "Douyin comment publish spider response: status={} len={} ticket_guard_result={} logid={}",
+            status,
+            body.len(),
+            first_ticket_guard_result,
+            Self::header_value(&response_headers, "x-tt-logid"),
+        );
+
+        if status.is_success() && body.is_empty() && first_ticket_guard_result == "1002" {
+            let cookie_ticket_headers = Self::ticket_guard_headers_from_cookie(&self.config.cookie);
+            if !cookie_ticket_headers.is_empty() {
+                let mut retry_headers = spider_headers.clone();
+                retry_headers.retain(|key, _| !key.to_ascii_lowercase().starts_with("bd-ticket-guard-"));
+                retry_headers.extend(cookie_ticket_headers);
+                if let Some(csrf_token) = self.get_csrf_token(&retry_headers).await {
+                    retry_headers.insert("x-secsdk-csrf-token".to_string(), csrf_token);
+                }
+                (status, response_headers, body) = self
+                    .post_form_parts(url, &spider_query_parts, &spider_body, &retry_headers)
+                    .await?;
+                log::info!(
+                    "Douyin comment publish cookie-ticket response: status={} len={} ticket_guard_result={} logid={}",
+                    status,
+                    body.len(),
+                    Self::header_value(&response_headers, "bd-ticket-guard-result"),
+                    Self::header_value(&response_headers, "x-tt-logid"),
+                );
+            }
+        }
+
+        if status.is_success() && body.is_empty() {
+            let mut query_params = crate::config::get_common_params();
+            for key in [
+                "pc_libra_divert",
+                "support_h265",
+                "support_dash",
+                "disable_rs",
+                "need_filter_settings",
+                "list_type",
+            ] {
+                query_params.remove(key);
+            }
+            query_params.insert("app_name".to_string(), "aweme".to_string());
+            query_params.insert("enter_from".to_string(), "discover".to_string());
+            query_params.insert("previous_page".to_string(), "discover".to_string());
+            query_params.insert("update_version_code".to_string(), "170400".to_string());
+            query_params.insert("version_code".to_string(), "170400".to_string());
+            query_params.insert("version_name".to_string(), "17.4.0".to_string());
+            query_params.insert("browser_name".to_string(), "Chrome".to_string());
+            query_params.insert("browser_version".to_string(), "148.0.0.0".to_string());
+            query_params.insert("engine_version".to_string(), "148.0.0.0".to_string());
+            query_params.insert("device_memory".to_string(), "16".to_string());
+
+            let mut body_params = vec![
+                ("aweme_id".to_string(), aweme_id.to_string()),
+                ("text".to_string(), text.to_string()),
+                ("text_extra".to_string(), "[]".to_string()),
+                ("paste_edit_method".to_string(), "non_paste".to_string()),
+                ("comment_send_celltime".to_string(), "3000".to_string()),
+                ("comment_video_celltime".to_string(), "2000".to_string()),
+                ("one_level_comment_rank".to_string(), "1".to_string()),
+            ];
+            if !reply_id.is_empty() {
+                body_params.push(("reply_id".to_string(), reply_id.to_string()));
+                body_params.push((
+                    "reply_to_reply_id".to_string(),
+                    if reply_to_reply_id.is_empty() { "0" } else { reply_to_reply_id }.to_string(),
+                ));
+            }
+
+            let mut headers = crate::config::get_common_headers(&self.config.cookie);
+            headers.extend(self.relation_ticket_guard_headers(path));
+            headers.insert("Referer".to_string(), format!("https://www.douyin.com/video/{aweme_id}"));
+            headers.insert("Origin".to_string(), "https://www.douyin.com".to_string());
+            headers.insert("sec-fetch-site".to_string(), "same-origin".to_string());
+            headers.insert("sec-fetch-mode".to_string(), "cors".to_string());
+            headers.insert("sec-fetch-dest".to_string(), "empty".to_string());
+            headers.insert("priority".to_string(), "u=1, i".to_string());
+            headers.insert("x-secsdk-csrf-token".to_string(), "DOWNGRADE".to_string());
+            headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded; charset=UTF-8".to_string());
+            headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".to_string());
+            headers.insert("sec-ch-ua".to_string(), "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"".to_string());
+            if let Some(dtrait) = self.relation_dtrait() {
+                headers.insert("x-tt-session-dtrait".to_string(), dtrait);
+            }
+            self.enrich_request(&mut query_params, &mut headers).await;
+            let params_str = serde_urlencoded::to_string(&query_params)?;
+            let user_agent = headers
+                .get("User-Agent")
+                .map(String::as_str)
+                .unwrap_or_else(|| get_user_agent());
+            query_params.insert(
+                "a_bogus".to_string(),
+                sign::sign_detail(&params_str, user_agent),
+            );
+            let query_parts = query_params.into_iter().collect::<Vec<(String, String)>>();
+            (status, response_headers, body) = self
+                .post_form_parts(url, &query_parts, &body_params, &headers)
+                .await?;
+            log::info!(
+                "Douyin comment publish relation-v2 response: status={} len={} ticket_guard_result={} logid={}",
+                status,
+                body.len(),
+                Self::header_value(&response_headers, "bd-ticket-guard-result"),
+                Self::header_value(&response_headers, "x-tt-logid"),
             );
         }
 
-        let mut headers = crate::config::get_common_headers(&self.config.cookie);
-        headers.extend(self.relation_ticket_guard_headers("/aweme/v1/web/comment/publish"));
-        headers.insert("Referer".to_string(), format!("https://www.douyin.com/video/{aweme_id}"));
-        headers.insert("Origin".to_string(), "https://www.douyin.com".to_string());
-        headers.insert("sec-fetch-site".to_string(), "same-origin".to_string());
-        headers.insert("sec-fetch-mode".to_string(), "cors".to_string());
-        headers.insert("sec-fetch-dest".to_string(), "empty".to_string());
-        headers.insert("priority".to_string(), "u=1, i".to_string());
-        headers.insert("x-secsdk-csrf-token".to_string(), "DOWNGRADE".to_string());
-        headers.insert(
-            "Content-Type".to_string(),
-            "application/x-www-form-urlencoded; charset=UTF-8".to_string(),
-        );
-        headers.insert(
-            "User-Agent".to_string(),
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".to_string(),
-        );
-        headers.insert(
-            "sec-ch-ua".to_string(),
-            "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
-                .to_string(),
-        );
-        if let Some(dtrait) = self.relation_dtrait() {
-            headers.insert("x-tt-session-dtrait".to_string(), dtrait);
+        if !status.is_success() || body.is_empty() {
+            let ticket_guard_result =
+                Self::header_value(&response_headers, "bd-ticket-guard-result");
+            let logid = Self::header_value(&response_headers, "x-tt-logid");
+            return Err(anyhow!(
+                "发表评论失败: HTTP {}{}{}",
+                status,
+                if ticket_guard_result.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(", TicketGuard {}", ticket_guard_result)
+                },
+                if logid.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(", logid {}", logid)
+                }
+            ));
         }
 
-        self.enrich_request(&mut query_params, &mut headers).await;
-        let params_str = serde_urlencoded::to_string(&query_params)?;
-        let user_agent = headers
-            .get("User-Agent")
-            .map(String::as_str)
-            .unwrap_or_else(|| get_user_agent());
-        query_params.insert(
-            "a_bogus".to_string(),
-            sign::sign_detail(&params_str, user_agent),
-        );
-
-        let mut req = self.client.post(url).query(&query_params).form(&body_params);
-        for (key, value) in &headers {
-            req = req.header(key, value);
-        }
-        let response = req
-            .send()
-            .await
-            .map_err(|error| anyhow!("HTTP request failed: {}", error))?;
-        if !response.status().is_success() {
-            return Err(anyhow!("HTTP error: {}", response.status()));
-        }
-        let response = response.json::<serde_json::Value>().await?;
+        let response = serde_json::from_slice::<serde_json::Value>(&body)?;
         let status_code = response["status_code"].as_i64().unwrap_or(0);
         if status_code != 0 {
             let status_msg = response["message"]
