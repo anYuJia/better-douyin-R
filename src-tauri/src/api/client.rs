@@ -14,7 +14,9 @@ use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -277,14 +279,14 @@ impl DouyinClient {
             .ok_or_else(|| anyhow!("评论发布安全参数缺失，请重新登录获取 Cookie"))?;
         let ticket = signer.ticket.trim();
         let ts_sign = signer.ts_sign.trim();
-        let private_key = signer.private_key.trim();
+        let private_key = signer.private_key.trim().replace("\\n", "\n");
         if ticket.is_empty() || ts_sign.is_empty() || private_key.is_empty() {
             return Err(anyhow!("评论发布安全参数不完整，请重新登录获取 Cookie"));
         }
 
         let timestamp = chrono::Utc::now().timestamp();
         let sign_data = format!("ticket={ticket}&path={path}&timestamp={timestamp}");
-        let req_sign = Self::ecdsa_request_sign(&sign_data, private_key)?;
+        let req_sign = Self::spider_js_call("get_req_sign", &[&sign_data, &private_key])?;
         let client_data = serde_json::json!({
             "ts_sign": ts_sign,
             "req_content": "ticket,path,timestamp",
@@ -293,6 +295,7 @@ impl DouyinClient {
         });
         let client_data = base64::engine::general_purpose::URL_SAFE
             .encode(serde_json::to_vec(&client_data).unwrap_or_default());
+        let ree_public_key = Self::spider_js_call("get_ree_key", &[&private_key])?;
 
         Ok(HashMap::from([
             ("bd-ticket-guard-client-data".to_string(), client_data),
@@ -302,7 +305,7 @@ impl DouyinClient {
             ),
             (
                 "bd-ticket-guard-ree-public-key".to_string(),
-                signer.public_key.trim().to_string(),
+                ree_public_key,
             ),
             ("bd-ticket-guard-version".to_string(), "2".to_string()),
             ("bd-ticket-guard-web-version".to_string(), "1".to_string()),
@@ -582,7 +585,7 @@ impl DouyinClient {
             .collect()
     }
 
-    fn sign_spider_a_bogus(query: &str, body: &str) -> Result<String> {
+    fn spider_js_call(name: &str, args: &[&str]) -> Result<String> {
         let api_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
         let dy_ab_path = api_root.join("static/dy_ab.js");
         if !dy_ab_path.exists() {
@@ -596,24 +599,28 @@ impl DouyinClient {
 const fs = require('fs');
 const vm = require('vm');
 const scriptPath = process.argv[1];
-const query = process.argv[2] || '';
-const body = process.argv[3] || '';
+const name = process.argv[2] || '';
+const args = JSON.parse(process.argv[3] || '[]');
 vm.runInThisContext(fs.readFileSync(scriptPath, 'utf8'), { filename: scriptPath });
-process.stdout.write(String(get_ab(query, body)));
+if (typeof globalThis[name] !== 'function') {
+  throw new Error(`missing spider function: ${name}`);
+}
+process.stdout.write(String(globalThis[name](...args)));
 "#;
+        let args_json = serde_json::to_string(args)?;
         let output = Command::new("node")
             .arg("-e")
             .arg(runner)
             .arg(&dy_ab_path)
-            .arg(query)
-            .arg(body)
+            .arg(name)
+            .arg(args_json)
             .current_dir(&api_root)
             .output()
-            .map_err(|error| anyhow!("执行 Spider a_bogus 签名失败: {}", error))?;
+            .map_err(|error| anyhow!("执行 Spider JS 失败: {}", error))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(anyhow!(
-                "Spider a_bogus 签名失败: {}",
+                "Spider JS 调用失败: {}",
                 if stderr.is_empty() {
                     output.status.to_string()
                 } else {
@@ -622,11 +629,15 @@ process.stdout.write(String(get_ab(query, body)));
             ));
         }
 
-        let signature = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if signature.is_empty() {
-            return Err(anyhow!("Spider a_bogus 签名结果为空"));
+        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if result.is_empty() {
+            return Err(anyhow!("Spider JS 调用结果为空"));
         }
-        Ok(signature)
+        Ok(result)
+    }
+
+    fn sign_spider_a_bogus(query: &str, body: &str) -> Result<String> {
+        Self::spider_js_call("get_ab", &[query, body])
     }
 
     fn aws_quote(value: &str) -> String {
@@ -2916,6 +2927,91 @@ process.stdout.write(String(get_ab(query, body)));
         Ok((status, headers, body))
     }
 
+    fn post_form_parts_with_python_requests(
+        url: &str,
+        query_params: &[(String, String)],
+        body_params: &[(String, String)],
+        headers: &HashMap<String, String>,
+    ) -> Result<(reqwest::StatusCode, reqwest::header::HeaderMap, Vec<u8>)> {
+        let payload = serde_json::json!({
+            "url": url,
+            "params": query_params,
+            "data": body_params,
+            "headers": headers,
+        });
+        let script = r#"
+import base64
+import json
+import sys
+
+import requests
+
+payload = json.load(sys.stdin)
+response = requests.post(
+    payload["url"],
+    params=payload["params"],
+    data=payload["data"],
+    headers=payload["headers"],
+    timeout=(10, 30),
+    verify=False,
+)
+print(json.dumps({
+    "status": response.status_code,
+    "headers": dict(response.headers),
+    "body": base64.b64encode(response.content or b"").decode("ascii"),
+}, ensure_ascii=False))
+"#;
+        let mut child = Command::new("python3")
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| anyhow!("启动 Python requests 失败: {}", error))?;
+        {
+            let stdin = child
+                .stdin
+                .as_mut()
+                .ok_or_else(|| anyhow!("Python requests stdin 不可用"))?;
+            stdin.write_all(serde_json::to_string(&payload)?.as_bytes())?;
+        }
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(anyhow!(
+                "Python requests 发布失败: {}",
+                if stderr.is_empty() {
+                    output.status.to_string()
+                } else {
+                    stderr
+                }
+            ));
+        }
+        let value = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
+        let status_u16 = value["status"].as_u64().unwrap_or(0) as u16;
+        let status = reqwest::StatusCode::from_u16(status_u16)
+            .map_err(|_| anyhow!("Python requests 返回了无效 HTTP 状态: {}", status_u16))?;
+        let mut response_headers = reqwest::header::HeaderMap::new();
+        if let Some(object) = value["headers"].as_object() {
+            for (key, value) in object {
+                if let Some(value) = value.as_str() {
+                    if let (Ok(name), Ok(header_value)) = (
+                        reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(value),
+                    ) {
+                        response_headers.insert(name, header_value);
+                    }
+                }
+            }
+        }
+        let body = value["body"]
+            .as_str()
+            .and_then(|body| base64::engine::general_purpose::STANDARD.decode(body).ok())
+            .unwrap_or_default();
+        Ok((status, response_headers, body))
+    }
+
     fn header_value(headers: &reqwest::header::HeaderMap, key: &str) -> String {
         headers
             .get(key)
@@ -3043,6 +3139,18 @@ process.stdout.write(String(get_ab(query, body)));
         let reply_id = reply_id.trim();
         let reply_to_reply_id = reply_to_reply_id.trim();
 
+        let mut cookie_dict = Self::cookies_to_dict(&self.config.cookie);
+        let ms_token = cookie_dict
+            .get("msToken")
+            .cloned()
+            .unwrap_or_else(Self::generate_ms_token);
+        cookie_dict.insert("msToken".to_string(), ms_token.clone());
+        let cookie_with_ms_token = Self::cookie_string_from_dict(&cookie_dict);
+        let verify_fp = cookie_dict
+            .get("s_v_web_id")
+            .cloned()
+            .unwrap_or_else(Self::generate_verify_fp);
+
         let mut spider_headers = HashMap::from([
             ("user-agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0".to_string()),
             ("cache-control".to_string(), "no-cache".to_string()),
@@ -3059,13 +3167,13 @@ process.stdout.write(String(get_ab(query, body)));
             ("content-type".to_string(), "application/x-www-form-urlencoded; charset=UTF-8".to_string()),
             ("Origin".to_string(), "https://www.douyin.com".to_string()),
             ("referer".to_string(), format!("https://www.douyin.com/discover?modal_id={aweme_id}")),
-            ("Cookie".to_string(), self.config.cookie.clone()),
+            ("Cookie".to_string(), cookie_with_ms_token.clone()),
         ]);
         if let Ok(ticket_headers) = self.spider_ticket_guard_headers(path) {
             spider_headers.extend(ticket_headers);
         }
 
-        let mut spider_query = HashMap::from([
+        let mut spider_query = vec![
             ("app_name".to_string(), "aweme".to_string()),
             ("enter_from".to_string(), "discover".to_string()),
             ("previous_page".to_string(), "discover".to_string()),
@@ -3094,30 +3202,62 @@ process.stdout.write(String(get_ab(query, body)));
             ("downlink".to_string(), "10".to_string()),
             ("effective_type".to_string(), "4g".to_string()),
             ("round_trip_time".to_string(), "100".to_string()),
-        ]);
-        self.enrich_request(&mut spider_query, &mut spider_headers).await;
+        ];
+        let webid = self
+            .get_webid(&spider_headers)
+            .await
+            .unwrap_or_else(Self::generate_fake_webid);
+        spider_query.push(("webid".to_string(), webid));
+        spider_query.push(("msToken".to_string(), ms_token));
         if let Some(csrf_token) = self.get_csrf_token(&spider_headers).await {
             spider_headers.insert("x-secsdk-csrf-token".to_string(), csrf_token);
         }
 
-        let mut spider_body = vec![
+        let mut spider_body_for_sign = vec![
             ("aweme_id".to_string(), aweme_id.to_string()),
             ("comment_send_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
             ("comment_video_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
         ];
         if !reply_id.is_empty() {
-            spider_body.push(("reply_id".to_string(), reply_id.to_string()));
+            spider_body_for_sign.push(("reply_id".to_string(), reply_id.to_string()));
         }
-        spider_body.push(("text".to_string(), text.to_string()));
-        spider_body.push(("text_extra".to_string(), "[]".to_string()));
+        spider_body_for_sign.push(("text".to_string(), text.to_string()));
+        spider_body_for_sign.push(("text_extra".to_string(), "[]".to_string()));
+        let spider_body = spider_body_for_sign
+            .iter()
+            .filter(|(key, _)| key != "text_extra")
+            .cloned()
+            .collect::<Vec<_>>();
 
         let spider_query_str = serde_urlencoded::to_string(&spider_query)?;
-        let spider_body_str = serde_urlencoded::to_string(&spider_body)?;
-        spider_query.insert(
-            "a_bogus".to_string(),
-            Self::sign_spider_a_bogus(&spider_query_str, &spider_body_str)?,
+        let spider_body_str = serde_urlencoded::to_string(&spider_body_for_sign)?;
+        let a_bogus = Self::sign_spider_a_bogus(&spider_query_str, &spider_body_str)?;
+        spider_query.push(("a_bogus".to_string(), a_bogus));
+        spider_query.push(("verifyFp".to_string(), verify_fp.clone()));
+        spider_query.push(("fp".to_string(), verify_fp));
+        let spider_query_parts = spider_query;
+        log::info!(
+            "Douyin comment publish spider request shape: query_keys={} body_sign_keys={} body_send_keys={} csrf_present={} ticket_guard_present={} cookie_len={} signer_present={}",
+            spider_query_parts
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+            spider_body_for_sign
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+            spider_body
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+            spider_headers.contains_key("x-secsdk-csrf-token"),
+            spider_headers.contains_key("bd-ticket-guard-client-data"),
+            cookie_with_ms_token.len(),
+            self.config.relation_signer.is_some(),
         );
-        let spider_query_parts = spider_query.into_iter().collect::<Vec<(String, String)>>();
 
         let (mut status, mut response_headers, mut body) = self
             .post_form_parts(url, &spider_query_parts, &spider_body, &spider_headers)
@@ -3230,6 +3370,33 @@ process.stdout.write(String(get_ab(query, body)));
                 Self::header_value(&response_headers, "bd-ticket-guard-result"),
                 Self::header_value(&response_headers, "x-tt-logid"),
             );
+        }
+
+        if !status.is_success() || body.is_empty() {
+            match Self::post_form_parts_with_python_requests(
+                url,
+                &spider_query_parts,
+                &spider_body,
+                &spider_headers,
+            ) {
+                Ok((python_status, python_headers, python_body)) => {
+                    log::info!(
+                        "Douyin comment publish python-requests response: status={} len={} ticket_guard_result={} logid={}",
+                        python_status,
+                        python_body.len(),
+                        Self::header_value(&python_headers, "bd-ticket-guard-result"),
+                        Self::header_value(&python_headers, "x-tt-logid"),
+                    );
+                    if python_status.is_success() && !python_body.is_empty() {
+                        status = python_status;
+                        response_headers = python_headers;
+                        body = python_body;
+                    }
+                }
+                Err(error) => {
+                    log::warn!("Douyin comment publish python-requests fallback failed: {}", error);
+                }
+            }
         }
 
         if !status.is_success() || body.is_empty() {

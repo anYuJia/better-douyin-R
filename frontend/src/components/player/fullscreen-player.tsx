@@ -2935,7 +2935,7 @@ export function FullscreenPlayer({
                               value={commentDraft}
                               onChange={(event) => setCommentDraft(event.target.value)}
                               onKeyDown={(event) => {
-                                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                if (event.key === "Enter" && !event.shiftKey) {
                                   event.preventDefault();
                                   void submitComment();
                                 }
