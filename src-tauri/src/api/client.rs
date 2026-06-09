@@ -5,6 +5,8 @@ use crate::sign;
 use anyhow::{anyhow, Result};
 use base64::Engine;
 use hmac::{Hmac, Mac};
+use openssl::bn::BigNumContext;
+use openssl::ec::{EcKey, PointConversionForm};
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::sign::Signer;
@@ -14,7 +16,6 @@ use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -303,7 +304,7 @@ impl DouyinClient {
 
         let timestamp = chrono::Utc::now().timestamp();
         let sign_data = format!("ticket={ticket}&path={path}&timestamp={timestamp}");
-        let req_sign = Self::spider_js_call("get_req_sign", &[&sign_data, &private_key])?;
+        let req_sign = Self::spider_req_sign(&sign_data, &private_key)?;
         let client_data = serde_json::json!({
             "ts_sign": ts_sign,
             "req_content": "ticket,path,timestamp",
@@ -312,7 +313,7 @@ impl DouyinClient {
         });
         let client_data = base64::engine::general_purpose::URL_SAFE
             .encode(serde_json::to_vec(&client_data).unwrap_or_default());
-        let ree_public_key = Self::spider_js_call("get_ree_key", &[&private_key])?;
+        let ree_public_key = Self::spider_ree_key(&private_key)?;
 
         Ok(HashMap::from([
             ("bd-ticket-guard-client-data".to_string(), client_data),
@@ -592,56 +593,37 @@ impl DouyinClient {
             .collect()
     }
 
-    fn spider_js_call(name: &str, args: &[&str]) -> Result<String> {
-        let api_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
-        let dy_ab_path = api_root.join("static/dy_ab.js");
-        if !dy_ab_path.exists() {
-            return Err(anyhow!("Spider 签名脚本不存在: {}", dy_ab_path.display()));
-        }
+    fn spider_req_sign(sign_data: &str, private_key: &str) -> Result<String> {
+        let key = PKey::private_key_from_pem(private_key.as_bytes())
+            .map_err(|error| anyhow!("TicketGuard 私钥解析失败: {}", error))?;
+        let mut signer = Signer::new(MessageDigest::sha256(), &key)
+            .map_err(|error| anyhow!("TicketGuard 签名初始化失败: {}", error))?;
+        signer
+            .update(sign_data.as_bytes())
+            .map_err(|error| anyhow!("TicketGuard 签名写入失败: {}", error))?;
+        let signature = signer
+            .sign_to_vec()
+            .map_err(|error| anyhow!("TicketGuard 签名生成失败: {}", error))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(signature))
+    }
 
-        let runner = r#"
-const fs = require('fs');
-const vm = require('vm');
-const scriptPath = process.argv[1];
-const name = process.argv[2] || '';
-const args = JSON.parse(process.argv[3] || '[]');
-vm.runInThisContext(fs.readFileSync(scriptPath, 'utf8'), { filename: scriptPath });
-if (typeof globalThis[name] !== 'function') {
-  throw new Error(`missing spider function: ${name}`);
-}
-process.stdout.write(String(globalThis[name](...args)));
-"#;
-        let args_json = serde_json::to_string(args)?;
-        let output = Command::new("node")
-            .arg("-e")
-            .arg(runner)
-            .arg(&dy_ab_path)
-            .arg(name)
-            .arg(args_json)
-            .current_dir(&api_root)
-            .output()
-            .map_err(|error| anyhow!("执行 Spider JS 失败: {}", error))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(anyhow!(
-                "Spider JS 调用失败: {}",
-                if stderr.is_empty() {
-                    output.status.to_string()
-                } else {
-                    stderr
-                }
-            ));
-        }
-
-        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if result.is_empty() {
-            return Err(anyhow!("Spider JS 调用结果为空"));
-        }
-        Ok(result)
+    fn spider_ree_key(private_key: &str) -> Result<String> {
+        let key = EcKey::private_key_from_pem(private_key.as_bytes())
+            .or_else(|_| {
+                PKey::private_key_from_pem(private_key.as_bytes()).and_then(|key| key.ec_key())
+            })
+            .map_err(|error| anyhow!("TicketGuard EC 私钥解析失败: {}", error))?;
+        let mut context = BigNumContext::new()
+            .map_err(|error| anyhow!("TicketGuard 公钥导出初始化失败: {}", error))?;
+        let public_key = key
+            .public_key()
+            .to_bytes(key.group(), PointConversionForm::UNCOMPRESSED, &mut context)
+            .map_err(|error| anyhow!("TicketGuard 公钥导出失败: {}", error))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(public_key))
     }
 
     fn sign_spider_a_bogus(query: &str, body: &str) -> Result<String> {
-        Self::spider_js_call("get_ab", &[query, body])
+        Ok(sign::sign_spider_publish(query, body))
     }
 
     fn spider_quote(value: &str) -> String {

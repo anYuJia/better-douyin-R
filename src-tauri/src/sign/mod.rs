@@ -2,6 +2,7 @@
 //!
 //! 移植自 lib/js/douyin.js
 
+use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ============================================================================
@@ -253,6 +254,7 @@ pub fn custom_base64_encode(data: &[u8]) -> String {
 // ============================================================================
 
 const WINDOW_ENV_STR: &str = "1536|747|1536|834|0|30|0|0|1536|834|1536|864|1525|747|24|24|Win32";
+const SPIDER_WINDOW_ENV_STR: &str = "1707|809|1707|912|0|0|0|0|1707|912|1707|960|1697|809|24|24|Win32";
 
 /// 生成随机字节
 fn mix_random_byte(value: u32, value_mask: u32, salt: u32, salt_mask: u32) -> u8 {
@@ -294,6 +296,26 @@ fn generate_random_bytes() -> Vec<u8> {
     ]);
 
     result
+}
+
+fn generate_spider_random_bytes() -> Vec<u8> {
+    let mut rng = rand::thread_rng();
+    let mut result = Vec::with_capacity(12);
+    for (first, second) in [(3u32, 45u32), (1, 0), (1, 5)] {
+        let value = (rng.gen::<f64>() * 10000.0) as u32;
+        result.extend_from_slice(&[
+            mix_random_byte(value, 0xAA, first, 0x55),
+            mix_random_byte(value, 0x55, first, 0xAA),
+            mix_random_byte(value >> 8, 0xAA, second, 0x55),
+            mix_random_byte(value >> 8, 0x55, second, 0xAA),
+        ]);
+    }
+    result
+}
+
+fn double_sm3(data: &str) -> [u8; 32] {
+    let first = sm3_hash(data.as_bytes());
+    sm3_hash(&first)
 }
 
 /// 生成 RC4 加密的中间数据
@@ -437,6 +459,104 @@ fn generate_rc4_bb(params: &str, user_agent: &str, args: [u32; 3]) -> Vec<u8> {
     rc4_encrypt(&bb, &[121])
 }
 
+fn generate_spider_rc4_bb(params: &str, body: &str) -> Vec<u8> {
+    let start_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let end_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+
+    let params_hash = double_sm3(&format!("{params}cus"));
+    let body_hash = double_sm3(&format!("{body}cus"));
+    let start_high = start_time >> 32;
+    let end_high = end_time >> 32;
+
+    let mut b = [0u8; 73];
+    b[18] = 44;
+    b[20..24].copy_from_slice(&((start_time as u32).to_be_bytes()));
+    b[24] = (start_high & 0xFF) as u8;
+    b[25] = ((start_high >> 8) & 0xFF) as u8;
+    b[26..30].copy_from_slice(&0u32.to_be_bytes());
+    b[30] = 0;
+    b[31] = 1;
+    b[32] = 0;
+    b[33] = 0;
+    b[34..38].copy_from_slice(&8u32.to_be_bytes());
+    b[38] = params_hash[21];
+    b[39] = params_hash[22];
+    b[40] = body_hash[21];
+    b[41] = body_hash[22];
+    b[42] = 145;
+    b[43] = 238;
+    b[44..48].copy_from_slice(&((end_time as u32).to_be_bytes()));
+    b[48] = 12;
+    b[49] = (end_high & 0xFF) as u8;
+    b[50] = ((end_high >> 8) & 0xFF) as u8;
+
+    let window_env_bytes = SPIDER_WINDOW_ENV_STR.as_bytes();
+    b[64] = window_env_bytes.len() as u8;
+    b[65] = (window_env_bytes.len() & 0xFF) as u8;
+    b[66] = ((window_env_bytes.len() >> 8) & 0xFF) as u8;
+
+    b[72] = b[18]
+        ^ b[20]
+        ^ b[26]
+        ^ b[30]
+        ^ b[38]
+        ^ b[40]
+        ^ b[42]
+        ^ b[21]
+        ^ b[27]
+        ^ b[31]
+        ^ b[35]
+        ^ b[39]
+        ^ b[41]
+        ^ b[43]
+        ^ b[22]
+        ^ b[28]
+        ^ b[32]
+        ^ b[36]
+        ^ b[23]
+        ^ b[29]
+        ^ b[33]
+        ^ b[37]
+        ^ b[44]
+        ^ b[45]
+        ^ b[46]
+        ^ b[47]
+        ^ b[48]
+        ^ b[49]
+        ^ b[50]
+        ^ b[24]
+        ^ b[25]
+        ^ b[52]
+        ^ b[53]
+        ^ b[54]
+        ^ b[55]
+        ^ b[57]
+        ^ b[58]
+        ^ b[59]
+        ^ b[60]
+        ^ b[65]
+        ^ b[66]
+        ^ b[70]
+        ^ b[71];
+
+    let mut bb = Vec::with_capacity(45 + window_env_bytes.len());
+    bb.extend_from_slice(&[
+        b[18], b[20], b[52], b[26], b[30], b[34], b[58], b[38], b[40], b[53], b[42],
+        b[21], b[27], b[54], b[55], b[31], b[35], b[57], b[39], b[41], b[43], b[22],
+        b[28], b[32], b[60], b[36], b[23], b[29], b[33], b[37], b[44], b[45], b[59],
+        b[46], b[47], b[48], b[49], b[50], b[24], b[25], b[65], b[66], b[70], b[71],
+    ]);
+    bb.extend_from_slice(window_env_bytes);
+    bb.push(b[72]);
+    rc4_encrypt(&bb, &[121])
+}
+
 fn custom_base64_encode_with_table(data: &[u8], table: &[u8]) -> String {
     let mut result = String::new();
 
@@ -481,6 +601,13 @@ pub fn sign_detail(params: &str, user_agent: &str) -> String {
 /// 评论接口签名
 pub fn sign_reply(params: &str, user_agent: &str) -> String {
     sign(params, user_agent, [0, 1, 8])
+}
+
+/// 评论发布 Spider 形态签名。
+pub fn sign_spider_publish(params: &str, body: &str) -> String {
+    let mut combined = generate_spider_random_bytes();
+    combined.extend(generate_spider_rc4_bb(params, body));
+    custom_base64_encode(&combined)
 }
 
 #[cfg(test)]
