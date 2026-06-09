@@ -373,15 +373,7 @@ fn json_object_with_success(mut value: serde_json::Value) -> serde_json::Value {
 fn relation_signer_ready(signer: &Option<RelationSignerConfig>) -> bool {
     signer
         .as_ref()
-        .map(|signer| {
-            !signer.ticket.trim().is_empty()
-                && !signer.ts_sign.trim().is_empty()
-                && !signer.public_key.trim().is_empty()
-                && !signer.ecdh_key.trim().is_empty()
-                && !signer.dtrait.trim().is_empty()
-                && !signer.client_cert.trim().is_empty()
-                && !signer.private_key.trim().is_empty()
-        })
+        .map(|signer| !signer.dtrait.trim().is_empty())
         .unwrap_or(false)
 }
 
@@ -397,8 +389,6 @@ fn relation_signer_ready_for_uid(signer: &Option<RelationSignerConfig>, uid: &st
                 && !signer.public_key.trim().is_empty()
                 && !signer.ecdh_key.trim().is_empty()
                 && !signer.dtrait.trim().is_empty()
-                && !signer.client_cert.trim().is_empty()
-                && !signer.private_key.trim().is_empty()
         })
         .unwrap_or(false)
 }
@@ -786,14 +776,15 @@ async fn api_login_or_verify_error_response(
     verify_url: &str,
 ) -> serde_json::Value {
     let message = error.to_string();
+    let user_message = prefixed_error_message(prefix, &message);
     if looks_like_relation_security_error(&message) {
         relation_security_blocked_response(prefix, &message)
     } else if looks_like_login_error(&message) || looks_like_verify_error(&message) {
-        login_or_verify_response(client, &format!("{}: {}", prefix, message), verify_url).await
+        login_or_verify_response(client, &user_message, verify_url).await
     } else {
         serde_json::json!({
             "success": false,
-            "message": format!("{}: {}", prefix, message)
+            "message": user_message
         })
     }
 }
@@ -804,15 +795,31 @@ fn api_verify_or_error_response(
     verify_url: &str,
 ) -> serde_json::Value {
     let message = error.to_string();
+    let user_message = prefixed_error_message(prefix, &message);
     if looks_like_relation_security_error(&message) {
         relation_security_blocked_response(prefix, &message)
     } else if looks_like_login_error(&message) || looks_like_verify_error(&message) {
-        verify_required_response(&format!("{}: {}", prefix, message), verify_url)
+        verify_required_response(&user_message, verify_url)
     } else {
         serde_json::json!({
             "success": false,
-            "message": format!("{}: {}", prefix, message)
+            "message": user_message
         })
+    }
+}
+
+fn prefixed_error_message(prefix: &str, message: &str) -> String {
+    let message = message.trim();
+    if message.is_empty() {
+        return prefix.to_string();
+    }
+    if message == prefix
+        || message.starts_with(&format!("{}: ", prefix))
+        || message.starts_with(&format!("{}：", prefix))
+    {
+        message.to_string()
+    } else {
+        format!("{}: {}", prefix, message)
     }
 }
 
@@ -2279,6 +2286,15 @@ async fn get_friend_online_status(
                 "friend online auto IM spotlight relation ids failed: {}",
                 error
             );
+            if looks_like_login_error(&error.to_string()) {
+                return Ok(api_login_or_verify_error_response(
+                    &client,
+                    "自动获取 IM 好友关系失败",
+                    error,
+                    "https://www.douyin.com/",
+                )
+                .await);
+            }
             auto_fetch_failed = Some(error);
         }
     }
@@ -2481,15 +2497,13 @@ async fn get_share_friends(
 
     match client.get_im_share_friends(count.unwrap_or(50)).await {
         Ok(response) => Ok(response),
-        Err(error) => {
-            Ok(api_login_or_verify_error_response(
-                &client,
-                "获取分享好友失败",
-                error,
-                "https://www.douyin.com/",
-            )
-            .await)
-        }
+        Err(error) => Ok(api_login_or_verify_error_response(
+            &client,
+            "获取分享好友失败",
+            error,
+            "https://www.douyin.com/",
+        )
+        .await),
     }
 }
 

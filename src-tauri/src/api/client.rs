@@ -14,9 +14,7 @@ use reqwest::redirect::Policy;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::Write;
 use std::process::Command;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -119,7 +117,9 @@ impl DouyinClient {
             let legacy_decoded = urlencoding::decode(raw_legacy_client_data)
                 .map(|value| value.into_owned())
                 .unwrap_or_else(|_| raw_legacy_client_data.clone());
-            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(legacy_decoded.as_bytes()) {
+            if let Ok(bytes) =
+                base64::engine::general_purpose::STANDARD.decode(legacy_decoded.as_bytes())
+            {
                 if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                     if let Some(object) = value.as_object() {
                         for (key, value) in object {
@@ -193,12 +193,29 @@ impl DouyinClient {
         headers
     }
 
-    fn cookie_string_from_dict(cookie_dict: &HashMap<String, String>) -> String {
-        cookie_dict
-            .iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect::<Vec<_>>()
-            .join("; ")
+    fn cookie_string_with_value(cookie_str: &str, name: &str, value: &str) -> String {
+        let mut found = false;
+        let mut parts = Vec::new();
+        for item in cookie_str.split(';') {
+            let trimmed = item.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Some((key, _)) = trimmed.split_once('=') else {
+                parts.push(trimmed.to_string());
+                continue;
+            };
+            if key.trim() == name {
+                parts.push(format!("{name}={value}"));
+                found = true;
+            } else {
+                parts.push(trimmed.to_string());
+            }
+        }
+        if !found {
+            parts.push(format!("{name}={value}"));
+        }
+        parts.join("; ")
     }
 
     fn decode_relation_ecdh_key(value: &str) -> Option<Vec<u8>> {
@@ -303,10 +320,7 @@ impl DouyinClient {
                 "bd-ticket-guard-iteration-version".to_string(),
                 "1".to_string(),
             ),
-            (
-                "bd-ticket-guard-ree-public-key".to_string(),
-                ree_public_key,
-            ),
+            ("bd-ticket-guard-ree-public-key".to_string(), ree_public_key),
             ("bd-ticket-guard-version".to_string(), "2".to_string()),
             ("bd-ticket-guard-web-version".to_string(), "1".to_string()),
         ]))
@@ -465,14 +479,7 @@ impl DouyinClient {
         body: &[u8],
         extra_headers: Option<&HashMap<String, String>>,
     ) -> Result<Vec<u8>> {
-        self.build_im_proto_request(
-            cmd,
-            body,
-            "",
-            "0.1.6",
-            "fef1a80:p/lzg/store",
-            extra_headers,
-        )
+        self.build_im_proto_request(cmd, body, "", "0.1.6", "fef1a80:p/lzg/store", extra_headers)
     }
 
     async fn post_im_proto(
@@ -589,10 +596,7 @@ impl DouyinClient {
         let api_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/api");
         let dy_ab_path = api_root.join("static/dy_ab.js");
         if !dy_ab_path.exists() {
-            return Err(anyhow!(
-                "Spider 签名脚本不存在: {}",
-                dy_ab_path.display()
-            ));
+            return Err(anyhow!("Spider 签名脚本不存在: {}", dy_ab_path.display()));
         }
 
         let runner = r#"
@@ -638,6 +642,20 @@ process.stdout.write(String(globalThis[name](...args)));
 
     fn sign_spider_a_bogus(query: &str, body: &str) -> Result<String> {
         Self::spider_js_call("get_ab", &[query, body])
+    }
+
+    fn spider_quote(value: &str) -> String {
+        urlencoding::encode(value)
+            .replace("%2F", "/")
+            .replace("%2f", "/")
+    }
+
+    fn spider_splice_params(params: &[(String, String)]) -> String {
+        params
+            .iter()
+            .map(|(key, value)| format!("{key}={}", Self::spider_quote(value)))
+            .collect::<Vec<_>>()
+            .join("&")
     }
 
     fn aws_quote(value: &str) -> String {
@@ -744,6 +762,15 @@ process.stdout.write(String(globalThis[name](...args)));
     }
 
     async fn get_webid(&self, headers: &HashMap<String, String>) -> Option<String> {
+        self.get_webid_from_url(headers, "https://www.douyin.com/?recommend=1")
+            .await
+    }
+
+    async fn get_webid_from_url(
+        &self,
+        headers: &HashMap<String, String>,
+        url: &str,
+    ) -> Option<String> {
         {
             let cache = self.webid_cache.lock().await;
             if let Some((webid, cached_at)) = &*cache {
@@ -756,12 +783,21 @@ process.stdout.write(String(globalThis[name](...args)));
         let mut request_headers = headers.clone();
         request_headers.insert("sec-fetch-dest".to_string(), "document".to_string());
         request_headers.insert("sec-fetch-mode".to_string(), "navigate".to_string());
+        request_headers.insert("sec-fetch-site".to_string(), "none".to_string());
         request_headers.insert(
             "Accept".to_string(),
             "text/html,application/xhtml+xml".to_string(),
         );
+        request_headers.insert(
+            "accept".to_string(),
+            "text/html,application/xhtml+xml".to_string(),
+        );
+        request_headers.insert("upgrade-insecure-requests".to_string(), "1".to_string());
+        if !self.config.cookie.trim().is_empty() {
+            request_headers.insert("Cookie".to_string(), self.config.cookie.clone());
+        }
 
-        let mut req = self.client.get("https://www.douyin.com/?recommend=1");
+        let mut req = self.client.get(url);
         for (key, value) in &request_headers {
             req = req.header(key, value);
         }
@@ -800,7 +836,10 @@ process.stdout.write(String(globalThis[name](...args)));
         request_headers.insert("accept".to_string(), "*/*".to_string());
         request_headers.insert("cache-control".to_string(), "no-cache".to_string());
         request_headers.insert("pragma".to_string(), "no-cache".to_string());
-        request_headers.insert("referer".to_string(), "https://www.douyin.com/?recommend=1".to_string());
+        request_headers.insert(
+            "referer".to_string(),
+            "https://www.douyin.com/?recommend=1".to_string(),
+        );
         request_headers.insert("x-secsdk-csrf-request".to_string(), "1".to_string());
         request_headers.insert("x-secsdk-csrf-version".to_string(), "1.2.22".to_string());
         request_headers.remove("content-type");
@@ -819,10 +858,7 @@ process.stdout.write(String(globalThis[name](...args)));
             .or_else(|| response.headers().get("X-Ware-Csrf-Token"))?
             .to_str()
             .ok()?;
-        let parts = raw_token
-            .split(',')
-            .map(str::trim)
-            .collect::<Vec<_>>();
+        let parts = raw_token.split(',').map(str::trim).collect::<Vec<_>>();
         parts
             .get(1)
             .filter(|value| !value.is_empty())
@@ -851,8 +887,11 @@ process.stdout.write(String(globalThis[name](...args)));
             .entry("msToken".to_string())
             .or_insert_with(Self::generate_ms_token);
         if let Some(ms_token) = params.get("msToken").cloned() {
+            headers.insert(
+                "Cookie".to_string(),
+                Self::cookie_string_with_value(&cookie, "msToken", &ms_token),
+            );
             cookie_dict.insert("msToken".to_string(), ms_token);
-            headers.insert("Cookie".to_string(), Self::cookie_string_from_dict(&cookie_dict));
         }
         params.insert(
             "screen_width".to_string(),
@@ -914,6 +953,93 @@ process.stdout.write(String(globalThis[name](...args)));
             .await
             .unwrap_or_else(Self::generate_fake_webid);
         params.insert("webid".to_string(), webid);
+    }
+
+    fn set_param_part(params: &mut Vec<(String, String)>, key: &str, value: impl Into<String>) {
+        let value = value.into();
+        if let Some((_, existing)) = params.iter_mut().find(|(name, _)| name == key) {
+            *existing = value;
+        } else {
+            params.push((key.to_string(), value));
+        }
+    }
+
+    fn get_param_part(params: &[(String, String)], key: &str) -> Option<String> {
+        params
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    }
+
+    async fn enrich_request_parts(
+        &self,
+        params: &mut Vec<(String, String)>,
+        headers: &mut HashMap<String, String>,
+    ) {
+        let cookie = headers
+            .get("cookie")
+            .or_else(|| headers.get("Cookie"))
+            .cloned()
+            .unwrap_or_else(|| self.config.cookie.clone());
+
+        if cookie.is_empty() {
+            return;
+        }
+
+        let mut cookie_dict = Self::cookies_to_dict(&cookie);
+        let ms_token = Self::generate_ms_token();
+        Self::set_param_part(params, "msToken", ms_token.clone());
+        headers.insert(
+            "Cookie".to_string(),
+            Self::cookie_string_with_value(&cookie, "msToken", &ms_token),
+        );
+        cookie_dict.insert("msToken".to_string(), ms_token);
+
+        let screen_width = cookie_dict
+            .get("dy_swidth")
+            .cloned()
+            .or_else(|| Self::get_param_part(params, "screen_width"))
+            .unwrap_or_else(|| "1680".to_string());
+        Self::set_param_part(params, "screen_width", screen_width);
+
+        let screen_height = cookie_dict
+            .get("dy_sheight")
+            .cloned()
+            .or_else(|| Self::get_param_part(params, "screen_height"))
+            .unwrap_or_else(|| "1050".to_string());
+        Self::set_param_part(params, "screen_height", screen_height);
+
+        let cpu_core_num = cookie_dict
+            .get("device_web_cpu_core")
+            .cloned()
+            .or_else(|| Self::get_param_part(params, "cpu_core_num"))
+            .unwrap_or_else(|| "8".to_string());
+        Self::set_param_part(params, "cpu_core_num", cpu_core_num);
+
+        let device_memory = cookie_dict
+            .get("device_web_memory_size")
+            .cloned()
+            .or_else(|| Self::get_param_part(params, "device_memory"))
+            .unwrap_or_else(|| "8".to_string());
+        Self::set_param_part(params, "device_memory", device_memory);
+
+        let verify_fp = cookie_dict
+            .get("s_v_web_id")
+            .cloned()
+            .unwrap_or_else(Self::generate_verify_fp);
+        Self::set_param_part(params, "verifyFp", verify_fp.clone());
+        Self::set_param_part(params, "fp", verify_fp);
+
+        if let Some(uifid) = cookie_dict.get("UIFID") {
+            headers.insert("uifid".to_string(), uifid.clone());
+            Self::set_param_part(params, "uifid", uifid.clone());
+        }
+
+        let webid = self
+            .get_webid(headers)
+            .await
+            .unwrap_or_else(Self::generate_fake_webid);
+        Self::set_param_part(params, "webid", webid);
     }
 
     async fn request_with_options<T: DeserializeOwned>(
@@ -2927,91 +3053,6 @@ process.stdout.write(String(globalThis[name](...args)));
         Ok((status, headers, body))
     }
 
-    fn post_form_parts_with_python_requests(
-        url: &str,
-        query_params: &[(String, String)],
-        body_params: &[(String, String)],
-        headers: &HashMap<String, String>,
-    ) -> Result<(reqwest::StatusCode, reqwest::header::HeaderMap, Vec<u8>)> {
-        let payload = serde_json::json!({
-            "url": url,
-            "params": query_params,
-            "data": body_params,
-            "headers": headers,
-        });
-        let script = r#"
-import base64
-import json
-import sys
-
-import requests
-
-payload = json.load(sys.stdin)
-response = requests.post(
-    payload["url"],
-    params=payload["params"],
-    data=payload["data"],
-    headers=payload["headers"],
-    timeout=(10, 30),
-    verify=False,
-)
-print(json.dumps({
-    "status": response.status_code,
-    "headers": dict(response.headers),
-    "body": base64.b64encode(response.content or b"").decode("ascii"),
-}, ensure_ascii=False))
-"#;
-        let mut child = Command::new("python3")
-            .arg("-c")
-            .arg(script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| anyhow!("启动 Python requests 失败: {}", error))?;
-        {
-            let stdin = child
-                .stdin
-                .as_mut()
-                .ok_or_else(|| anyhow!("Python requests stdin 不可用"))?;
-            stdin.write_all(serde_json::to_string(&payload)?.as_bytes())?;
-        }
-        let output = child.wait_with_output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(anyhow!(
-                "Python requests 发布失败: {}",
-                if stderr.is_empty() {
-                    output.status.to_string()
-                } else {
-                    stderr
-                }
-            ));
-        }
-        let value = serde_json::from_slice::<serde_json::Value>(&output.stdout)?;
-        let status_u16 = value["status"].as_u64().unwrap_or(0) as u16;
-        let status = reqwest::StatusCode::from_u16(status_u16)
-            .map_err(|_| anyhow!("Python requests 返回了无效 HTTP 状态: {}", status_u16))?;
-        let mut response_headers = reqwest::header::HeaderMap::new();
-        if let Some(object) = value["headers"].as_object() {
-            for (key, value) in object {
-                if let Some(value) = value.as_str() {
-                    if let (Ok(name), Ok(header_value)) = (
-                        reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(value),
-                    ) {
-                        response_headers.insert(name, header_value);
-                    }
-                }
-            }
-        }
-        let body = value["body"]
-            .as_str()
-            .and_then(|body| base64::engine::general_purpose::STANDARD.decode(body).ok())
-            .unwrap_or_default();
-        Ok((status, response_headers, body))
-    }
-
     fn header_value(headers: &reqwest::header::HeaderMap, key: &str) -> String {
         headers
             .get(key)
@@ -3040,7 +3081,10 @@ print(json.dumps({
         let mut query_params = crate::config::get_common_params();
         query_params.insert("cid".to_string(), comment_id.to_string());
         query_params.insert("aweme_id".to_string(), aweme_id.to_string());
-        query_params.insert("digg_type".to_string(), if liked { "1" } else { "2" }.to_string());
+        query_params.insert(
+            "digg_type".to_string(),
+            if liked { "1" } else { "2" }.to_string(),
+        );
         query_params.insert("channel_id".to_string(), "0".to_string());
         query_params.insert("app_name".to_string(), "aweme".to_string());
         query_params.insert("item_type".to_string(), "0".to_string());
@@ -3092,7 +3136,11 @@ print(json.dumps({
             sign::sign_detail(&params_str, user_agent),
         );
 
-        let mut req = self.client.post(url).query(&query_params).body(String::new());
+        let mut req = self
+            .client
+            .post(url)
+            .query(&query_params)
+            .body(String::new());
         for (key, value) in &headers {
             req = req.header(key, value);
         }
@@ -3139,34 +3187,54 @@ print(json.dumps({
         let reply_id = reply_id.trim();
         let reply_to_reply_id = reply_to_reply_id.trim();
 
-        let mut cookie_dict = Self::cookies_to_dict(&self.config.cookie);
+        let cookie_dict = Self::cookies_to_dict(&self.config.cookie);
         let ms_token = cookie_dict
             .get("msToken")
             .cloned()
             .unwrap_or_else(Self::generate_ms_token);
-        cookie_dict.insert("msToken".to_string(), ms_token.clone());
-        let cookie_with_ms_token = Self::cookie_string_from_dict(&cookie_dict);
+        let cookie_with_ms_token =
+            Self::cookie_string_with_value(&self.config.cookie, "msToken", &ms_token);
         let verify_fp = cookie_dict
             .get("s_v_web_id")
             .cloned()
             .unwrap_or_else(Self::generate_verify_fp);
 
         let mut spider_headers = HashMap::from([
-            ("user-agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0".to_string()),
+            (
+                "user-agent".to_string(),
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0"
+                    .to_string(),
+            ),
             ("cache-control".to_string(), "no-cache".to_string()),
             ("pragma".to_string(), "no-cache".to_string()),
-            ("sec-ch-ua".to_string(), "\"Microsoft Edge\";v=\"125\", \"Chromium\";v=\"125\", \"Not.A/Brand\";v=\"24\"".to_string()),
+            (
+                "sec-ch-ua".to_string(),
+                "\"Microsoft Edge\";v=\"125\", \"Chromium\";v=\"125\", \"Not.A/Brand\";v=\"24\""
+                    .to_string(),
+            ),
             ("sec-ch-ua-mobile".to_string(), "?0".to_string()),
             ("sec-ch-ua-platform".to_string(), "\"Windows\"".to_string()),
             ("sec-fetch-dest".to_string(), "empty".to_string()),
             ("sec-fetch-mode".to_string(), "cors".to_string()),
             ("sec-fetch-site".to_string(), "same-origin".to_string()),
             ("priority".to_string(), "u=1, i".to_string()),
-            ("accept".to_string(), "application/json, text/plain, */*".to_string()),
-            ("accept-language".to_string(), "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6".to_string()),
-            ("content-type".to_string(), "application/x-www-form-urlencoded; charset=UTF-8".to_string()),
+            (
+                "accept".to_string(),
+                "application/json, text/plain, */*".to_string(),
+            ),
+            (
+                "accept-language".to_string(),
+                "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6".to_string(),
+            ),
+            (
+                "content-type".to_string(),
+                "application/x-www-form-urlencoded; charset=UTF-8".to_string(),
+            ),
             ("Origin".to_string(), "https://www.douyin.com".to_string()),
-            ("referer".to_string(), format!("https://www.douyin.com/discover?modal_id={aweme_id}")),
+            (
+                "referer".to_string(),
+                format!("https://www.douyin.com/discover?modal_id={aweme_id}"),
+            ),
             ("Cookie".to_string(), cookie_with_ms_token.clone()),
         ]);
         if let Ok(ticket_headers) = self.spider_ticket_guard_headers(path) {
@@ -3203,8 +3271,9 @@ print(json.dumps({
             ("effective_type".to_string(), "4g".to_string()),
             ("round_trip_time".to_string(), "100".to_string()),
         ];
+        let webid_url = format!("https://www.douyin.com/discover?modal_id={aweme_id}");
         let webid = self
-            .get_webid(&spider_headers)
+            .get_webid_from_url(&spider_headers, &webid_url)
             .await
             .unwrap_or_else(Self::generate_fake_webid);
         spider_query.push(("webid".to_string(), webid));
@@ -3215,22 +3284,24 @@ print(json.dumps({
 
         let mut spider_body_for_sign = vec![
             ("aweme_id".to_string(), aweme_id.to_string()),
-            ("comment_send_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
-            ("comment_video_celltime".to_string(), rand::thread_rng().gen_range(1000..20000).to_string()),
+            (
+                "comment_send_celltime".to_string(),
+                rand::thread_rng().gen_range(1000..20000).to_string(),
+            ),
+            (
+                "comment_video_celltime".to_string(),
+                rand::thread_rng().gen_range(1000..20000).to_string(),
+            ),
         ];
         if !reply_id.is_empty() {
             spider_body_for_sign.push(("reply_id".to_string(), reply_id.to_string()));
         }
         spider_body_for_sign.push(("text".to_string(), text.to_string()));
         spider_body_for_sign.push(("text_extra".to_string(), "[]".to_string()));
-        let spider_body = spider_body_for_sign
-            .iter()
-            .filter(|(key, _)| key != "text_extra")
-            .cloned()
-            .collect::<Vec<_>>();
+        let spider_body = spider_body_for_sign.clone();
 
-        let spider_query_str = serde_urlencoded::to_string(&spider_query)?;
-        let spider_body_str = serde_urlencoded::to_string(&spider_body_for_sign)?;
+        let spider_query_str = Self::spider_splice_params(&spider_query);
+        let spider_body_str = Self::spider_splice_params(&spider_body_for_sign);
         let a_bogus = Self::sign_spider_a_bogus(&spider_query_str, &spider_body_str)?;
         spider_query.push(("a_bogus".to_string(), a_bogus));
         spider_query.push(("verifyFp".to_string(), verify_fp.clone()));
@@ -3276,7 +3347,8 @@ print(json.dumps({
             let cookie_ticket_headers = Self::ticket_guard_headers_from_cookie(&self.config.cookie);
             if !cookie_ticket_headers.is_empty() {
                 let mut retry_headers = spider_headers.clone();
-                retry_headers.retain(|key, _| !key.to_ascii_lowercase().starts_with("bd-ticket-guard-"));
+                retry_headers
+                    .retain(|key, _| !key.to_ascii_lowercase().starts_with("bd-ticket-guard-"));
                 retry_headers.extend(cookie_ticket_headers);
                 if let Some(csrf_token) = self.get_csrf_token(&retry_headers).await {
                     retry_headers.insert("x-secsdk-csrf-token".to_string(), csrf_token);
@@ -3295,27 +3367,43 @@ print(json.dumps({
         }
 
         if status.is_success() && body.is_empty() {
-            let mut query_params = crate::config::get_common_params();
-            for key in [
-                "pc_libra_divert",
-                "support_h265",
-                "support_dash",
-                "disable_rs",
-                "need_filter_settings",
-                "list_type",
-            ] {
-                query_params.remove(key);
-            }
-            query_params.insert("app_name".to_string(), "aweme".to_string());
-            query_params.insert("enter_from".to_string(), "discover".to_string());
-            query_params.insert("previous_page".to_string(), "discover".to_string());
-            query_params.insert("update_version_code".to_string(), "170400".to_string());
-            query_params.insert("version_code".to_string(), "170400".to_string());
-            query_params.insert("version_name".to_string(), "17.4.0".to_string());
-            query_params.insert("browser_name".to_string(), "Chrome".to_string());
-            query_params.insert("browser_version".to_string(), "148.0.0.0".to_string());
-            query_params.insert("engine_version".to_string(), "148.0.0.0".to_string());
-            query_params.insert("device_memory".to_string(), "16".to_string());
+            let mut query_parts = vec![
+                ("device_platform".to_string(), "webapp".to_string()),
+                ("aid".to_string(), "6383".to_string()),
+                ("channel".to_string(), "channel_pc_web".to_string()),
+                ("update_version_code".to_string(), "0".to_string()),
+                ("pc_client_type".to_string(), "1".to_string()),
+                ("version_code".to_string(), "190600".to_string()),
+                ("version_name".to_string(), "19.6.0".to_string()),
+                ("cookie_enabled".to_string(), "true".to_string()),
+                ("screen_width".to_string(), "1680".to_string()),
+                ("screen_height".to_string(), "1050".to_string()),
+                ("browser_language".to_string(), "zh-CN".to_string()),
+                ("browser_platform".to_string(), "MacIntel".to_string()),
+                ("browser_name".to_string(), "Edge".to_string()),
+                ("browser_version".to_string(), "145.0.0.0".to_string()),
+                ("browser_online".to_string(), "true".to_string()),
+                ("engine_name".to_string(), "Blink".to_string()),
+                ("engine_version".to_string(), "145.0.0.0".to_string()),
+                ("os_name".to_string(), "Mac OS".to_string()),
+                ("os_version".to_string(), "10.15.7".to_string()),
+                ("cpu_core_num".to_string(), "8".to_string()),
+                ("device_memory".to_string(), "8".to_string()),
+                ("platform".to_string(), "PC".to_string()),
+                ("downlink".to_string(), "10".to_string()),
+                ("effective_type".to_string(), "4g".to_string()),
+                ("round_trip_time".to_string(), "50".to_string()),
+            ];
+            Self::set_param_part(&mut query_parts, "app_name", "aweme");
+            Self::set_param_part(&mut query_parts, "enter_from", "discover");
+            Self::set_param_part(&mut query_parts, "previous_page", "discover");
+            Self::set_param_part(&mut query_parts, "update_version_code", "170400");
+            Self::set_param_part(&mut query_parts, "version_code", "170400");
+            Self::set_param_part(&mut query_parts, "version_name", "17.4.0");
+            Self::set_param_part(&mut query_parts, "browser_name", "Chrome");
+            Self::set_param_part(&mut query_parts, "browser_version", "148.0.0.0");
+            Self::set_param_part(&mut query_parts, "engine_version", "148.0.0.0");
+            Self::set_param_part(&mut query_parts, "device_memory", "16");
 
             let mut body_params = vec![
                 ("aweme_id".to_string(), aweme_id.to_string()),
@@ -3330,36 +3418,51 @@ print(json.dumps({
                 body_params.push(("reply_id".to_string(), reply_id.to_string()));
                 body_params.push((
                     "reply_to_reply_id".to_string(),
-                    if reply_to_reply_id.is_empty() { "0" } else { reply_to_reply_id }.to_string(),
+                    if reply_to_reply_id.is_empty() {
+                        "0"
+                    } else {
+                        reply_to_reply_id
+                    }
+                    .to_string(),
                 ));
             }
 
             let mut headers = crate::config::get_common_headers(&self.config.cookie);
             headers.extend(self.relation_ticket_guard_headers(path));
-            headers.insert("Referer".to_string(), format!("https://www.douyin.com/video/{aweme_id}"));
+            headers.insert(
+                "Referer".to_string(),
+                format!("https://www.douyin.com/video/{aweme_id}"),
+            );
             headers.insert("Origin".to_string(), "https://www.douyin.com".to_string());
             headers.insert("sec-fetch-site".to_string(), "same-origin".to_string());
             headers.insert("sec-fetch-mode".to_string(), "cors".to_string());
             headers.insert("sec-fetch-dest".to_string(), "empty".to_string());
             headers.insert("priority".to_string(), "u=1, i".to_string());
             headers.insert("x-secsdk-csrf-token".to_string(), "DOWNGRADE".to_string());
-            headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded; charset=UTF-8".to_string());
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded; charset=UTF-8".to_string(),
+            );
             headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36".to_string());
-            headers.insert("sec-ch-ua".to_string(), "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"".to_string());
+            headers.insert(
+                "sec-ch-ua".to_string(),
+                "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+                    .to_string(),
+            );
             if let Some(dtrait) = self.relation_dtrait() {
                 headers.insert("x-tt-session-dtrait".to_string(), dtrait);
             }
-            self.enrich_request(&mut query_params, &mut headers).await;
-            let params_str = serde_urlencoded::to_string(&query_params)?;
+            self.enrich_request_parts(&mut query_parts, &mut headers)
+                .await;
+            let params_str = serde_urlencoded::to_string(&query_parts)?;
             let user_agent = headers
                 .get("User-Agent")
                 .map(String::as_str)
                 .unwrap_or_else(|| get_user_agent());
-            query_params.insert(
+            query_parts.push((
                 "a_bogus".to_string(),
                 sign::sign_detail(&params_str, user_agent),
-            );
-            let query_parts = query_params.into_iter().collect::<Vec<(String, String)>>();
+            ));
             (status, response_headers, body) = self
                 .post_form_parts(url, &query_parts, &body_params, &headers)
                 .await?;
@@ -3370,31 +3473,30 @@ print(json.dumps({
                 Self::header_value(&response_headers, "bd-ticket-guard-result"),
                 Self::header_value(&response_headers, "x-tt-logid"),
             );
-        }
 
-        if !status.is_success() || body.is_empty() {
-            match Self::post_form_parts_with_python_requests(
-                url,
-                &spider_query_parts,
-                &spider_body,
-                &spider_headers,
-            ) {
-                Ok((python_status, python_headers, python_body)) => {
+            let relation_ticket_guard_result =
+                Self::header_value(&response_headers, "bd-ticket-guard-result");
+            if (!status.is_success() || body.is_empty())
+                && (status == reqwest::StatusCode::FORBIDDEN
+                    || matches!(relation_ticket_guard_result.as_str(), "1002" | "1205"))
+            {
+                let cookie_ticket_headers =
+                    Self::ticket_guard_headers_from_cookie(&self.config.cookie);
+                if !cookie_ticket_headers.is_empty() {
+                    let mut cookie_headers = headers.clone();
+                    cookie_headers
+                        .retain(|key, _| !key.to_ascii_lowercase().starts_with("bd-ticket-guard-"));
+                    cookie_headers.extend(cookie_ticket_headers);
+                    (status, response_headers, body) = self
+                        .post_form_parts(url, &query_parts, &body_params, &cookie_headers)
+                        .await?;
                     log::info!(
-                        "Douyin comment publish python-requests response: status={} len={} ticket_guard_result={} logid={}",
-                        python_status,
-                        python_body.len(),
-                        Self::header_value(&python_headers, "bd-ticket-guard-result"),
-                        Self::header_value(&python_headers, "x-tt-logid"),
+                        "Douyin comment publish relation-v2 cookie-ticket response: status={} len={} ticket_guard_result={} logid={}",
+                        status,
+                        body.len(),
+                        Self::header_value(&response_headers, "bd-ticket-guard-result"),
+                        Self::header_value(&response_headers, "x-tt-logid"),
                     );
-                    if python_status.is_success() && !python_body.is_empty() {
-                        status = python_status;
-                        response_headers = python_headers;
-                        body = python_body;
-                    }
-                }
-                Err(error) => {
-                    log::warn!("Douyin comment publish python-requests fallback failed: {}", error);
                 }
             }
         }
@@ -3403,6 +3505,17 @@ print(json.dumps({
             let ticket_guard_result =
                 Self::header_value(&response_headers, "bd-ticket-guard-result");
             let logid = Self::header_value(&response_headers, "x-tt-logid");
+            if status == reqwest::StatusCode::FORBIDDEN && !ticket_guard_result.is_empty() {
+                return Err(anyhow!(
+                    "评论安全参数未通过（HTTP 403, TicketGuard {}{}），请在设置中重新登录并等待安全参数采集完成后重试",
+                    ticket_guard_result,
+                    if logid.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(", logid {}", logid)
+                    }
+                ));
+            }
             return Err(anyhow!(
                 "发表评论失败: HTTP {}{}{}",
                 status,
@@ -3422,13 +3535,30 @@ print(json.dumps({
         let response = serde_json::from_slice::<serde_json::Value>(&body)?;
         let status_code = response["status_code"].as_i64().unwrap_or(0);
         if status_code != 0 {
-            let status_msg = response["message"]
+            let raw_status_msg = response["message"]
                 .as_str()
                 .or_else(|| response["status_msg"].as_str())
                 .or_else(|| response["prompts"].as_str())
                 .or_else(|| response["status_msg_extra"].as_str())
-                .unwrap_or("发表评论失败");
-            return Err(anyhow!("发表评论失败: {}", status_msg));
+                .map(str::trim)
+                .filter(|message| !message.is_empty());
+            log::warn!(
+                "Douyin comment publish API rejected: status_code={} status_msg={} response={}",
+                status_code,
+                raw_status_msg.unwrap_or(""),
+                response
+            );
+            let status_msg = if status_code == 8 {
+                "抖音评论动作未接受当前登录态或安全参数（状态码 8），请先在抖音网页/客户端手动发一次评论后再重试".to_string()
+            } else {
+                match raw_status_msg {
+                    Some(message) if message != "发表评论失败" => {
+                        format!("{}（抖音状态码 {}）", message, status_code)
+                    }
+                    _ => format!("抖音评论接口返回状态码 {}", status_code),
+                }
+            };
+            return Err(anyhow!("{}", status_msg));
         }
         let comment = response
             .get("comment")
@@ -3815,7 +3945,13 @@ print(json.dumps({
         let mut path = url::Url::parse(text)
             .ok()
             .map(|parsed| parsed.path().trim_start_matches('/').to_string())
-            .unwrap_or_else(|| text.split('?').next().unwrap_or_default().trim_start_matches('/').to_string());
+            .unwrap_or_else(|| {
+                text.split('?')
+                    .next()
+                    .unwrap_or_default()
+                    .trim_start_matches('/')
+                    .to_string()
+            });
         if let Ok(decoded) = urlencoding::decode(&path) {
             path = decoded.into_owned();
         }
@@ -3846,7 +3982,10 @@ print(json.dumps({
             .to_string()
     }
 
-    fn normalize_share_friends(response: &serde_json::Value, limit: usize) -> Vec<serde_json::Value> {
+    fn normalize_share_friends(
+        response: &serde_json::Value,
+        limit: usize,
+    ) -> Vec<serde_json::Value> {
         let mut users_by_sec_uid: HashMap<String, serde_json::Value> = HashMap::new();
         let mut recent_meta: HashMap<String, serde_json::Map<String, serde_json::Value>> =
             HashMap::new();
@@ -3890,7 +4029,8 @@ print(json.dumps({
                     if let Some(value) = item.get("conv_type").and_then(|value| value.as_i64()) {
                         meta.insert("conv_type".to_string(), serde_json::json!(value));
                     }
-                    if let Some(value) = item.get("share_day_cnt").and_then(|value| value.as_i64()) {
+                    if let Some(value) = item.get("share_day_cnt").and_then(|value| value.as_i64())
+                    {
                         meta.insert("share_day_count".to_string(), serde_json::json!(value));
                     }
                     let timestamp = item
@@ -3923,11 +4063,9 @@ print(json.dumps({
             .filter(|sec_uid| users_by_sec_uid.contains_key(sec_uid))
             .collect();
         let ordered_seen: HashSet<String> = ordered_ids.iter().cloned().collect();
-        ordered_ids.extend(
-            order
-                .into_iter()
-                .filter(|sec_uid| users_by_sec_uid.contains_key(sec_uid) && !ordered_seen.contains(sec_uid)),
-        );
+        ordered_ids.extend(order.into_iter().filter(|sec_uid| {
+            users_by_sec_uid.contains_key(sec_uid) && !ordered_seen.contains(sec_uid)
+        }));
 
         let mut friends = Vec::new();
         let mut seen = HashSet::new();
@@ -3975,27 +4113,45 @@ print(json.dumps({
             };
             friend.insert(
                 "uid".to_string(),
-                serde_json::json!(user.get("uid").and_then(|value| value.as_str()).unwrap_or_default()),
+                serde_json::json!(user
+                    .get("uid")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()),
             );
             friend.insert("sec_uid".to_string(), serde_json::json!(sec_uid.clone()));
             friend.insert("nickname".to_string(), serde_json::json!(nickname));
             friend.insert("avatar_thumb".to_string(), serde_json::json!(avatar_thumb));
-            friend.insert("avatar_medium".to_string(), serde_json::json!(avatar_medium));
+            friend.insert(
+                "avatar_medium".to_string(),
+                serde_json::json!(avatar_medium),
+            );
             friend.insert(
                 "unique_id".to_string(),
-                serde_json::json!(user.get("unique_id").and_then(|value| value.as_str()).unwrap_or_default()),
+                serde_json::json!(user
+                    .get("unique_id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()),
             );
             friend.insert(
                 "short_id".to_string(),
-                serde_json::json!(user.get("short_id").and_then(|value| value.as_str()).unwrap_or_default()),
+                serde_json::json!(user
+                    .get("short_id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()),
             );
             friend.insert(
                 "follow_status".to_string(),
-                serde_json::json!(user.get("follow_status").and_then(|value| value.as_i64()).unwrap_or_default()),
+                serde_json::json!(user
+                    .get("follow_status")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()),
             );
             friend.insert(
                 "follower_status".to_string(),
-                serde_json::json!(user.get("follower_status").and_then(|value| value.as_i64()).unwrap_or_default()),
+                serde_json::json!(user
+                    .get("follower_status")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or_default()),
             );
             if let Some(meta) = recent_meta.get(&sec_uid) {
                 for (key, value) in meta {
@@ -4315,8 +4471,12 @@ print(json.dumps({
         if aweme_id.is_empty() {
             return Err(anyhow!("缺少作品 ID，无法分享"));
         }
-        let author = video_object.get("author").and_then(|value| value.as_object());
-        let video_data = video_object.get("video").and_then(|value| value.as_object());
+        let author = video_object
+            .get("author")
+            .and_then(|value| value.as_object());
+        let video_data = video_object
+            .get("video")
+            .and_then(|value| value.as_object());
         let cover = Self::first_url_value(
             video_object
                 .get("cover_url")
@@ -4336,12 +4496,20 @@ print(json.dumps({
         let cover_width = video_data
             .and_then(|item| item.get("width"))
             .or_else(|| video_object.get("width"))
-            .and_then(|value| value.as_i64().or_else(|| value.as_str()?.parse::<i64>().ok()))
+            .and_then(|value| {
+                value
+                    .as_i64()
+                    .or_else(|| value.as_str()?.parse::<i64>().ok())
+            })
             .unwrap_or_default();
         let cover_height = video_data
             .and_then(|item| item.get("height"))
             .or_else(|| video_object.get("height"))
-            .and_then(|value| value.as_i64().or_else(|| value.as_str()?.parse::<i64>().ok()))
+            .and_then(|value| {
+                value
+                    .as_i64()
+                    .or_else(|| value.as_str()?.parse::<i64>().ok())
+            })
             .unwrap_or_default();
         let author_uid = author
             .and_then(|item| item.get("uid"))
