@@ -25,6 +25,20 @@ use uuid::Uuid;
 use super::im_proto;
 use super::types::*;
 
+const PUBLISH_COOKIE_MERGE_DENYLIST: &[&str] = &[
+    "sessionid",
+    "sessionid_ss",
+    "sid_guard",
+    "uid_tt",
+    "uid_tt_ss",
+    "sid_tt",
+    "passport_auth_status",
+    "passport_auth_status_ss",
+    "passport_csrf_token",
+    "passport_csrf_token_default",
+    "odin_tt",
+];
+
 fn looks_watermarked_media_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.contains("watermark=1") || lower.contains("playwm") || lower.contains("logo_name=")
@@ -246,6 +260,9 @@ impl DouyinClient {
         let mut cookie_dict = Self::cookies_to_dict(cookie_str);
         let mut changed = false;
         for (name, value) in updates {
+            if PUBLISH_COOKIE_MERGE_DENYLIST.contains(&name.as_str()) {
+                continue;
+            }
             if cookie_dict.get(&name) != Some(&value) {
                 cookie_dict.insert(name, value);
                 changed = true;
