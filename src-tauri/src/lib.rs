@@ -3023,31 +3023,6 @@ async fn publish_comment(
             if let Some(updated_cookie) = updated_cookie {
                 let mut next_config = state.config.lock().await.clone();
                 if next_config.cookie != updated_cookie {
-                    let mut candidate_config = next_config.clone();
-                    candidate_config.cookie = updated_cookie.clone();
-                    let candidate_ok = match DouyinClient::new(candidate_config.clone()) {
-                        Ok(candidate_client) => candidate_client
-                            .get_current_user_strict_profile()
-                            .await
-                            .map(|_| true)
-                            .unwrap_or_else(|error| {
-                                log::warn!("评论发布响应 Cookie 校验未通过，已丢弃候选 Cookie: {}", error);
-                                false
-                            }),
-                        Err(error) => {
-                            log::warn!("评论发布响应 Cookie 创建校验客户端失败，已丢弃候选 Cookie: {}", error);
-                            false
-                        }
-                    };
-                    if !candidate_ok {
-                        return Ok(serde_json::json!({
-                            "success": true,
-                            "aweme_id": aweme_id,
-                            "comment": comment,
-                            "raw": response,
-                            "message": "评论已发布"
-                        }));
-                    }
                     next_config.cookie = updated_cookie;
                     match next_config.save() {
                         Ok(_) => {
