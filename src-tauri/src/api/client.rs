@@ -3279,8 +3279,8 @@ impl DouyinClient {
             spider_body_for_sign.push(("reply_id".to_string(), reply_id.to_string()));
         }
         spider_body_for_sign.push(("text".to_string(), text.to_string()));
-        spider_body_for_sign.push(("text_extra".to_string(), "[]".to_string()));
         let spider_body = spider_body_for_sign.clone();
+        spider_body_for_sign.push(("text_extra".to_string(), "[]".to_string()));
 
         let spider_query_str = Self::spider_splice_params(&spider_query);
         let spider_body_str = Self::spider_splice_params(&spider_body_for_sign);
