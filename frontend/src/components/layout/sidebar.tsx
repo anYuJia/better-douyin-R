@@ -48,6 +48,17 @@ const itemVariants = {
   show: { opacity: 1, x: 0, transition: { type: "spring" as const, stiffness: 400, damping: 28 } },
 };
 
+async function startWindowDrag() {
+  if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__) return;
+
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch {
+    // Dragging is available only in the Tauri desktop shell.
+  }
+}
+
 export function Sidebar() {
   const currentView = useAppStore((s) => s.currentView);
   const setView = useAppStore((s) => s.setView);
@@ -59,19 +70,24 @@ export function Sidebar() {
     setView(item.id);
   };
 
+  const isTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI_INTERNALS__);
+
   return (
     <aside className="flex h-full w-[var(--sidebar-width)] shrink-0 flex-col bg-surface-solid/60 backdrop-blur-2xl shadow-[1px_0_0_0_var(--color-border),16px_0_40px_rgba(0,0,0,0.04)] max-lg:w-[72px]">
       {/* Brand */}
       <motion.div
-        className="flex items-center gap-3 px-5 py-5 max-lg:justify-center max-lg:px-3"
+        className={`flex items-center gap-3 px-5 pb-5 max-lg:justify-center max-lg:px-3 select-none cursor-default ${isTauri ? "pt-10" : "py-5"}`}
+        onPointerDown={(event) => {
+          if (event.button === 0) void startWindowDrag();
+        }}
         initial={false}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="w-10 h-10 rounded-[14px] overflow-hidden flex items-center justify-center">
+        <div className="w-10 h-10 rounded-[14px] overflow-hidden flex items-center justify-center pointer-events-none">
           <img src="/animated_icon.svg" alt="better-douyin-R" className="w-10 h-10" />
         </div>
-        <div className="flex min-w-0 flex-col max-lg:hidden">
+        <div className="flex min-w-0 flex-col max-lg:hidden pointer-events-none">
           <span className="text-[0.9rem] font-[780] tracking-tight text-text truncate">
             better-douyin-R
           </span>
