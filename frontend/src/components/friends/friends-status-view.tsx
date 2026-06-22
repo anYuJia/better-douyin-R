@@ -106,7 +106,13 @@ function readChatMessages(): ChatMessages {
       const messages: LocalChatMessage[] = value
         .filter(isRecord)
         .map((message) => normalizeStoredChatMessage(secUid, message))
-        .filter((message) => message.text && message.createdAt > 0);
+        .filter((message) => {
+          if (!message.text || message.createdAt <= 0) return false;
+          if (message.text.trim().startsWith('{') && message.text.includes("command_type")) {
+            return false;
+          }
+          return true;
+        });
       if (messages.length > 0) {
         result[secUid] = messages;
       }
@@ -213,6 +219,23 @@ function latestChatMessage(messages: LocalChatMessage[] | undefined) {
     if (!latest || message.createdAt > latest.createdAt) return message;
     return latest;
   }, undefined);
+}
+
+function deduplicateMessages(messages: LocalChatMessage[] | undefined): LocalChatMessage[] {
+  if (!messages || messages.length === 0) return [];
+  const result: LocalChatMessage[] = [];
+  const seenIds = new Set<string>();
+  for (const msg of messages) {
+    if (seenIds.has(msg.id)) continue;
+    const isDuplicate = result.some(
+      (existing) =>
+        existing.text === msg.text && Math.abs(existing.createdAt - msg.createdAt) < 60000
+    );
+    if (isDuplicate) continue;
+    seenIds.add(msg.id);
+    result.push(msg);
+  }
+  return result;
 }
 
 function safeSetLocalStorage(key: string, value: string) {
@@ -638,13 +661,31 @@ function centerNoticeText(message: LocalChatMessage) {
     root ? stringField(root, ["msgHint", "description", "push_detail", "text", "content"]) : "",
   ]);
   const matched = candidates.find((item) => LIKE_NOTICE_PATTERN.test(item));
-  return matched ? normalizeLikeNoticeText(matched) : "";
+  if (matched) return normalizeLikeNoticeText(matched);
+  
+  // 识别关注打招呼消息或连续聊天火花提示，将其居中显示为系统提示
+  const systemPattern = /互相关注|连续聊天火花/i;
+  const matchedSystem = candidates.find((item) => systemPattern.test(item));
+  if (matchedSystem) return matchedSystem;
+  
+  return "";
 }
 
 function messagePreviewText(message: LocalChatMessage | undefined) {
   if (!message) return "";
   const notice = centerNoticeText(message);
-  if (notice) return `[点赞] ${notice}`;
+  if (notice) {
+    const root = parseJsonContent(message.rawContent || "");
+    const candidates = uniqueTextParts([
+      message.text,
+      root ? stringField(root, ["msgHint", "description", "push_detail", "text", "content"]) : "",
+    ]);
+    const matched = candidates.find((item) => LIKE_NOTICE_PATTERN.test(item));
+    if (matched) {
+      return `[点赞] ${notice}`;
+    }
+    return notice;
+  }
   if (message.imagePreviewUrl) return "[图片]";
   const shared = parseSharedMessage(message);
   if (shared?.kind === "image") return "[图片]";
@@ -943,7 +984,7 @@ export function FriendsStatusView() {
     () => friendItems.find((friend) => friend.secUid === selectedFriendId) || null,
     [friendItems, selectedFriendId],
   );
-  const selectedMessages = selectedFriend ? chatMessages[selectedFriend.secUid] || [] : [];
+  const selectedMessages = selectedFriend ? deduplicateMessages(chatMessages[selectedFriend.secUid]) : [];
   const selectedHistory = selectedFriend ? historyState[selectedFriend.secUid] : undefined;
   const onlineCount = friends.filter((friend) => friend.online).length;
   const offlineCount = friends.filter((friend) => !friend.online).length;
@@ -1001,31 +1042,53 @@ export function FriendsStatusView() {
         const summaries = isRecord(result.summaries) ? result.summaries : {};
         const unread = isRecord(result.unreadCounts) ? result.unreadCounts : {};
         const nextSummaries = readChatSummaries();
-        for (const [secUid, value] of Object.entries(summaries)) {
-          if (!isRecord(value)) continue;
-          const latestRaw = isRecord(value.latestMessage) ? value.latestMessage : undefined;
-          const latestMessage = latestRaw ? {
-            id: stringField(latestRaw, ["id"]) || `${secUid}-${numberField(latestRaw, ["createdAt"])}`,
-            text: stringField(latestRaw, ["text"]),
-            rawContent: stringField(latestRaw, ["rawContent", "raw_content"]) || undefined,
-            imagePreviewUrl: stringField(latestRaw, ["imagePreviewUrl"]).startsWith("blob:") ? undefined : stringField(latestRaw, ["imagePreviewUrl"]) || undefined,
-            createdAt: numberField(latestRaw, ["createdAt"]),
-            status: normalizeMessageStatus(stringField(latestRaw, ["status"])),
-            direction: normalizeMessageDirection(stringField(latestRaw, ["direction"])),
-            senderUid: stringField(latestRaw, ["senderUid", "sender_uid"]),
-            error: stringField(latestRaw, ["error"]) || undefined,
-          } : undefined;
-          const latestMessageAt = Math.max(numberField(value, ["latestMessageAt"]), latestMessage?.createdAt || 0);
-          const unreadCount = Math.max(0, numberField(value, ["unreadCount"]));
-          const current = nextSummaries[secUid];
-          if (latestMessageAt >= (current?.latestMessageAt || 0)) {
-            nextSummaries[secUid] = {
-              latestMessage: latestMessage?.text ? latestMessage : current?.latestMessage,
-              latestMessageAt,
-              unreadCount: Math.max(unreadCount, current?.unreadCount || 0),
-            };
+        let messagesMerged = false;
+        
+        setChatMessages((currentChatMessages) => {
+          const nextChatMessages = { ...currentChatMessages };
+          for (const [secUid, value] of Object.entries(summaries)) {
+            if (!isRecord(value)) continue;
+            const latestRaw = isRecord(value.latestMessage) ? value.latestMessage : undefined;
+            const latestMessage = latestRaw ? {
+              id: stringField(latestRaw, ["id"]) || `${secUid}-${numberField(latestRaw, ["createdAt"])}`,
+              text: stringField(latestRaw, ["text"]),
+              rawContent: stringField(latestRaw, ["rawContent", "raw_content"]) || undefined,
+              imagePreviewUrl: stringField(latestRaw, ["imagePreviewUrl"]).startsWith("blob:") ? undefined : stringField(latestRaw, ["imagePreviewUrl"]) || undefined,
+              createdAt: numberField(latestRaw, ["createdAt"]),
+              status: normalizeMessageStatus(stringField(latestRaw, ["status"])),
+              direction: normalizeMessageDirection(stringField(latestRaw, ["direction"])),
+              senderUid: stringField(latestRaw, ["senderUid", "sender_uid"]),
+              error: stringField(latestRaw, ["error"]) || undefined,
+            } : undefined;
+
+            if (latestMessage && latestMessage.text) {
+              const currentList = nextChatMessages[secUid] || [];
+              if (!currentList.some((existing) => 
+                existing.id === latestMessage.id || 
+                (existing.text === latestMessage.text && Math.abs(existing.createdAt - latestMessage.createdAt) < 60000)
+              )) {
+                nextChatMessages[secUid] = [...currentList, latestMessage].sort((a, b) => a.createdAt - b.createdAt);
+                messagesMerged = true;
+              }
+            }
+
+            const latestMessageAt = Math.max(numberField(value, ["latestMessageAt"]), latestMessage?.createdAt || 0);
+            const unreadCount = Math.max(0, numberField(value, ["unreadCount"]));
+            const current = nextSummaries[secUid];
+            if (latestMessageAt >= (current?.latestMessageAt || 0)) {
+              nextSummaries[secUid] = {
+                latestMessage: latestMessage?.text ? latestMessage : current?.latestMessage,
+                latestMessageAt,
+                unreadCount: Math.max(unreadCount, current?.unreadCount || 0),
+              };
+            }
           }
-        }
+          if (messagesMerged) {
+            persistChatMessages(nextChatMessages);
+          }
+          return nextChatMessages;
+        });
+
         for (const [secUid, value] of Object.entries(unread)) {
           const count = Math.max(0, Number(value) || 0);
           if (!count) continue;
@@ -1274,6 +1337,9 @@ export function FriendsStatusView() {
         const text = stringField(item as JsonRecord, ["content", "text"]) || fallbackMessageText(rawContent);
         const messageId = stringField(item as JsonRecord, ["server_message_id", "message_id", "id"]);
         if (!text) continue;
+        if (text.trim().startsWith('{') && text.includes("command_type")) {
+          continue;
+        }
         const friend = fallbackFriend || friends.find((candidate) =>
           (senderUid && candidate.uid === senderUid) ||
           (candidate.uid && conversationId.includes(candidate.uid))
@@ -1293,7 +1359,10 @@ export function FriendsStatusView() {
           senderUid,
         };
         const currentMessages = next[friend.secUid] || [];
-        if (currentMessages.some((existing) => existing.id === message.id)) continue;
+        if (currentMessages.some((existing) => 
+          existing.id === message.id || 
+          (existing.text === message.text && Math.abs(existing.createdAt - message.createdAt) < 60000)
+        )) continue;
         next[friend.secUid] = [...currentMessages, message].sort((a, b) => a.createdAt - b.createdAt);
         mergedCount += 1;
       }

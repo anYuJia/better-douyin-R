@@ -17,6 +17,24 @@ import { FriendsStatusView } from "@/components/friends/friends-status-view";
 import { AnimatePresence, motion } from "framer-motion";
 import { easeConfig } from "@/lib/utils";
 
+const TAURI_DRAG_HEIGHT = 36;
+
+function isInteractiveElement(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("button, a, input, textarea, select, [role='button'], [data-no-window-drag]"));
+}
+
+async function startWindowDrag() {
+  if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__) return;
+
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch {
+    // Dragging is best-effort and only exists in the desktop shell.
+  }
+}
+
 export function AppShell() {
   const currentView = useAppStore((s) => s.currentView);
   const commandOpen = useAppStore((s) => s.commandOpen);
@@ -26,13 +44,18 @@ export function AppShell() {
     scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [currentView]);
 
+  const handleWindowDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.clientY > TAURI_DRAG_HEIGHT || isInteractiveElement(event.target)) return;
+    void startWindowDrag();
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="relative flex h-screen w-screen overflow-hidden" onPointerDownCapture={handleWindowDrag}>
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 relative">
+      <main className="relative flex min-w-0 flex-1 flex-col">
         <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto">
           <AnimatePresence initial={false} mode="wait">
             {currentView !== "friends-status" ? renderView(currentView) : null}
