@@ -723,6 +723,93 @@ export async function logoutCookie(): Promise<{ success: boolean; message: strin
   return invoke("logout_cookie");
 }
 
+export type AccountInfo = {
+  sec_uid: string;
+  nickname: string;
+  avatar_thumb?: string;
+  cookie?: string;
+};
+
+export type AccountsResponse = {
+  success: boolean;
+  accounts: AccountInfo[];
+  current_sec_uid: string;
+  message?: string;
+};
+
+export async function getAccounts(): Promise<AccountsResponse> {
+  const config = await getConfig();
+  if (!config.cookie_set) {
+    return { success: true, accounts: [], current_sec_uid: "" };
+  }
+
+  try {
+    const status = await verifyCookie();
+    if (!status.valid) {
+      return { success: true, accounts: [], current_sec_uid: "" };
+    }
+    const secUid = status.sec_uid || status.user_id || "current";
+    return {
+      success: true,
+      current_sec_uid: secUid,
+      accounts: [
+        {
+          sec_uid: secUid,
+          nickname: status.user_name || "当前账号",
+          avatar_thumb: status.avatar_thumb || "",
+        },
+      ],
+    };
+  } catch {
+    return { success: true, accounts: [], current_sec_uid: "" };
+  }
+}
+
+export async function switchAccount(secUid: string): Promise<{ success: boolean; message: string; nickname?: string }> {
+  const accounts = await getAccounts();
+  const account = accounts.accounts.find((item) => item.sec_uid === secUid);
+  if (!account) {
+    return { success: false, message: "账号不存在" };
+  }
+  return { success: true, message: `已切换为 ${account.nickname}`, nickname: account.nickname };
+}
+
+export async function deleteAccount(secUid: string): Promise<{ success: boolean; message: string }> {
+  const accounts = await getAccounts();
+  const account = accounts.accounts.find((item) => item.sec_uid === secUid);
+  if (!account) {
+    return { success: false, message: "账号不存在" };
+  }
+  return logoutCookie();
+}
+
+export async function addAccount(
+  cookie: string
+): Promise<{ success: boolean; message: string; nickname?: string; sec_uid?: string; avatar_thumb?: string }> {
+  const trimmed = cookie.replace(/\n/g, "").replace(/\r/g, "").trim();
+  if (!trimmed) {
+    return { success: false, message: "Cookie 不能为空" };
+  }
+
+  const saved = await saveConfig({ cookie: trimmed });
+  if (!saved.success) {
+    return saved;
+  }
+
+  const status = await verifyCookie();
+  if (!status.valid) {
+    return { success: false, message: status.message || "Cookie 验证失败" };
+  }
+
+  return {
+    success: true,
+    message: `成功添加并切换账号: ${status.user_name || "当前账号"}`,
+    nickname: status.user_name || "当前账号",
+    sec_uid: status.sec_uid || status.user_id || "current",
+    avatar_thumb: status.avatar_thumb || "",
+  };
+}
+
 export async function selectDirectory(): Promise<string | null> {
   if (shouldUseBrowserBridge()) {
     const result = await requestJson<{ success: boolean; path?: string; message?: string }>("/api/select_directory", {
