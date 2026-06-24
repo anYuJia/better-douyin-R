@@ -1577,6 +1577,17 @@ export async function openFileLocation(path: string): Promise<void> {
   return invoke("open_file_location", { path });
 }
 
+export async function openExternalUrl(url: string): Promise<void> {
+  const target = String(url || "").trim();
+  if (!target) return;
+
+  if (isTauriRuntime()) {
+    return invoke("open_external_url", { url: target });
+  }
+
+  window.open(target, "_blank", "noopener,noreferrer");
+}
+
 export async function deleteFile(path: string): Promise<void> {
   if (shouldUseBrowserBridge()) {
     await requestJson("/api/download_history/delete", {

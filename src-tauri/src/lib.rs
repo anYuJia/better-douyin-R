@@ -4683,6 +4683,38 @@ fn reveal_file_with_system(target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn open_external_url_with_system(url: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let parsed = Url::parse(url).map_err(|_| "链接格式不正确".to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("仅支持打开 http/https 链接".to_string());
+    }
+
+    let target = parsed.as_str();
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    Command::new("rundll32.exe")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open")
+        .arg(target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 fn write_text_to_command(mut command: std::process::Command, text: &str) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
@@ -4779,6 +4811,16 @@ async fn open_file_location(state: State<'_, AppState>, path: String) -> Result<
 
     let target = allowed_existing_file_path(&state, &path).await?;
     reveal_file_with_system(&target)
+}
+
+/// 打开外部链接
+#[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    let target = url.trim();
+    if target.is_empty() {
+        return Err("链接不能为空".to_string());
+    }
+    open_external_url_with_system(target)
 }
 
 /// 删除文件
@@ -5168,6 +5210,7 @@ pub fn run() {
             open_file,
             open_download_directory,
             open_file_location,
+            open_external_url,
             delete_file,
             copy_text_to_clipboard,
         ])
