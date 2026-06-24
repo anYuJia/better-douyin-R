@@ -1832,8 +1832,10 @@ async fn cookie_browser_login(
                             Some(serde_json::json!({
                                 "uid": current_user.uid,
                                 "sec_uid": current_user.sec_uid,
+                                "nickname": current_user.nickname,
                                 "friend_count": next_config.im_friend_sec_user_ids.len(),
-                                "relation_signer_ready": relation_signer_ready(&next_config.relation_signer)
+                                "relation_signer_ready": relation_signer_ready(&next_config.relation_signer),
+                                "_cookie_for_encryption": cookie_string
                             })),
                             None,
                         );
