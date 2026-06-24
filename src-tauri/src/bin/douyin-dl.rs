@@ -12,7 +12,7 @@
 use anyhow::{anyhow, Result};
 use app_lib::api::{DouyinClient, SearchUserResult};
 use app_lib::config::AppConfig;
-use app_lib::downloader::{Downloader, DownloaderEvent};
+use app_lib::downloader::{video_quality_diagnostic, Downloader, DownloaderEvent};
 use app_lib::media_utils;
 use clap::{Parser, Subcommand};
 use std::io::IsTerminal;
@@ -53,6 +53,18 @@ enum Commands {
         /// 覆盖下载目录（默认使用配置中的 download_path）
         #[arg(short = 'o', long)]
         output: Option<String>,
+    },
+
+    /// 诊断视频清晰度候选和最终选择
+    Quality {
+        /// 抖音视频 URL、分享短链、或纯数字 aweme_id
+        url: String,
+        /// 输出格式：json（默认）或 plain
+        #[arg(short = 'f', long, default_value = "json")]
+        format: String,
+        /// 下载质量：auto / highest / h264 / smallest / 480p / 720p / 1080p / 2k / 1440p / 4k / 2160p
+        #[arg(short = 'q', long)]
+        quality: Option<String>,
     },
 
     /// 查看或修改配置
@@ -125,6 +137,11 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Parse { url, format } => cmd_parse(&url, &format).await,
         Commands::Download { url, output } => cmd_download(&url, output.as_deref()).await,
+        Commands::Quality {
+            url,
+            format,
+            quality,
+        } => cmd_quality(&url, &format, quality.as_deref()).await,
         Commands::Config(cmd) => cmd_config(cmd),
         Commands::Search { keyword, format } => cmd_search(&keyword, &format).await,
         Commands::User {
@@ -134,6 +151,48 @@ async fn main() -> Result<()> {
         } => cmd_user(&sec_uid, limit, &format).await,
         Commands::Feed { count } => cmd_feed(count).await,
     }
+}
+
+async fn cmd_quality(url: &str, format: &str, quality: Option<&str>) -> Result<()> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(anyhow!("URL 不能为空"));
+    }
+
+    let config = AppConfig::load();
+    let client = make_client(&config)?;
+    let video = resolve_video(&client, url).await?;
+    let quality = quality.unwrap_or(&config.download_quality);
+    let diagnostic = video_quality_diagnostic(&video, quality);
+
+    if format == "plain" {
+        println!("aweme_id: {}", video.aweme_id);
+        println!("requested_quality: {}", quality);
+        println!(
+            "supported_heights: {}",
+            diagnostic["supported_heights"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default()
+        );
+        println!(
+            "selected_url: {}",
+            diagnostic["selected_url"].as_str().unwrap_or("")
+        );
+        println!(
+            "candidate_count: {}",
+            diagnostic["candidates"].as_array().map(|items| items.len()).unwrap_or(0)
+        );
+    } else {
+        println!("{}", serde_json::to_string_pretty(&diagnostic)?);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

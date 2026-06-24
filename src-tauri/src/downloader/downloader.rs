@@ -2614,6 +2614,59 @@ pub(crate) fn video_quality_candidate_count(video: &VideoInfo) -> usize {
         .count()
 }
 
+pub fn video_quality_diagnostic(video: &VideoInfo, quality: &str) -> serde_json::Value {
+    let quality_mode = DownloadQuality::from_config(quality);
+    let candidates = collect_video_candidates(video);
+    let clean_candidates = candidates
+        .iter()
+        .filter(|candidate| !candidate.is_watermark)
+        .collect::<Vec<_>>();
+    let ordered_urls = ordered_video_urls(video, quality_mode);
+    let selected_url = ordered_urls.first().cloned().unwrap_or_default();
+    let selected = clean_candidates
+        .iter()
+        .find(|candidate| candidate.url == selected_url);
+    let supported_heights = {
+        let mut heights = clean_candidates
+            .iter()
+            .filter(|candidate| {
+                candidate.height > 0 && !candidate.is_download_addr && !candidate.is_lowbr
+            })
+            .map(|candidate| candidate.height)
+            .collect::<Vec<_>>();
+        heights.sort_unstable();
+        heights.dedup();
+        heights
+    };
+
+    serde_json::json!({
+        "aweme_id": video.aweme_id,
+        "requested_quality": quality,
+        "selected_url": selected_url,
+        "selected": selected.map(|candidate| serde_json::json!({
+            "height": candidate.height,
+            "metric": candidate.metric,
+            "is_h264": candidate.is_h264,
+            "is_quality_candidate": candidate.is_quality_candidate,
+            "is_download_addr": candidate.is_download_addr,
+            "is_lowbr": candidate.is_lowbr,
+            "is_watermark": candidate.is_watermark,
+        })),
+        "supported_heights": supported_heights,
+        "ordered_urls": ordered_urls,
+        "candidates": candidates.into_iter().map(|candidate| serde_json::json!({
+            "url": candidate.url,
+            "height": candidate.height,
+            "metric": candidate.metric,
+            "is_h264": candidate.is_h264,
+            "is_quality_candidate": candidate.is_quality_candidate,
+            "is_download_addr": candidate.is_download_addr,
+            "is_lowbr": candidate.is_lowbr,
+            "is_watermark": candidate.is_watermark,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 fn clean_video_download_url(url: &str) -> String {
     url.trim()
         .replace("watermark=1", "watermark=0")

@@ -5076,6 +5076,16 @@ pub fn run() {
                     .build(),
             )?;
 
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(error) = window.set_decorations(false) {
+                        log::warn!("failed to disable Windows window decorations: {}", error);
+                    }
+                }
+            }
+
             let state = AppState::new();
             *state.app_handle.blocking_lock() = Some(app.handle().clone());
             tauri::async_runtime::spawn({

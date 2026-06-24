@@ -3,6 +3,7 @@ import { useAppStore } from "@/stores/app-store";
 import { Sidebar } from "./sidebar";
 import { BottomBar } from "./bottom-bar";
 import { CommandPopover } from "./command-popover";
+import { WindowControls } from "./window-controls";
 import { Hero } from "@/components/home/hero";
 import { SearchView } from "@/components/search/search-view";
 import { VideoGrid } from "@/components/search/video-grid";
@@ -51,11 +52,16 @@ export function AppShell() {
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden" onPointerDownCapture={handleWindowDrag}>
+      <WindowControls />
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
       <main className="relative flex min-w-0 flex-1 flex-col">
+        <div
+          className="pointer-events-none absolute left-0 right-[132px] top-0 z-30 h-9"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties & { WebkitAppRegion: string }}
+        />
         <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto">
           <AnimatePresence initial={false} mode="wait">
             {currentView !== "friends-status" ? renderView(currentView) : null}
