@@ -180,7 +180,10 @@ body {
 
 input:focus-visible,
 textarea:focus-visible,
-select:focus-visible {
+select:focus-visible,
+div[role="dialog"],
+[role="dialog"],
+.glass-premium {
   outline: none !important;
 }
 

@@ -924,6 +924,10 @@ export function FriendsStatusView() {
   const avatarRetryTimerRef = useRef<number | null>(null);
   const initialInputRef = useRef(input);
   const chatStateLoadedRef = useRef(false);
+  const selectedFriendIdRef = useRef(selectedFriendId);
+  useEffect(() => {
+    selectedFriendIdRef.current = selectedFriendId;
+  }, [selectedFriendId]);
 
   const ids = useMemo(() => extractIds(input), [input]);
   const friends = useMemo(() => (response?.success ? mapResponse(response) : []), [response]);
@@ -1073,7 +1077,7 @@ export function FriendsStatusView() {
           nextSummaries[secUid] = {
             latestMessage: nextSummaries[secUid]?.latestMessage,
             latestMessageAt: nextSummaries[secUid]?.latestMessageAt || 0,
-            unreadCount: Math.max(count, nextSummaries[secUid]?.unreadCount || 0),
+            unreadCount: secUid === selectedFriendIdRef.current ? 0 : Math.max(count, nextSummaries[secUid]?.unreadCount || 0),
           };
         }
         persistChatSummaries(nextSummaries);
@@ -1081,7 +1085,11 @@ export function FriendsStatusView() {
         setUnreadCounts((current) => {
           const next = { ...current };
           for (const [secUid, summary] of Object.entries(nextSummaries)) {
-            if (summary.unreadCount > 0) next[secUid] = Math.max(next[secUid] || 0, summary.unreadCount);
+            if (summary.unreadCount > 0 && secUid !== selectedFriendIdRef.current) {
+              next[secUid] = Math.max(next[secUid] || 0, summary.unreadCount);
+            } else if (secUid === selectedFriendIdRef.current) {
+              delete next[secUid];
+            }
           }
           localStorage.setItem(CHAT_UNREAD_KEY, JSON.stringify(next));
           return next;
@@ -1175,7 +1183,6 @@ export function FriendsStatusView() {
 
   const clearUnread = useCallback((secUid: string) => {
     setUnreadCounts((current) => {
-      if (!current[secUid]) return current;
       const next = { ...current };
       delete next[secUid];
       localStorage.setItem(CHAT_UNREAD_KEY, JSON.stringify(next));
