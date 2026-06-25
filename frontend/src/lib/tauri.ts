@@ -63,6 +63,8 @@ export {
 } from "./normalizers";
 
 let verifyCookieInFlight: Promise<CookieStatus | null> | null = null;
+let lastVerifyCookieResult: CookieStatus | null = null;
+let lastVerifyCookieTime = 0;
 
 type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 type BrowserSocketListener = (payload: unknown) => void;
@@ -768,6 +770,7 @@ export async function getAccounts(): Promise<AccountsResponse> {
 }
 
 export async function switchAccount(secUid: string): Promise<{ success: boolean; message: string; nickname?: string }> {
+  clearVerifyCookieCache();
   const accounts = await getAccounts();
   const account = accounts.accounts.find((item) => item.sec_uid === secUid);
   if (!account) {
@@ -777,6 +780,7 @@ export async function switchAccount(secUid: string): Promise<{ success: boolean;
 }
 
 export async function deleteAccount(secUid: string): Promise<{ success: boolean; message: string }> {
+  clearVerifyCookieCache();
   const accounts = await getAccounts();
   const account = accounts.accounts.find((item) => item.sec_uid === secUid);
   if (!account) {
@@ -788,6 +792,7 @@ export async function deleteAccount(secUid: string): Promise<{ success: boolean;
 export async function addAccount(
   cookie: string
 ): Promise<{ success: boolean; message: string; nickname?: string; sec_uid?: string; avatar_thumb?: string }> {
+  clearVerifyCookieCache();
   const trimmed = cookie.replace(/\n/g, "").replace(/\r/g, "").trim();
   if (!trimmed) {
     return { success: false, message: "Cookie 不能为空" };
@@ -1433,39 +1438,50 @@ export async function getFriendMessageHistory(payload: {
   });
 }
 
-export async function getFriendChatState(): Promise<FriendChatStateResponse> {
+export async function getFriendChatState(currentSecUid?: string): Promise<FriendChatStateResponse> {
   if (shouldUseBrowserBridge()) {
     return requestJson<FriendChatStateResponse>("/api/friend_chat_state");
   }
-  return invoke("get_friend_chat_state");
+  return invoke("get_friend_chat_state", { currentSecUid, current_sec_uid: currentSecUid });
 }
 
 export async function saveFriendChatState(payload: {
   summaries?: Record<string, unknown>;
   unreadCounts?: Record<string, number>;
-}): Promise<ApiResponse> {
+}, currentSecUid?: string): Promise<ApiResponse> {
   if (shouldUseBrowserBridge()) {
     return requestJson<ApiResponse>("/api/friend_chat_state", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   }
-  return invoke("save_friend_chat_state", { payload });
+  return invoke("save_friend_chat_state", { payload, currentSecUid, current_sec_uid: currentSecUid });
 }
 
 export async function verifyCookie(): Promise<CookieStatus> {
+  const now = Date.now();
+  if (lastVerifyCookieResult && (now - lastVerifyCookieTime < 300_000)) {
+    return lastVerifyCookieResult;
+  }
   if (verifyCookieInFlight) {
     const result = await verifyCookieInFlight;
     if (!result) throw new Error("Cookie 校验失败");
     return result;
   }
   verifyCookieInFlight = (async () => {
+    let result: CookieStatus;
     if (shouldUseBrowserBridge()) {
-      return requestJson<CookieStatus>("/api/verify_cookie", {
+      result = await requestJson<CookieStatus>("/api/verify_cookie", {
         suppressCookieInvalidEvent: true,
       });
+    } else {
+      result = await invoke<CookieStatus>("verify_cookie");
     }
-    return invoke("verify_cookie");
+    if (result && result.valid) {
+      lastVerifyCookieResult = result;
+      lastVerifyCookieTime = Date.now();
+    }
+    return result;
   })();
   try {
     const result = await verifyCookieInFlight;
@@ -1474,6 +1490,11 @@ export async function verifyCookie(): Promise<CookieStatus> {
   } finally {
     verifyCookieInFlight = null;
   }
+}
+
+export function clearVerifyCookieCache() {
+  lastVerifyCookieResult = null;
+  lastVerifyCookieTime = 0;
 }
 
 export async function cookieBrowserLogin(timeout?: number, browser?: string, cookie?: string): Promise<{ success: boolean; message: string }> {

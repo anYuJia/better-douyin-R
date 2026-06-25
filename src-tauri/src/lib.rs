@@ -274,11 +274,15 @@ fn sanitize_sec_user_ids(ids: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn friend_chat_state_path() -> PathBuf {
+fn friend_chat_state_path(sec_uid: Option<&str>) -> PathBuf {
+    let filename = match sec_uid {
+        Some(uid) if !uid.is_empty() => format!("friend_chat_state_{}.json", uid),
+        _ => "friend_chat_state.json".to_string(),
+    };
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("better-douyin-R")
-        .join("friend_chat_state.json")
+        .join(filename)
 }
 
 fn coerce_i64(value: Option<&serde_json::Value>, default: i64) -> i64 {
@@ -3087,8 +3091,8 @@ async fn get_friend_message_history(
 
 /// 读取好友聊天列表状态。
 #[tauri::command]
-async fn get_friend_chat_state() -> Result<serde_json::Value, String> {
-    let path = friend_chat_state_path();
+async fn get_friend_chat_state(current_sec_uid: Option<String>) -> Result<serde_json::Value, String> {
+    let path = friend_chat_state_path(current_sec_uid.as_deref());
     if !path.exists() {
         return Ok(serde_json::json!({
             "success": true,
@@ -3114,9 +3118,12 @@ async fn get_friend_chat_state() -> Result<serde_json::Value, String> {
 
 /// 保存好友聊天列表状态。
 #[tauri::command]
-async fn save_friend_chat_state(payload: serde_json::Value) -> Result<serde_json::Value, String> {
+async fn save_friend_chat_state(
+    payload: serde_json::Value,
+    current_sec_uid: Option<String>,
+) -> Result<serde_json::Value, String> {
     let state = sanitize_friend_chat_state(payload);
-    let path = friend_chat_state_path();
+    let path = friend_chat_state_path(current_sec_uid.as_deref());
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("保存好友聊天状态失败: {}", error))?;
     }
