@@ -9,7 +9,7 @@
 <p>
   <img src="https://img.shields.io/badge/Rust-1.77%2B-orange?style=flat-square&logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/Tauri-2-blue?style=flat-square&logo=tauri" alt="Tauri">
-  <img src="https://img.shields.io/badge/Release-1.0.26-111827?style=flat-square" alt="Release">
+  <img src="https://img.shields.io/badge/Release-1.0.28-111827?style=flat-square" alt="Release">
   <a href="https://github.com/anYuJia/better-douyin-R/releases"><img src="https://img.shields.io/github/downloads/anYuJia/better-douyin-R/total?style=flat-square" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-555?style=flat-square" alt="Platform">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="License"></a>
