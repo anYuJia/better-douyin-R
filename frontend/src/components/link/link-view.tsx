@@ -223,7 +223,7 @@ export function LinkView() {
           )}
 
           {error && (
-            <div className="mt-3 flex items-start gap-2 rounded-[12px] border border-danger/20 bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
+            <div className="mt-3 flex items-start gap-2 rounded-[12px] border border-white/[0.06] bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>

@@ -257,7 +257,7 @@ export function SearchView() {
         )}
 
         {error && !pendingVerifySearch && (
-          <div className="mt-3 rounded-[12px] border border-danger/20 bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
+          <div className="mt-3 rounded-[12px] border border-white/[0.06] bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
             {error}
           </div>
         )}

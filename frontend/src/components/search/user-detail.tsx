@@ -103,7 +103,7 @@ export function UserDetail() {
         />
 
         {error && (
-          <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-danger/20 bg-danger-soft px-4 py-3 text-[0.78rem] text-danger">
+          <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-white/[0.06] bg-danger-soft px-4 py-3 text-[0.78rem] text-danger">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -187,7 +187,7 @@ export function UserDetail() {
 
   if (error) {
     return (
-      <div className="mb-5 rounded-[18px] border border-danger/20 bg-danger-soft p-5">
+      <div className="mb-5 rounded-[18px] border border-white/[0.06] bg-danger-soft p-5">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-[12px] bg-danger/10 flex items-center justify-center shrink-0">
             <AlertCircle className="w-4.5 h-4.5 text-danger" />

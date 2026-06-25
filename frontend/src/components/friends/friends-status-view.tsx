@@ -1887,7 +1887,7 @@ export function FriendsStatusView() {
       </div>
 
       {error && (
-        <div className="rounded-[var(--radius-sm)] border border-danger/20 bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
+        <div className="rounded-[var(--radius-sm)] border border-white/[0.06] bg-danger-soft px-3 py-2 text-[0.78rem] text-danger">
           {error}
         </div>
       )}
@@ -2358,7 +2358,7 @@ function ChatWorkspace({
 
       <div className="flex min-h-0 flex-1 flex-col">
         {historyError && (
-          <div className="border-b border-danger/15 bg-danger-soft px-4 py-2 text-[0.72rem] text-danger">
+          <div className="border-b border-white/[0.06] bg-danger-soft px-4 py-2 text-[0.72rem] text-danger">
             {historyError}
           </div>
         )}

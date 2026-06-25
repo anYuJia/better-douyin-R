@@ -160,7 +160,7 @@ function ToastItem({
         "border border-white/[0.06] transition-colors duration-300",
         toast.type === "loading" && "border-accent/30 shadow-[0_0_30px_-10px_rgba(254,44,85,0.15)]",
         toast.type === "success" && "border-success/30 shadow-[0_0_30px_-10px_rgba(34,197,94,0.1)]",
-        toast.type === "error" && "border-danger/30 shadow-[0_0_30px_-10px_rgba(239,68,68,0.1)]"
+        toast.type === "error" && "border-white/[0.06] shadow-[0_0_30px_-10px_rgba(239,68,68,0.1)]"
       )}
     >
       <div className="flex items-start gap-2.5 py-2 px-3">
