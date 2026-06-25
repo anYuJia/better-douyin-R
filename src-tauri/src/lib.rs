@@ -1019,7 +1019,7 @@ fn emit_im_message(app: &tauri::AppHandle, response: &serde_json::Value) {
         "raw_content": sent.content,
         "created_at": chrono::Utc::now().timestamp_millis(),
     });
-    log::info!(
+    log::debug!(
         "Douyin IM websocket message: conversation={} sender={} message_id={} text_len={}",
         payload
             .get("conversation_id")
@@ -1554,7 +1554,7 @@ async fn cookie_browser_login(
                     let mut relation_signer = extract_relation_signer_cookie(&cookies);
                     let public_cookies = strip_internal_login_cookies(&cookies);
                     let mut cookie_string = serialize_cookie_string(&public_cookies);
-                    log::info!(
+                    log::debug!(
                         "cookie browser login poll: cookie_count={} names={}",
                         cookies.len(),
                         cookies
@@ -2682,7 +2682,7 @@ async fn get_friend_online_status(
                     .await
                 {
                     Ok(fetched_ids) => {
-                        log::info!(
+                        log::debug!(
                             "friend online auto following ids fetched: raw_count={}",
                             fetched_ids.len()
                         );
@@ -3044,7 +3044,7 @@ async fn get_friend_message_history(
     let to_user_id = to_user_id.or(uid);
     let conversation_short_id = coerce_i64(conversation_short_id.as_ref(), 0);
     let conversation_type = coerce_i64(conversation_type.as_ref(), 1).max(1);
-    log::info!(
+    log::debug!(
         "get_friend_message_history invoked: cursor={} to_user_id_present={} conversation_id_present={} conversation_short_id={}",
         cursor.unwrap_or_default().max(0),
         to_user_id.as_ref().map(|value| !value.trim().is_empty()).unwrap_or(false),
@@ -3072,7 +3072,7 @@ async fn get_friend_message_history(
                 .and_then(|value| value.as_array())
                 .map(|items| items.len())
                 .unwrap_or_default();
-            log::info!(
+            log::debug!(
                 "get_friend_message_history completed: messages={} next_cursor={}",
                 count,
                 result.get("next_cursor").cloned().unwrap_or_default()
@@ -3156,7 +3156,7 @@ async fn get_recommended(
 
     let feed_type = normalize_recommended_feed_type(feed_type.as_deref().unwrap_or("featured"));
 
-    log::info!(
+    log::debug!(
         "get_recommended invoked: feed_type={} cursor={} count={}",
         feed_type,
         cursor,
@@ -3193,7 +3193,7 @@ async fn get_recommended(
             }
         };
 
-    log::info!(
+    log::debug!(
         "get_recommended completed: feed_type={} cursor={} count={} next_cursor={} has_more={} videos={}",
         feed_type,
         cursor,
@@ -3591,7 +3591,7 @@ fn combined_video_info_for_download(
         merge_video_download_candidates(&mut combined, fresh);
     }
 
-    log::info!(
+    log::debug!(
         "download_video quality source: aweme_id={} fresh_height={} fresh_count={} payload_height={} payload_count={} combined_height={} combined_count={}",
         aweme_id,
         fresh_video.map(available_video_quality_height).unwrap_or(0),
@@ -3734,7 +3734,7 @@ async fn download_video(
         }));
     }
 
-    log::info!(
+    log::debug!(
         "download_video normalized payload: aweme_id={} media_count={} media_type={:?} author={} cover_present={}",
         aweme_id,
         media_urls.len(),

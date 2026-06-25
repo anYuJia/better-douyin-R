@@ -1069,7 +1069,7 @@ async fn media_proxy_options(request_headers: HeaderMap) -> Response<Body> {
 }
 
 async fn seek_debug(Query(query): Query<SeekDebugQuery>) -> &'static str {
-    log::info!(
+    log::debug!(
         "player seek debug: phase={} target={:?} before={:?} after={:?} duration={:?} ready_state={:?} network_state={:?} paused={:?} src={}",
         query.phase.unwrap_or_default(),
         query.target,

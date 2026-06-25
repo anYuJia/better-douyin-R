@@ -1084,31 +1084,11 @@ impl DouyinClient {
             all_params.insert("a_bogus".to_string(), a_bogus);
         }
 
-        log::info!(
-            "API request started: method={} url={} skip_sign={} cookie_present={} cookie_len={} sessionid_present={} csrf_cookie_present={}",
+        log::debug!(
+            "API request started: method={} url={} skip_sign={}",
             method,
             url,
             skip_sign,
-            headers
-                .get("Cookie")
-                .or_else(|| headers.get("cookie"))
-                .map(|value| !value.trim().is_empty())
-                .unwrap_or(false),
-            headers
-                .get("Cookie")
-                .or_else(|| headers.get("cookie"))
-                .map(|value| value.len())
-                .unwrap_or(0),
-            headers
-                .get("Cookie")
-                .or_else(|| headers.get("cookie"))
-                .map(|value| value.contains("sessionid="))
-                .unwrap_or(false),
-            headers
-                .get("Cookie")
-                .or_else(|| headers.get("cookie"))
-                .map(|value| value.contains("passport_csrf_token="))
-                .unwrap_or(false)
         );
 
         // 打印关键参数用于调试
@@ -1168,7 +1148,7 @@ impl DouyinClient {
             );
             e
         })?;
-        log::info!(
+        log::debug!(
             "API request completed: method={} url={} elapsed_ms={}",
             method,
             url,
@@ -3066,7 +3046,7 @@ impl DouyinClient {
             }
 
             if hydrated_count > 0 {
-                log::info!(
+                log::debug!(
                     "home recommended detail hydration completed: {}/{}",
                     hydrated_count,
                     videos.len()
@@ -3507,7 +3487,7 @@ impl DouyinClient {
         spider_query.push(("verifyFp".to_string(), verify_fp.clone()));
         spider_query.push(("fp".to_string(), verify_fp));
         let spider_query_parts = spider_query;
-        log::info!(
+        log::debug!(
             "Douyin comment publish spider request shape: query_keys={} body_sign_keys={} body_send_keys={} csrf_present={} ticket_guard_present={} cookie_len={} signer_present={}",
             spider_query_parts
                 .iter()
@@ -3535,7 +3515,7 @@ impl DouyinClient {
             .await?;
         let first_ticket_guard_result =
             Self::header_value(&response_headers, "bd-ticket-guard-result");
-        log::info!(
+        log::debug!(
             "Douyin comment publish spider response: status={} len={} ticket_guard_result={} logid={}",
             status,
             body.len(),
@@ -3556,7 +3536,7 @@ impl DouyinClient {
                 (status, response_headers, body) = self
                     .post_form_parts(url, &spider_query_parts, &spider_body, &retry_headers)
                     .await?;
-                log::info!(
+                log::debug!(
                     "Douyin comment publish cookie-ticket response: status={} len={} ticket_guard_result={} logid={}",
                     status,
                     body.len(),
@@ -3666,7 +3646,7 @@ impl DouyinClient {
             (status, response_headers, body) = self
                 .post_form_parts(url, &query_parts, &body_params, &headers)
                 .await?;
-            log::info!(
+            log::debug!(
                 "Douyin comment publish relation-v2 response: status={} len={} ticket_guard_result={} logid={}",
                 status,
                 body.len(),
@@ -3690,7 +3670,7 @@ impl DouyinClient {
                     (status, response_headers, body) = self
                         .post_form_parts(url, &query_parts, &body_params, &cookie_headers)
                         .await?;
-                    log::info!(
+                    log::debug!(
                         "Douyin comment publish relation-v2 cookie-ticket response: status={} len={} ticket_guard_result={} logid={}",
                         status,
                         body.len(),
@@ -5698,33 +5678,16 @@ impl DouyinClient {
         query_params.insert("engine_version".to_string(), "148.0.0.0".to_string());
         query_params.insert("device_memory".to_string(), "16".to_string());
         headers.insert("x-secsdk-csrf-token".to_string(), "DOWNGRADE".to_string());
-        let mut query_keys = query_params.keys().cloned().collect::<Vec<_>>();
-        query_keys.sort();
-        let mut body_keys = body_params
-            .keys()
-            .map(|key| key.to_string())
-            .collect::<Vec<_>>();
-        body_keys.sort();
-        log::info!(
-            "Douyin {} relation update request: host={} path={} query_keys={} uid_present={} uid_prefix={} body_keys={} signer_present={} ticket_guard_cookie={} ticket_guard_header={} csrf_present={} dtrait_present={}",
+        log::debug!(
+            "Douyin {} relation update request: host={} path={} uid_present={} signer_present={}",
             action_name,
             url::Url::parse(url)
                 .ok()
                 .and_then(|parsed| parsed.host_str().map(str::to_string))
                 .unwrap_or_default(),
             relation_path,
-            query_keys.join(","),
             query_params.contains_key("uid"),
-            query_params
-                .get("uid")
-                .map(|value| value.chars().take(8).collect::<String>())
-                .unwrap_or_default(),
-            body_keys.join(","),
             self.config.relation_signer.is_some(),
-            self.config.cookie.contains("bd_ticket_guard_client_data"),
-            headers.contains_key("bd-ticket-guard-client-data"),
-            headers.contains_key("x-secsdk-csrf-token"),
-            headers.contains_key("x-tt-session-dtrait"),
         );
         let params_str = serde_urlencoded::to_string(&query_params)?;
         let user_agent = headers
@@ -5762,10 +5725,11 @@ impl DouyinClient {
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
             log::warn!(
-                "Douyin {} relation update rejected: http_status={} headers={:?}",
+                "Douyin {} relation update rejected: http_status={} ticket_guard_result={:?} passport_gateway={:?}",
                 action_name,
                 status,
-                response.headers()
+                ticket_guard_result,
+                passport_security_gateway,
             );
             if status.as_u16() == 403
                 && (ticket_guard_result.is_some()
@@ -5784,15 +5748,14 @@ impl DouyinClient {
         }
 
         let response = response.json::<serde_json::Value>().await?;
-        log::info!(
-            "Douyin {} relation update response: status_code={} status_msg={} full_response={}",
+        log::debug!(
+            "Douyin {} relation update response: status_code={} status_msg={}",
             action_name,
             response["status_code"].as_i64().unwrap_or(0),
             response["status_msg"]
                 .as_str()
                 .or_else(|| response["message"].as_str())
                 .unwrap_or(""),
-            response
         );
 
         let status_code = response["status_code"].as_i64().unwrap_or(0);
@@ -5802,11 +5765,10 @@ impl DouyinClient {
                 .or_else(|| response["message"].as_str())
                 .unwrap_or("请求失败");
             log::warn!(
-                "Douyin {} relation update failed: code={} message={} response={}",
+                "Douyin {} relation update failed: code={} message={}",
                 action_name,
                 status_code,
                 status_msg,
-                response
             );
             if status_code == 8
                 || status_msg.contains("用户未登录")
@@ -6059,7 +6021,7 @@ impl DouyinClient {
                 "avatar_100x100",
             ],
         );
-        log::info!(
+        log::debug!(
             "Douyin profile/self current user parsed: uid_present={} sec_uid_present={} avatar_thumb_present={} avatar_medium_present={} avatar_larger_present={}",
             !data["uid"].as_str().unwrap_or_default().is_empty(),
             !data["sec_uid"].as_str().unwrap_or_default().is_empty(),

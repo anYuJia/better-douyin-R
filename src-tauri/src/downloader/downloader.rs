@@ -3285,7 +3285,7 @@ fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) -> Vec<String
             .iter()
             .find(|candidate| candidate.url == *url)
     });
-    log::info!(
+    log::debug!(
         "video download quality selected: aweme_id={} quality={} candidates=[{}] selected_height={} selected_metric={} selected_h264={} selected_quality_candidate={}",
         video.aweme_id,
         quality_label,
