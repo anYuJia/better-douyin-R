@@ -2760,7 +2760,8 @@ impl DouyinClient {
             total_favorited: user_data["total_favorited"].as_i64().unwrap_or(0),
             aweme_count: user_data["aweme_count"].as_i64().unwrap_or(0),
             favoriting_count: user_data["favoriting_count"].as_i64().unwrap_or(0),
-            is_follow: user_data["is_follow"].as_bool().unwrap_or(false),
+            is_follow: user_data["is_follow"].as_bool().unwrap_or(false)
+                || response["follow_status"].as_i64().unwrap_or(0) > 0,
             sec_uid: user_data["sec_uid"]
                 .as_str()
                 .unwrap_or_default()
