@@ -2691,7 +2691,8 @@ impl DouyinClient {
                                 ],
                             ),
                             favoriting_count: user["favoriting_count"].as_i64().unwrap_or(0),
-                            is_follow: user["is_follow"].as_bool().unwrap_or(false),
+                            is_follow: user["is_follow"].as_bool().unwrap_or(false)
+                                || user["follow_status"].as_i64().unwrap_or(0) > 0,
                             sec_uid: user["sec_uid"].as_str().unwrap_or_default().to_string(),
                             unique_id: user["unique_id"].as_str().unwrap_or_default().to_string(),
                             verify_status: user["verify_status"].as_i64().unwrap_or(0) as i32,
@@ -2761,7 +2762,7 @@ impl DouyinClient {
             aweme_count: user_data["aweme_count"].as_i64().unwrap_or(0),
             favoriting_count: user_data["favoriting_count"].as_i64().unwrap_or(0),
             is_follow: user_data["is_follow"].as_bool().unwrap_or(false)
-                || response["follow_status"].as_i64().unwrap_or(0) > 0,
+                || user_data["follow_status"].as_i64().unwrap_or(0) > 0,
             sec_uid: user_data["sec_uid"]
                 .as_str()
                 .unwrap_or_default()
@@ -2775,10 +2776,10 @@ impl DouyinClient {
 
         Ok(UserDetail {
             info,
-            is_favorite: response["is_favorite"].as_bool().unwrap_or(false),
-            follow_status: response["follow_status"].as_i64().unwrap_or(0) as i32,
-            story_count: response["story_count"].as_i64().unwrap_or(0),
-            friend_status: response["friend_status"].as_i64().unwrap_or(0) as i32,
+            is_favorite: user_data["is_favorite"].as_bool().unwrap_or(false),
+            follow_status: user_data["follow_status"].as_i64().unwrap_or(0) as i32,
+            story_count: user_data["story_count"].as_i64().unwrap_or(0),
+            friend_status: user_data["friend_status"].as_i64().unwrap_or(0) as i32,
         })
     }
 
