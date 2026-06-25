@@ -33,6 +33,7 @@ import {
   LogOut,
   FileText,
   FolderTree,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -1403,6 +1404,59 @@ export function SettingsView() {
                             立即重启升级
                           </Button>
                         )}
+                      </div>
+                    </div>
+                  </SettingGroup>
+
+                  <SettingGroup icon={Users} label="交流与支持">
+                    <div className="space-y-4">
+                      {/* GitHub Star Card */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-[12px] bg-white/[0.02] border border-white/[0.04] backdrop-blur-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-[12px] bg-white/[0.04] flex items-center justify-center shrink-0 border border-white/[0.05]">
+                            <svg className="w-5.5 h-5.5 text-text" viewBox="0 0 24 24" fill="currentColor">
+                              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482C19.138 20.193 22 16.44 22 12.017 22 6.484 17.522 2 12 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <div className="text-[0.82rem] font-bold text-text">喜欢这个项目吗？</div>
+                            <div className="text-[0.72rem] text-text-secondary mt-0.5 leading-relaxed">
+                              这个项目花费了作者大量的时间和精力。如果它帮到了你，欢迎去 GitHub 点个 Star 支持作者继续走下去！
+                            </div>
+                          </div>
+                        </div>
+                        <a
+                          href="https://github.com/anYuJia/better-douyin"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full sm:w-auto shrink-0 group relative flex h-8.5 items-center justify-center rounded-[8px] bg-accent px-4 text-[0.74rem] font-black text-white shadow-lg shadow-accent/20 active:scale-[0.96] transition-[background-color,color,box-shadow,transform,opacity]"
+                        >
+                          <span className="relative z-10">去 GitHub 点 Star</span>
+                          <div className="absolute inset-0 rounded-[8px] bg-white opacity-0 group-hover:opacity-10 transition-opacity" />
+                        </a>
+                      </div>
+
+                      {/* QQ Group Card */}
+                      <div className="flex flex-col md:flex-row items-center gap-5 p-4 rounded-[12px] bg-white/[0.02] border border-white/[0.04] backdrop-blur-xl">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[0.82rem] font-bold text-text">官方交流群</div>
+                          <div className="text-[0.72rem] text-text-secondary mt-1.5 leading-relaxed">
+                            欢迎加入官方交流群，与其他用户以及作者一起交流、反馈建议或分享使用心得。
+                          </div>
+                          <div className="mt-3.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between py-2 px-3 rounded-[8px] bg-white/[0.01] border border-white/[0.03]">
+                              <span className="text-[0.74rem] text-text-muted">QQ 群号</span>
+                              <span className="text-[0.78rem] text-text font-mono font-bold select-all">438407379</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-[124px] h-[124px] rounded-[10px] bg-white p-1.5 flex items-center justify-center shrink-0 shadow-lg border border-white/10">
+                          <img
+                            src="/qq-group.jpg"
+                            alt="QQ群二维码"
+                            className="w-full h-full object-contain rounded-[6px]"
+                          />
+                        </div>
                       </div>
                     </div>
                   </SettingGroup>
