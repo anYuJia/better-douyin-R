@@ -1851,7 +1851,7 @@ async fn cookie_browser_login(
                                 "nickname": current_user.nickname,
                                 "friend_count": next_config.im_friend_sec_user_ids.len(),
                                 "relation_signer_ready": relation_signer_ready(&next_config.relation_signer),
-                                "_cookie_for_encryption": cookie_string
+                                "report_status": "ok"
                             })),
                             None,
                         );
