@@ -284,6 +284,11 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
         toast(result.message || "关注失败", "error");
         return;
       }
+      // Use follow_status from API response (1=following, 2=mutual, 0=not following)
+      const newStatus = nextFollow
+        ? (result.follow_status ?? (prevStatus === 2 ? 2 : 1))
+        : 0;
+      setFollowStatus(newStatus);
       // Update store so the state persists across navigation
       const current = useSearchStore.getState().currentUser;
       if (current && (current.uid === user.uid || current.sec_uid === user.sec_uid)) {
@@ -291,7 +296,7 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
           currentUser: {
             ...current,
             is_follow: nextFollow,
-            follow_status: nextFollow ? (prevStatus === 2 ? 2 : 1) : 0,
+            follow_status: newStatus,
           },
         });
       }

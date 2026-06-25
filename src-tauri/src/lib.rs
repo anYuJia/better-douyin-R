@@ -2091,12 +2091,18 @@ async fn set_user_followed(
     };
 
     match client.set_user_followed(&user_id, follow).await {
-        Ok(_) => Ok(serde_json::json!({
-            "success": true,
-            "user_id": user_id,
-            "is_follow": follow,
-            "message": if follow { "关注成功" } else { "已取消关注" }
-        })),
+        Ok(resp) => {
+            let follow_status = resp.get("follow_status")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(if follow { 1 } else { 0 });
+            Ok(serde_json::json!({
+                "success": true,
+                "user_id": user_id,
+                "is_follow": follow,
+                "follow_status": follow_status,
+                "message": if follow { "关注成功" } else { "已取消关注" }
+            }))
+        }
         Err(e) => Ok(api_login_or_verify_error_response(
             &client,
             if follow {

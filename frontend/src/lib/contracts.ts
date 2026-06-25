@@ -192,6 +192,7 @@ export interface VideoRelationResponse extends ApiResponse {
 export interface FollowResponse extends ApiResponse {
   user_id?: string;
   is_follow?: boolean;
+  follow_status?: number;
 }
 
 export type RecommendedFeedType = "featured" | "recommended";
