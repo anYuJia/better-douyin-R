@@ -445,24 +445,23 @@ export function DownloadsView() {
   }, [openDownloadPlayer]);
 
   const handleRevealHistory = useCallback(async (item: HistoryItem) => {
-    const localPath = getDownloadLocalPath(item);
-    if (!localPath) return;
+    if (!item.path) return;
     try {
-      await openFileLocation(localPath);
+      await openFileLocation(item.path);
     } catch (error) {
       addLog(error instanceof Error ? error.message : "打开文件位置失败，文件可能已经不存在", "error");
     }
   }, [addLog]);
 
   const handleRevealWorkGroup = useCallback((group: DownloadWorkGroup) => {
-    const firstItem = group.items.find((item) => getDownloadLocalPath(item));
+    const firstItem = group.items.find((item) => item.path);
     if (firstItem) {
       void handleRevealHistory(firstItem);
     }
   }, [handleRevealHistory]);
 
   const handleDeleteItems = useCallback((items: HistoryItem[]) => {
-    const targets = getLocalDownloadItems(items).filter((item) => getDownloadLocalPath(item));
+    const targets = getLocalDownloadItems(items).filter((item) => item.path);
     if (targets.length === 0) {
       addLog("没有可删除的本地文件", "warning");
       return;
@@ -480,7 +479,7 @@ export function DownloadsView() {
           setDeletingIds((current) => new Set([...current, ...targetIds]));
           try {
             for (const item of targets) {
-              await deleteFile(getDownloadLocalPath(item));
+              await deleteFile(item.path);
               try {
                 await deleteHistoryItem(item.aweme_id || item.id);
               } catch {
@@ -488,8 +487,8 @@ export function DownloadsView() {
               }
             }
             const deletedIds = new Set(targets.map((item) => item.id));
-            const deletedPaths = new Set(targets.map(getDownloadLocalPath).filter(Boolean));
-            const isDeletedItem = (item: HistoryItem) => deletedIds.has(item.id) || deletedPaths.has(getDownloadLocalPath(item));
+            const deletedPaths = new Set(targets.map((item) => item.path).filter(Boolean));
+            const isDeletedItem = (item: HistoryItem) => deletedIds.has(item.id) || deletedPaths.has(item.path);
             setDiskFiles((current) => current.filter((item) => !isDeletedItem(item)));
             setWorkDiskFiles((current) => current.filter((item) => !isDeletedItem(item)));
             setDiskTotal((current) => Math.max(0, current - targets.length));
@@ -998,8 +997,8 @@ function HistoryFileCard({
             {item.author && <span>@{item.author}</span>}
           </div>
 
-          <div className="mt-2 truncate text-[0.66rem] text-text-muted" title={getDownloadLocalPath(item)}>
-            {getDownloadLocalPath(item) || "历史记录没有文件路径"}
+          <div className="mt-2 truncate text-[0.66rem] text-text-muted" title={item.path}>
+            {item.path || "历史记录没有文件路径"}
           </div>
         </div>
       </div>
@@ -1047,7 +1046,7 @@ function DownloadWorkCard({
   const createdAt = group.timestamp
     ? new Date(group.timestamp * 1000).toLocaleString()
     : "";
-  const firstPath = getDownloadLocalPath(group.items.find((item) => getDownloadLocalPath(item)) || group.items[0]);
+  const firstPath = group.items.find((item) => item.path)?.path || "";
 
   return (
     <div
@@ -1146,8 +1145,7 @@ function HistoryFileThumbnail({
   label?: string;
 }) {
   const coverUrl = useMemo(() => (item.cover ? mediaProxyUrl(item.cover, "image") : ""), [item.cover]);
-  const localPath = getDownloadLocalPath(item);
-  const localUrl = useMemo(() => localFileAssetUrl(localPath), [localPath]);
+  const localUrl = useMemo(() => localFileAssetUrl(item.path), [item.path]);
   const videoUrl = useMemo(() => (localUrl ? `${localUrl}#t=0.1` : ""), [localUrl]);
   const [coverFailed, setCoverFailed] = useState(false);
   const [localFailed, setLocalFailed] = useState(false);
@@ -1285,19 +1283,18 @@ function MediaKindIcon({ kind, className }: { kind: LocalMediaKind; className?: 
 function mergeDownloadFileItems(files: HistoryItem[], historyItems: HistoryItem[]): HistoryItem[] {
   const historyByPath = new Map(
     historyItems
-      .filter((item) => getDownloadLocalPath(item))
-      .map((item) => [getDownloadLocalPath(item), item] as const)
+      .filter((item) => item.path)
+      .map((item) => [item.path, item] as const)
   );
 
   return files.map((file) => {
-    const filePath = getDownloadLocalPath(file);
-    const history = historyByPath.get(filePath);
+    const history = historyByPath.get(file.path);
     return {
       ...file,
       ...history,
-      id: file.id || filePath,
-      path: filePath,
-      file_path: filePath,
+      id: file.id || file.path,
+      path: file.path,
+      file_path: file.path,
       size: file.size || history?.size || 0,
       timestamp: history?.timestamp || file.timestamp,
     };
@@ -1305,14 +1302,14 @@ function mergeDownloadFileItems(files: HistoryItem[], historyItems: HistoryItem[
 }
 
 function getDownloadDeleteKey(item: HistoryItem): string {
-  return getDownloadLocalPath(item) || item.id || item.aweme_id || item.filename || "";
+  return item.path || item.id || item.aweme_id || item.filename || "";
 }
 
 function buildDownloadWorkGroups(items: HistoryItem[], sortBy: string): DownloadWorkGroup[] {
   const grouped = new Map<string, HistoryItem[]>();
 
   for (const item of dedupeDownloadItems(items)) {
-    if (!getDownloadLocalPath(item)) continue;
+    if (!item.path) continue;
     const key = getDownloadWorkKey(item);
     const groupItems = grouped.get(key) || [];
     groupItems.push(item);
@@ -1367,7 +1364,7 @@ function dedupeDownloadItems(items: HistoryItem[]): HistoryItem[] {
 }
 
 function getLocalDownloadItems(items: HistoryItem[]): HistoryItem[] {
-  return dedupeDownloadItems(items).filter((item) => Boolean(getDownloadLocalPath(item)));
+  return dedupeDownloadItems(items).filter((item) => Boolean(item.path));
 }
 
 function isDownloadPlayerMedia(item: HistoryItem): boolean {
@@ -1389,7 +1386,7 @@ function buildDownloadPlayerVideo(items: HistoryItem[]): VideoInfo | null {
   const coverUrl = getDownloadCoverUrl(coverItem);
   const mediaUrls = playableItems.flatMap((item) => {
     const kind = getHistoryMediaKind(item);
-    const url = localFileAssetUrl(getDownloadLocalPath(item));
+    const url = localFileAssetUrl(item.path);
     if (kind === "image") return [{ type: "image", url }];
     if (kind === "video") return [{ type: "video", url }];
     return [];
@@ -1421,6 +1418,7 @@ function buildDownloadPlayerVideo(items: HistoryItem[]): VideoInfo | null {
       aweme_count: 0,
       favoriting_count: 0,
       is_follow: false,
+      follow_status: 0,
       verify_status: 0,
       unique_id: "",
     },
@@ -1467,14 +1465,13 @@ function getDownloadWorkKey(item: HistoryItem): string {
   if (isUsableAwemeId(awemeId, item)) return `aweme:${awemeId}`;
 
   const title = normalizeDownloadWorkTitle(resolveDownloadItemTitle(item));
-  const scope = (item.author || getParentDirectoryName(getDownloadLocalPath(item)) || "unknown").trim().toLowerCase();
+  const scope = (item.author || getParentDirectoryName(item.path) || "unknown").trim().toLowerCase();
   return `work:${scope}:${title.toLowerCase()}`;
 }
 
 function isUsableAwemeId(awemeId: string, item: HistoryItem): boolean {
   if (!awemeId) return false;
-  const localPath = getDownloadLocalPath(item);
-  if (localPath && awemeId === localPath) return false;
+  if (item.path && awemeId === item.path) return false;
   if (/[\\/]/.test(awemeId) || awemeId.includes(":")) return false;
   return awemeId.length <= 80;
 }
@@ -1518,7 +1515,7 @@ function sortDownloadWorkItems(items: HistoryItem[]): HistoryItem[] {
       { numeric: true, sensitivity: "base" }
     );
     if (titleCompare !== 0) return titleCompare;
-    return getDownloadLocalPath(a).localeCompare(getDownloadLocalPath(b), undefined, { numeric: true, sensitivity: "base" });
+    return (a.path || "").localeCompare(b.path || "", undefined, { numeric: true, sensitivity: "base" });
   });
 }
 
@@ -1542,9 +1539,8 @@ function chooseDownloadWorkCover(items: HistoryItem[]): HistoryItem {
 
 function getDownloadCoverUrl(item: HistoryItem): string {
   if (item.cover) return item.cover;
-  const localPath = getDownloadLocalPath(item);
-  if (getHistoryMediaKind(item) === "image" && localPath) {
-    return localFileAssetUrl(localPath);
+  if (getHistoryMediaKind(item) === "image" && item.path) {
+    return localFileAssetUrl(item.path);
   }
   return "";
 }
@@ -1584,10 +1580,6 @@ function getParentDirectoryName(path: string): string {
   const normalized = (path || "").replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
   return parts.length >= 2 ? parts[parts.length - 2] : "";
-}
-
-function getDownloadLocalPath(item: HistoryItem): string {
-  return String(item.path || item.file_path || "").trim();
 }
 
 function getFileStem(path: string): string {

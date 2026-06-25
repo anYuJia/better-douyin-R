@@ -18,6 +18,7 @@ export function videoAuthorToUserInfo(video: VideoInfo): UserInfo | null {
     aweme_count: author.aweme_count || 0,
     favoriting_count: author.favoriting_count || 0,
     is_follow: author.is_follow || false,
+    follow_status: author.follow_status || 0,
     unique_id: author.unique_id || "",
     verify_status: author.verify_status || 0,
   };

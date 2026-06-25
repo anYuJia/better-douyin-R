@@ -241,12 +241,14 @@ interface UserDetailCardProps {
 export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: UserDetailCardProps) {
   const addLog = useLogStore((s) => s.addLog);
   const toast = useToastStore.getState().toast;
-  const [following, setFollowing] = useState(Boolean(user.is_follow));
+  // follow_status: 0=未关注, 1=已关注(单向), 2=互相关注
+  const [followStatus, setFollowStatus] = useState<number>(user.follow_status || (user.is_follow ? 1 : 0));
   const [followLoading, setFollowLoading] = useState(false);
 
+  // Sync local state when user prop changes (e.g. switching users)
   useEffect(() => {
-    setFollowing(Boolean(user.is_follow));
-  }, [user.uid, user.sec_uid, user.is_follow]);
+    setFollowStatus(user.follow_status || (user.is_follow ? 1 : 0));
+  }, [user.uid, user.sec_uid, user.is_follow, user.follow_status]);
 
   const stats = [
     { label: "作品", value: user.aweme_count || 0 },
@@ -267,24 +269,35 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
 
   const handleFollow = async () => {
     if (!user.uid || followLoading) return;
-    const nextFollow = !following;
+    const wasFollowing = followStatus > 0;
+    const prevStatus = followStatus;
+    const nextFollow = !wasFollowing;
     setFollowLoading(true);
-    setFollowing(nextFollow);
+    // Optimistic update
+    setFollowStatus(nextFollow ? 1 : 0);
     try {
       const result = await setUserFollowed(user.uid, nextFollow);
       if (!result.success) {
-        setFollowing(!nextFollow);
+        // Revert on failure
+        setFollowStatus(prevStatus);
         addLog(result.message || "关注失败", "error");
         toast(result.message || "关注失败", "error");
         return;
       }
+      // Update store so the state persists across navigation
       const current = useSearchStore.getState().currentUser;
       if (current && (current.uid === user.uid || current.sec_uid === user.sec_uid)) {
-        useSearchStore.setState({ currentUser: { ...current, is_follow: nextFollow } });
+        useSearchStore.setState({
+          currentUser: {
+            ...current,
+            is_follow: nextFollow,
+            follow_status: nextFollow ? (prevStatus === 2 ? 2 : 1) : 0,
+          },
+        });
       }
       addLog(result.message || (nextFollow ? "关注成功" : "已取消关注"), "success");
     } catch (error) {
-      setFollowing(!nextFollow);
+      setFollowStatus(prevStatus);
       const msg = error instanceof Error ? error.message : "关注失败";
       addLog(msg, "error");
       toast(msg, "error");
@@ -326,7 +339,7 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
             </span>
             {user.uid && (
               <Button
-                variant={following ? "outline" : "default"}
+                variant={followStatus > 0 ? "outline" : "default"}
                 size="sm"
                 disabled={followLoading || busy}
                 onClick={handleFollow}
@@ -334,12 +347,14 @@ export function UserDetailCard({ user, busy, onDownloadAll, onViewVideos }: User
               >
                 {followLoading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : following ? (
+                ) : followStatus === 2 ? (
+                  <Users className="w-3.5 h-3.5" />
+                ) : followStatus === 1 ? (
                   <UserCheck className="w-3.5 h-3.5" />
                 ) : (
                   <UserPlus className="w-3.5 h-3.5" />
                 )}
-                {following ? "已关注" : "关注"}
+                {followStatus === 2 ? "互相关注" : followStatus === 1 ? "已关注" : "关注"}
               </Button>
             )}
           </div>

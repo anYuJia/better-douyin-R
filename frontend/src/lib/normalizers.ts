@@ -288,6 +288,7 @@ export function normalizeLikedVideo(item: unknown): VideoInfo | null {
       aweme_count: 0,
       favoriting_count: 0,
       is_follow: false,
+      follow_status: 0,
       verify_status: 0,
       unique_id: "",
     },
@@ -370,6 +371,7 @@ export function normalizeUser(user: unknown): UserInfo {
     aweme_count: normalizeCount(source.aweme_count ?? source.aweme_count_str ?? source.aweme_count_text ?? source.work_count),
     favoriting_count: normalizeCount(source.favoriting_count),
     is_follow: source.is_follow || false,
+    follow_status: source.follow_status || 0,
     unique_id: source.unique_id || "",
     verify_status: source.verify_status || 0,
   };

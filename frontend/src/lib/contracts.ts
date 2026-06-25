@@ -32,6 +32,7 @@ export interface AuthorInfo {
   aweme_count: number;
   favoriting_count: number;
   is_follow: boolean;
+  follow_status: number;
   verify_status: number;
   unique_id: string;
 }
@@ -136,6 +137,7 @@ export interface UserInfo {
   aweme_count: number;
   favoriting_count: number;
   is_follow: boolean;
+  follow_status: number;
   sec_uid: string;
   unique_id: string;
   verify_status: number;

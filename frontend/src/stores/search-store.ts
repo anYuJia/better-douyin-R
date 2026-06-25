@@ -108,6 +108,8 @@ function mergeUserInfo(base: UserInfo, incoming: UserInfo): UserInfo {
     total_favorited: keepNumber(incoming.total_favorited, base.total_favorited),
     aweme_count: keepNumber(incoming.aweme_count, base.aweme_count),
     favoriting_count: keepNumber(incoming.favoriting_count, base.favoriting_count),
+    is_follow: incoming.is_follow || base.is_follow || false,
+    follow_status: incoming.follow_status || base.follow_status || 0,
   };
 }
 

@@ -221,23 +221,6 @@ function latestChatMessage(messages: LocalChatMessage[] | undefined) {
   }, undefined);
 }
 
-function deduplicateMessages(messages: LocalChatMessage[] | undefined): LocalChatMessage[] {
-  if (!messages || messages.length === 0) return [];
-  const result: LocalChatMessage[] = [];
-  const seenIds = new Set<string>();
-  for (const msg of messages) {
-    if (seenIds.has(msg.id)) continue;
-    const isDuplicate = result.some(
-      (existing) =>
-        existing.text === msg.text && Math.abs(existing.createdAt - msg.createdAt) < 60000
-    );
-    if (isDuplicate) continue;
-    seenIds.add(msg.id);
-    result.push(msg);
-  }
-  return result;
-}
-
 function safeSetLocalStorage(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
@@ -661,14 +644,7 @@ function centerNoticeText(message: LocalChatMessage) {
     root ? stringField(root, ["msgHint", "description", "push_detail", "text", "content"]) : "",
   ]);
   const matched = candidates.find((item) => LIKE_NOTICE_PATTERN.test(item));
-  if (matched) return normalizeLikeNoticeText(matched);
-  
-  // 识别关注打招呼消息或连续聊天火花提示，将其居中显示为系统提示
-  const systemPattern = /互相关注|连续聊天火花/i;
-  const matchedSystem = candidates.find((item) => systemPattern.test(item));
-  if (matchedSystem) return matchedSystem;
-  
-  return "";
+  return matched ? normalizeLikeNoticeText(matched) : "";
 }
 
 function messagePreviewText(message: LocalChatMessage | undefined) {
@@ -943,6 +919,7 @@ export function FriendsStatusView() {
   const queryInFlightRef = useRef(false);
   const pendingBackgroundQueryRef = useRef(false);
   const lastQueryStartedAtRef = useRef(0);
+  const pendingBackgroundTimerRef = useRef<number | null>(null);
   const cookieRetryTimerRef = useRef<number | null>(null);
   const avatarRetryTimerRef = useRef<number | null>(null);
   const initialInputRef = useRef(input);
@@ -984,7 +961,7 @@ export function FriendsStatusView() {
     () => friendItems.find((friend) => friend.secUid === selectedFriendId) || null,
     [friendItems, selectedFriendId],
   );
-  const selectedMessages = selectedFriend ? deduplicateMessages(chatMessages[selectedFriend.secUid]) : [];
+  const selectedMessages = selectedFriend ? chatMessages[selectedFriend.secUid] || [] : [];
   const selectedHistory = selectedFriend ? historyState[selectedFriend.secUid] : undefined;
   const onlineCount = friends.filter((friend) => friend.online).length;
   const offlineCount = friends.filter((friend) => !friend.online).length;
@@ -1005,6 +982,7 @@ export function FriendsStatusView() {
         aweme_count: 0,
         favoriting_count: 0,
         is_follow: false,
+        follow_status: 0,
         sec_uid: friend.secUid,
         unique_id: "",
         verify_status: 0,
@@ -1359,10 +1337,7 @@ export function FriendsStatusView() {
           senderUid,
         };
         const currentMessages = next[friend.secUid] || [];
-        if (currentMessages.some((existing) => 
-          existing.id === message.id || 
-          (existing.text === message.text && Math.abs(existing.createdAt - message.createdAt) < 60000)
-        )) continue;
+        if (currentMessages.some((existing) => existing.id === message.id)) continue;
         next[friend.secUid] = [...currentMessages, message].sort((a, b) => a.createdAt - b.createdAt);
         mergedCount += 1;
       }
@@ -1526,21 +1501,18 @@ export function FriendsStatusView() {
 
   const query = useCallback(async (overrideIds?: string[], options?: { background?: boolean; retryCookie?: boolean }) => {
     const background = Boolean(options?.background);
-    const retryCookie = options?.retryCookie !== false;
-    const now = Date.now();
-    if (background && now - lastQueryStartedAtRef.current < MIN_BACKGROUND_REFRESH_INTERVAL_MS) {
+    if (background && Date.now() - lastQueryStartedAtRef.current < MIN_BACKGROUND_REFRESH_INTERVAL_MS) {
       return;
     }
     if (queryInFlightRef.current) {
-      if (background) {
-        pendingBackgroundQueryRef.current = true;
-      }
+      if (background) pendingBackgroundQueryRef.current = true;
       return;
     }
+    const retryCookie = options?.retryCookie !== false;
     const baseIds = overrideIds ?? savedIdsRef.current;
     const queryIds = Array.from(new Set([...baseIds, ...idsRef.current]));
     queryInFlightRef.current = true;
-    lastQueryStartedAtRef.current = now;
+    lastQueryStartedAtRef.current = Date.now();
     if (!background) {
       setError("");
       setLoading(true);
@@ -1616,7 +1588,11 @@ export function FriendsStatusView() {
       }
       if (pendingBackgroundQueryRef.current) {
         pendingBackgroundQueryRef.current = false;
-        window.setTimeout(() => {
+        if (pendingBackgroundTimerRef.current !== null) {
+          window.clearTimeout(pendingBackgroundTimerRef.current);
+        }
+        pendingBackgroundTimerRef.current = window.setTimeout(() => {
+          pendingBackgroundTimerRef.current = null;
           void query(undefined, { background: true });
         }, MIN_BACKGROUND_REFRESH_INTERVAL_MS);
       }
@@ -1629,6 +1605,9 @@ export function FriendsStatusView() {
     }
     if (avatarRetryTimerRef.current !== null) {
       window.clearTimeout(avatarRetryTimerRef.current);
+    }
+    if (pendingBackgroundTimerRef.current !== null) {
+      window.clearTimeout(pendingBackgroundTimerRef.current);
     }
   }, []);
 
@@ -2072,7 +2051,12 @@ function ChatWorkspace({
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const preserveScrollOffsetRef = useRef<number | null>(null);
+  const preserveScrollUntilRef = useRef(0);
+  const olderLoadArmedRef = useRef(false);
   const ignoreScrollUntilRef = useRef(0);
+  const pinBottomUntilRef = useRef(0);
+  const userScrollIntentUntilRef = useRef(0);
+  const lastScrollTopRef = useRef(0);
   const latestMessageId = messages.length > 0 ? messages[messages.length - 1].id : "";
   const oldestMessageId = messages.length > 0 ? messages[0].id : "";
 
@@ -2083,12 +2067,29 @@ function ChatWorkspace({
   const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
+    pinBottomUntilRef.current = Date.now() + 2600;
     markProgrammaticScroll();
     scroller.scrollTop = scroller.scrollHeight;
     bottomAnchorRef.current?.scrollIntoView({ block: "end" });
   }, [markProgrammaticScroll]);
 
+  const isNearBottom = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return true;
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 96;
+  }, []);
+
+  const restorePreservedScroll = useCallback(() => {
+    const scroller = scrollRef.current;
+    const offset = preserveScrollOffsetRef.current;
+    if (!scroller || offset === null) return false;
+    markProgrammaticScroll();
+    scroller.scrollTop = Math.max(0, scroller.scrollHeight - offset);
+    return true;
+  }, [markProgrammaticScroll]);
+
   const scheduleScrollToBottom = useCallback(() => {
+    pinBottomUntilRef.current = Date.now() + 2600;
     let disposed = false;
     const timers: number[] = [];
     const frames: number[] = [];
@@ -2115,17 +2116,45 @@ function ChatWorkspace({
 
   useEffect(() => {
     if (preserveScrollOffsetRef.current === null) return;
-    const frame = window.requestAnimationFrame(() => {
-      const scroller = scrollRef.current;
-      const offset = preserveScrollOffsetRef.current;
-      if (scroller && offset !== null) {
-        markProgrammaticScroll();
-        scroller.scrollTop = Math.max(0, scroller.scrollHeight - offset);
-      }
+    preserveScrollUntilRef.current = Date.now() + 1600;
+    const frames: number[] = [];
+    const timers: number[] = [];
+    const restore = () => {
+      restorePreservedScroll();
+    };
+    frames.push(window.requestAnimationFrame(restore));
+    frames.push(window.requestAnimationFrame(() => {
+      frames.push(window.requestAnimationFrame(restore));
+    }));
+    for (const delay of [80, 240, 520]) {
+      timers.push(window.setTimeout(restore, delay));
+    }
+    timers.push(window.setTimeout(() => {
       preserveScrollOffsetRef.current = null;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [markProgrammaticScroll, oldestMessageId]);
+    }, 1700));
+    return () => {
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [oldestMessageId, restorePreservedScroll]);
+
+  useEffect(() => {
+    olderLoadArmedRef.current = false;
+    preserveScrollOffsetRef.current = null;
+    preserveScrollUntilRef.current = 0;
+    pinBottomUntilRef.current = Date.now() + 2600;
+    userScrollIntentUntilRef.current = 0;
+  }, [friend?.secUid]);
+
+  const handleMediaSettled = useCallback(() => {
+    if (preserveScrollOffsetRef.current !== null && Date.now() < preserveScrollUntilRef.current) {
+      restorePreservedScroll();
+      return;
+    }
+    if (Date.now() < pinBottomUntilRef.current || isNearBottom()) {
+      scheduleScrollToBottom();
+    }
+  }, [isNearBottom, restorePreservedScroll, scheduleScrollToBottom]);
 
   useEffect(() => {
     setPendingImages((current) => {
@@ -2197,13 +2226,33 @@ function ChatWorkspace({
       return current.filter((item) => item.id !== id);
     });
   };
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentUntilRef.current = Date.now() + 900;
+  }, []);
+
   const handleMessageScroll = () => {
     const scroller = scrollRef.current;
-    if (!scroller || !friend || historyLoading || !canLoadOlder) return;
+    if (!scroller) return;
+    const scrollTop = scroller.scrollTop;
+    const previousScrollTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = scrollTop;
     if (Date.now() < ignoreScrollUntilRef.current) return;
+    if (scrollTop < previousScrollTop - 4) {
+      pinBottomUntilRef.current = 0;
+    }
+    if (!friend || historyLoading || !canLoadOlder) return;
+    if (Date.now() > userScrollIntentUntilRef.current) return;
     if (scroller.scrollHeight <= scroller.clientHeight + 4) return;
+    if (scroller.scrollTop > 140) {
+      olderLoadArmedRef.current = true;
+      return;
+    }
     if (scroller.scrollTop > 72) return;
+    if (!olderLoadArmedRef.current) return;
+    if (scrollTop >= previousScrollTop - 4) return;
+    olderLoadArmedRef.current = false;
     preserveScrollOffsetRef.current = scroller.scrollHeight - scroller.scrollTop;
+    preserveScrollUntilRef.current = Date.now() + 1600;
     void onLoadOlder();
   };
   const handleDraftKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2258,7 +2307,14 @@ function ChatWorkspace({
             {historyError}
           </div>
         )}
-        <div ref={scrollRef} onScroll={handleMessageScroll} className="flex-1 overflow-y-auto px-4 py-4">
+        <div
+          ref={scrollRef}
+          onPointerDown={markUserScrollIntent}
+          onTouchStart={markUserScrollIntent}
+          onWheel={markUserScrollIntent}
+          onScroll={handleMessageScroll}
+          className="flex-1 overflow-y-auto px-4 py-4"
+        >
           {friend ? (
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
               {historyLoading && messages.length > 0 && (
@@ -2321,7 +2377,7 @@ function ChatWorkspace({
                             message={message}
                             onOpenSharedVideo={onOpenSharedVideo}
                             sharedPlayerLoadingId={sharedPlayerLoadingId}
-                            onMediaSettled={scheduleScrollToBottom}
+                            onMediaSettled={handleMediaSettled}
                           />
                           </div>
                         </div>

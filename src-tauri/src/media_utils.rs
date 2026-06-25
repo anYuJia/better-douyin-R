@@ -152,6 +152,7 @@ pub fn python_user_value(user: &crate::api::UserInfo) -> serde_json::Value {
         "aweme_count": user.aweme_count,
         "favoriting_count": user.favoriting_count,
         "is_follow": user.is_follow,
+        "follow_status": user.follow_status,
         "signature": user.signature,
         "sec_uid": user.sec_uid,
         "avatar_thumb": user.avatar_thumb,

@@ -1501,7 +1501,9 @@ impl DouyinClient {
             following_count: author_data["following_count"].as_i64().unwrap_or(0),
             aweme_count: author_data["aweme_count"].as_i64().unwrap_or(0),
             favoriting_count: author_data["favoriting_count"].as_i64().unwrap_or(0),
-            is_follow: author_data["is_follow"].as_bool().unwrap_or(false),
+            is_follow: author_data["is_follow"].as_bool().unwrap_or(false)
+                || author_data["follow_status"].as_i64().unwrap_or(0) > 0,
+            follow_status: author_data["follow_status"].as_i64().unwrap_or(0) as i32,
             verify_status: author_data["verify_status"].as_i64().unwrap_or(0) as i32,
             unique_id: author_data["unique_id"]
                 .as_str()
@@ -2693,6 +2695,7 @@ impl DouyinClient {
                             favoriting_count: user["favoriting_count"].as_i64().unwrap_or(0),
                             is_follow: user["is_follow"].as_bool().unwrap_or(false)
                                 || user["follow_status"].as_i64().unwrap_or(0) > 0,
+                            follow_status: user["follow_status"].as_i64().unwrap_or(0) as i32,
                             sec_uid: user["sec_uid"].as_str().unwrap_or_default().to_string(),
                             unique_id: user["unique_id"].as_str().unwrap_or_default().to_string(),
                             verify_status: user["verify_status"].as_i64().unwrap_or(0) as i32,
@@ -2763,6 +2766,7 @@ impl DouyinClient {
             favoriting_count: user_data["favoriting_count"].as_i64().unwrap_or(0),
             is_follow: user_data["is_follow"].as_bool().unwrap_or(false)
                 || user_data["follow_status"].as_i64().unwrap_or(0) > 0,
+            follow_status: user_data["follow_status"].as_i64().unwrap_or(0) as i32,
             sec_uid: user_data["sec_uid"]
                 .as_str()
                 .unwrap_or_default()
@@ -6077,6 +6081,7 @@ impl DouyinClient {
             aweme_count: data["aweme_count"].as_i64().unwrap_or(0),
             favoriting_count: data["favoriting_count"].as_i64().unwrap_or(0),
             is_follow: false,
+            follow_status: data["follow_status"].as_i64().unwrap_or(0) as i32,
             sec_uid: data["sec_uid"].as_str().unwrap_or_default().to_string(),
             unique_id: data["unique_id"].as_str().unwrap_or_default().to_string(),
             verify_status: data["verify_status"].as_i64().unwrap_or(0) as i32,
@@ -6140,6 +6145,7 @@ impl DouyinClient {
             aweme_count: 0,
             favoriting_count: 0,
             is_follow: false,
+            follow_status: 0,
             sec_uid: String::new(),
             unique_id: uid,
             verify_status: 0,

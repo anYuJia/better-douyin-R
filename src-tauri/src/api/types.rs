@@ -44,6 +44,7 @@ pub struct AuthorInfo {
     pub aweme_count: i64,
     pub favoriting_count: i64,
     pub is_follow: bool,
+    pub follow_status: i32,
     pub verify_status: i32,
     pub unique_id: String,
 }
@@ -183,6 +184,7 @@ pub struct UserInfo {
     pub aweme_count: i64,
     pub favoriting_count: i64,
     pub is_follow: bool,
+    pub follow_status: i32,
     pub sec_uid: String,
     pub unique_id: String,
     pub verify_status: i32,
