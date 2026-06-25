@@ -1381,6 +1381,7 @@ async fn cookie_browser_login(
     state: State<'_, AppState>,
     timeout: Option<u64>,
     browser: Option<String>,
+    cookie: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let _ = browser;
     if let Some(session) = state.cookie_login.lock().await.take() {
@@ -1429,6 +1430,17 @@ async fn cookie_browser_login(
     .map_err(|error| format!("无法打开登录窗口: {}", error))?;
 
     reset_douyin_login_window_state(&window);
+    if let Some(ref cookie_str) = cookie {
+        for item in cookie_str.split(';') {
+            let item = item.trim();
+            if item.is_empty() { continue; }
+            if let Some((name, value)) = item.split_once('=') {
+                if let Ok(parsed_cookie) = tauri::webview::Cookie::parse(format!("{}={}; Domain=.douyin.com; Path=/", name, value)) {
+                    let _ = window.set_cookie(parsed_cookie.into_owned());
+                }
+            }
+        }
+    }
     let _ = window.navigate(login_url.clone());
     schedule_douyin_login_storage_cleanup(window.clone());
 
