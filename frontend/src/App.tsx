@@ -15,6 +15,7 @@ const BOOTSTRAP_NETWORK_TIMEOUT_MS = 6_000;
 const BOOTSTRAP_COOKIE_TIMEOUT_MS = 10_000;
 const STAR_PROMPT_STORAGE_KEY = "better-douyin.starPrompt.dismissed.v1";
 const STAR_PROMPT_GITHUB_URL = "https://github.com/anYuJia/better-douyin-R";
+const UPDATE_PROMPT_DISMISSED_VERSION_KEY = "better-douyin.updatePrompt.dismissedVersion.v1";
 
 function withBootstrapTimeout<T>(
   promise: Promise<T>,
@@ -151,15 +152,13 @@ export default function App() {
       return;
     }
 
-    const dismissStarPrompt = () => {
+    const timer = window.setTimeout(() => {
+      // Mark as shown immediately so it never appears again regardless of how the user dismisses it.
       try {
         window.localStorage.setItem(STAR_PROMPT_STORAGE_KEY, "1");
       } catch {
-        // Ignore storage failures; the prompt is still dismissible for this session.
+        // Ignore storage failures.
       }
-    };
-
-    const timer = window.setTimeout(() => {
       showAlert({
         title: "喜欢这个项目的话，给作者一个 Star 吧",
         variant: "info",
@@ -171,9 +170,8 @@ export default function App() {
         ),
         cancelLabel: "稍后再说",
         actionLabel: "去 GitHub 点 Star",
-        onCancel: dismissStarPrompt,
+        onCancel: () => {},
         onAction: () => {
-          dismissStarPrompt();
           void openExternalUrl(STAR_PROMPT_GITHUB_URL).catch((error) => {
             useLogStore
               .getState()
@@ -310,6 +308,14 @@ export default function App() {
           BOOTSTRAP_NETWORK_TIMEOUT_MS
         );
         if (!disposed && update.has_update) {
+          // Skip if the user already dismissed this specific version
+          try {
+            if (window.localStorage.getItem(UPDATE_PROMPT_DISMISSED_VERSION_KEY) === update.version) {
+              return;
+            }
+          } catch {
+            // ignore storage errors
+          }
           const updateNotes = normalizeUpdateNotes(update.notes);
           const updateStore = useUpdateStore.getState();
           updateStore.setStatus("available");
@@ -343,7 +349,15 @@ export default function App() {
             ),
             cancelLabel: "取消",
             actionLabel: "立即更新",
-            onCancel: () => {},
+            onCancel: () => {
+              if (update.version) {
+                try {
+                  window.localStorage.setItem(UPDATE_PROMPT_DISMISSED_VERSION_KEY, update.version);
+                } catch {
+                  // ignore storage errors
+                }
+              }
+            },
             onAction: () => {
               void startBackgroundUpdate();
             },
