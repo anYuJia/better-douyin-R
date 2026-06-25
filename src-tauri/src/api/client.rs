@@ -5161,12 +5161,11 @@ impl DouyinClient {
                     .to_string();
                 
                 let mut text = String::new();
-                let mut is_system_command = false;
                 
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw_content) {
                     if let Some(parsed_obj) = parsed.as_object() {
                         if parsed_obj.contains_key("command_type") || parsed_obj.get("command_type").and_then(|v| v.as_i64()) == Some(6) {
-                            is_system_command = true;
+                            let mut is_system_command = true;
                             if let Some(ext_data) = parsed_obj.get("ext_data").and_then(|v| v.as_array()) {
                                 for ext_item in ext_data {
                                     if let Some(ext_obj) = ext_item.as_object() {
