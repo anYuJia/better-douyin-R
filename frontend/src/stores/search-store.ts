@@ -233,6 +233,14 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
       useToastStore.getState().dismiss(loadingToastId);
       if (requestId !== latestSearchRequestId) return;
 
+      if (result.need_login) {
+        const message = result.message || "搜索用户需要登录";
+        set({ searching: false, error: message, pendingVerifySearch: null });
+        addLog(message, "warning");
+        toast(message, "warning", "需要登录");
+        return;
+      }
+
       if (result.need_verify) {
         openVerifyWindow(result.verify_url, addLog);
         const message = result.message || "需要完成抖音验证";
@@ -371,6 +379,14 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
       useToastStore.getState().dismiss(loadingToastId);
       if (requestId !== latestUserRequestId) return;
 
+      if (detail.need_login) {
+        const message = detail.message || "获取用户详情需要登录";
+        set({ loadingUser: false, error: message, currentUser: user });
+        addLog(message, "warning");
+        toast(message, "warning", "需要登录");
+        return;
+      }
+
       if (detail.need_verify) {
         const message = detail.message || "需要完成抖音验证";
         requestVerifyRecovery({
@@ -452,6 +468,14 @@ export const useSearchStore = create<SearchStoreState>((set, get) => ({
       const result = await getUserVideos(secUid, PAGE_SIZE, 0);
       useToastStore.getState().dismiss(loadingToastId);
       if (requestId !== latestVideoRequestId || get().currentUser?.sec_uid !== secUid) return;
+
+      if (result.need_login) {
+        const message = result.message || "获取作品列表需要登录";
+        set({ loadingVideos: false, error: message });
+        addLog(message, "warning");
+        toast(message, "warning", "需要登录");
+        return;
+      }
 
       if (result.need_verify) {
         const message = result.message || "需要完成抖音验证";
