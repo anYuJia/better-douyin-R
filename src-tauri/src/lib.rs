@@ -3057,7 +3057,7 @@ async fn send_friend_image_message(
             "message": "图片内容不能为空"
         }));
     }
-    if image_data_url.len() > 12 * 1024 * 1024 {
+    if image_data_url.len() > 8 * 1024 * 1024 {
         return Ok(serde_json::json!({
             "success": false,
             "message": "图片不能超过 8MB"
