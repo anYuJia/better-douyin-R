@@ -1251,6 +1251,7 @@ export async function getMixVideos(seriesId: string, cursor: number, count: numb
     const result = await requestJson<MixVideosResponse & { data?: unknown[] }>("/api/get_mix_videos", {
       method: "POST",
       body: JSON.stringify({ series_id: seriesId, cursor, count }),
+      suppressCookieInvalidEvent: true,
     });
     return {
       ...result,
@@ -1259,7 +1260,7 @@ export async function getMixVideos(seriesId: string, cursor: number, count: numb
         : [],
     };
   }
-  const result = await invoke<MixVideosResponse & { data?: unknown[] }>("get_mix_videos", {
+  const result = await invokeLocal<MixVideosResponse & { data?: unknown[] }>("get_mix_videos", {
     seriesId,
     series_id: seriesId,
     cursor,

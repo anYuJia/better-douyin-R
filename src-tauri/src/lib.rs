@@ -2529,9 +2529,12 @@ async fn get_mix_videos(
     let client = match get_client(&state).await {
         Ok(client) => client,
         Err(_) => {
-            return Ok(cookie_required_response());
+            return Ok(feature_login_required_response("收藏合集"));
         }
     };
+    if !state_has_login_cookie(&state).await {
+        return Ok(feature_login_required_response("收藏合集"));
+    }
 
     match client.get_mix_videos(&series_id, cursor, count).await {
         Ok((videos, next_cursor, has_more)) => Ok(serde_json::json!({

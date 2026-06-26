@@ -154,7 +154,6 @@ function CollectedVideosPanel() {
           setInitialized(true);
           setCursor(0);
           setHasMore(false);
-          addLog(message, "warning");
           return;
         }
         if (result.need_verify) {
@@ -356,7 +355,6 @@ function CollectedMixesPanel() {
           setInitialized(true);
           setCursor(0);
           setHasMore(false);
-          addLog(message, "warning");
           return;
         }
         if (result.need_verify) {
@@ -491,7 +489,6 @@ function MixVideosPanel({ mix, onBack }: { mix: CollectedMixItem; onBack: () => 
           setError(message);
           setInitialized(true);
           setHasMore(false);
-          addLog(message, "warning");
           return;
         }
         if (result.need_verify) {
