@@ -53,6 +53,7 @@ import {
   switchAccount,
   deleteAccount,
   addAccount,
+  openExternalUrl,
 } from "@/lib/tauri";
 import type { AccountInfo } from "@/lib/tauri";
 import type { ThemeMode } from "@/types";
@@ -1381,15 +1382,14 @@ export function SettingsView() {
                             </div>
                           </div>
                         </div>
-                        <a
-                          href="https://github.com/anYuJia/better-douyin"
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => void openExternalUrl("https://github.com/anYuJia/better-douyin")}
                           className="w-full sm:w-auto shrink-0 group relative flex h-8.5 items-center justify-center rounded-[8px] bg-accent px-4 text-[0.74rem] font-black text-white shadow-lg shadow-accent/20 active:scale-[0.96] transition-[background-color,color,box-shadow,transform,opacity]"
                         >
                           <span className="relative z-10">去 GitHub 点 Star</span>
                           <div className="absolute inset-0 rounded-[8px] bg-white opacity-0 group-hover:opacity-10 transition-opacity" />
-                        </a>
+                        </button>
                       </div>
 
                       {/* QQ Group Card */}
