@@ -17,12 +17,42 @@ use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::im_proto;
 use super::types::*;
+
+static WEBID_PATTERNS: &[&str] = &[
+    r#"\\"user_unique_id\\":\\"(\d+)\\""#,
+    r#""user_unique_id":"(\d+)""#,
+    r#""webid":"(\d+)""#,
+    r#"webid=(\d+)"#,
+];
+static WEBID_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    WEBID_PATTERNS
+        .iter()
+        .filter_map(|p| Regex::new(p).ok())
+        .collect()
+});
+static SHARE_URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"https?://[^\s<>"']+|www\.[^\s<>"']+"#).unwrap());
+static AWEME_ID_DIGIT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
+static AWEME_ID_PATTERNS: &[&str] = &[
+    r"video/(\d+)",
+    r"note/(\d+)",
+    r"aweme_id=(\d+)",
+    r"modal_id=(\d+)",
+    r"/(\d{18,21})",
+];
+static AWEME_ID_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    AWEME_ID_PATTERNS
+        .iter()
+        .filter_map(|p| Regex::new(p).ok())
+        .collect()
+});
 
 fn looks_watermarked_media_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
@@ -811,22 +841,14 @@ impl DouyinClient {
         }
 
         let html = response.text().await.ok()?;
-        let patterns = [
-            r#"\\"user_unique_id\\":\\"(\d+)\\""#,
-            r#""user_unique_id":"(\d+)""#,
-            r#""webid":"(\d+)""#,
-            r#"webid=(\d+)"#,
-        ];
 
-        for pattern in patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(caps) = re.captures(&html) {
-                    if let Some(matched) = caps.get(1) {
-                        let webid = matched.as_str().to_string();
-                        let mut cache = self.webid_cache.lock().await;
-                        *cache = Some((webid.clone(), Instant::now()));
-                        return Some(webid);
-                    }
+        for re in WEBID_REGEXES.iter() {
+            if let Some(caps) = re.captures(&html) {
+                if let Some(matched) = caps.get(1) {
+                    let webid = matched.as_str().to_string();
+                    let mut cache = self.webid_cache.lock().await;
+                    *cache = Some((webid.clone(), Instant::now()));
+                    return Some(webid);
                 }
             }
         }
@@ -1216,9 +1238,9 @@ impl DouyinClient {
             return None;
         }
 
-        let value = Regex::new(r#"https?://[^\s<>"']+|www\.[^\s<>"']+"#)
-            .ok()
-            .and_then(|re| re.find(trimmed).map(|matched| matched.as_str().to_string()))
+        let value = SHARE_URL_REGEX
+            .find(trimmed)
+            .map(|matched| matched.as_str().to_string())
             .unwrap_or_else(|| trimmed.to_string());
         let value = Self::normalize_share_url_token(&value);
 
@@ -1236,25 +1258,15 @@ impl DouyinClient {
         let url = url.trim();
 
         // 直接是 aweme_id
-        if Regex::new(r"^\d+$").unwrap().is_match(url) {
+        if AWEME_ID_DIGIT_REGEX.is_match(url) {
             return Some(url.to_string());
         }
 
         // 从分享链接提取
-        let patterns = [
-            r"video/(\d+)",
-            r"note/(\d+)",
-            r"aweme_id=(\d+)",
-            r"modal_id=(\d+)",
-            r"/(\d{18,21})",
-        ];
-
-        for pattern in &patterns {
-            if let Ok(re) = Regex::new(pattern) {
-                if let Some(caps) = re.captures(url) {
-                    if let Some(id) = caps.get(1) {
-                        return Some(id.as_str().to_string());
-                    }
+        for re in AWEME_ID_REGEXES.iter() {
+            if let Some(caps) = re.captures(url) {
+                if let Some(id) = caps.get(1) {
+                    return Some(id.as_str().to_string());
                 }
             }
         }

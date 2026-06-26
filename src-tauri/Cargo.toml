@@ -6,7 +6,7 @@ authors = ["anYuJia"]
 license = "MIT"
 repository = "https://github.com/anYuJia/better-douyin-R"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.80"
 default-run = "better-douyin-r"
 
 [lib]
