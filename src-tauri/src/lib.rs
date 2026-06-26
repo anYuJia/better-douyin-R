@@ -3463,7 +3463,22 @@ async fn publish_comment(
 /// 验证 Cookie
 #[tauri::command]
 async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieStatus, String> {
-    let client = get_client(&state).await?;
+    let client = match get_client(&state).await {
+        Ok(client) => client,
+        Err(_) => {
+            return Ok(CookieStatus {
+                valid: false,
+                user_name: None,
+                user_id: None,
+                sec_uid: None,
+                avatar_thumb: None,
+                avatar_medium: None,
+                avatar_larger: None,
+                expires_at: None,
+                message: "未配置 Cookie".to_string(),
+            });
+        }
+    };
 
     client.verify_cookie().await.map_err(|e| e.to_string())
 }
