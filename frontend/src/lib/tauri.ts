@@ -95,6 +95,18 @@ function isTauriRuntime() {
 }
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invokeWithCookieInvalidEvent(command, args, true);
+}
+
+function invokeLocal<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invokeWithCookieInvalidEvent(command, args, false);
+}
+
+function invokeWithCookieInvalidEvent<T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  emitCookieInvalidEvent: boolean
+): Promise<T> {
   const invokeFn = window.__TAURI__?.core?.invoke || tauriInvoke;
 
   if (!isTauriRuntime()) {
@@ -103,11 +115,15 @@ function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> 
 
   return invokeFn<T>(command, args)
     .then((result) => {
-      emitCookieInvalidIfNeeded(result);
+      if (emitCookieInvalidEvent) {
+        emitCookieInvalidIfNeeded(result);
+      }
       return result;
     })
     .catch((error) => {
-      emitCookieInvalidFromError(error);
+      if (emitCookieInvalidEvent) {
+        emitCookieInvalidFromError(error);
+      }
       throw error;
     });
 }
@@ -1136,6 +1152,7 @@ export async function getLikedVideos(
     const result = await requestJson<LikedVideosResponse & { data?: unknown[] }>("/api/get_liked_videos", {
       method: "POST",
       body: JSON.stringify({ count, sec_uid: secUid, cursor }),
+      suppressCookieInvalidEvent: true,
     });
     return {
       ...result,
@@ -1144,7 +1161,7 @@ export async function getLikedVideos(
         : [],
     };
   }
-  const result = await invoke<LikedVideosResponse & { data?: unknown[] }>("get_liked_videos", {
+  const result = await invokeLocal<LikedVideosResponse & { data?: unknown[] }>("get_liked_videos", {
     count,
     secUid,
     sec_uid: secUid,
@@ -1182,6 +1199,7 @@ export async function getCollectedVideos(cursor: number, count: number): Promise
     const result = await requestJson<CollectedVideosResponse & { data?: unknown[] }>("/api/get_collected_videos", {
       method: "POST",
       body: JSON.stringify({ cursor, count }),
+      suppressCookieInvalidEvent: true,
     });
     return {
       ...result,
@@ -1190,7 +1208,7 @@ export async function getCollectedVideos(cursor: number, count: number): Promise
         : [],
     };
   }
-  const result = await invoke<CollectedVideosResponse & { data?: unknown[] }>("get_collected_videos", {
+  const result = await invokeLocal<CollectedVideosResponse & { data?: unknown[] }>("get_collected_videos", {
     cursor,
     count,
   });
@@ -1207,13 +1225,14 @@ export async function getCollectedMixes(cursor: number, count: number): Promise<
     const result = await requestJson<CollectedMixesResponse & { data?: CollectedMixItem[] }>("/api/get_collected_mixes", {
       method: "POST",
       body: JSON.stringify({ cursor, count }),
+      suppressCookieInvalidEvent: true,
     });
     return {
       ...result,
       data: Array.isArray(result.data) ? result.data : [],
     };
   }
-  const result = await invoke<CollectedMixesResponse & { data?: CollectedMixItem[] }>("get_collected_mixes", {
+  const result = await invokeLocal<CollectedMixesResponse & { data?: CollectedMixItem[] }>("get_collected_mixes", {
     cursor,
     count,
   });

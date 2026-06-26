@@ -856,6 +856,14 @@ fn cookie_required_response() -> serde_json::Value {
     })
 }
 
+fn feature_login_required_response(feature: &str) -> serde_json::Value {
+    serde_json::json!({
+        "success": false,
+        "need_login": true,
+        "message": format!("请登录后获取{}", feature)
+    })
+}
+
 fn verify_required_response(message: &str, verify_url: &str) -> serde_json::Value {
     let message = if message.trim().is_empty() {
         "需要完成滑块验证后重试"
@@ -2375,7 +2383,9 @@ async fn get_liked_videos(
         }
         Err(e) => {
             let message = e.to_string();
-            if looks_like_login_error(&message) || looks_like_verify_error(&message) {
+            if looks_like_login_error(&message) {
+                Ok(feature_login_required_response("点赞视频"))
+            } else if looks_like_verify_error(&message) {
                 Ok(verify_required_response(
                     &format!("获取点赞视频失败: {}", message),
                     "https://www.douyin.com/",
@@ -2400,7 +2410,7 @@ async fn get_collected_videos(
     let client = match get_client(&state).await {
         Ok(client) => client,
         Err(_) => {
-            return Ok(cookie_required_response());
+            return Ok(feature_login_required_response("收藏视频"));
         }
     };
 
@@ -2415,11 +2425,18 @@ async fn get_collected_videos(
             "cursor": next_cursor,
             "has_more": has_more
         })),
-        Err(error) => Ok(api_verify_or_error_response(
-            "获取收藏视频失败",
-            error,
-            "https://www.douyin.com/user/self?showTab=favorite_collection",
-        )),
+        Err(error) => {
+            let message = error.to_string();
+            if looks_like_login_error(&message) {
+                Ok(feature_login_required_response("收藏视频"))
+            } else {
+                Ok(api_verify_or_error_response(
+                    "获取收藏视频失败",
+                    error,
+                    "https://www.douyin.com/user/self?showTab=favorite_collection",
+                ))
+            }
+        }
     }
 }
 
@@ -2433,7 +2450,7 @@ async fn get_collected_mixes(
     let client = match get_client(&state).await {
         Ok(client) => client,
         Err(_) => {
-            return Ok(cookie_required_response());
+            return Ok(feature_login_required_response("收藏合集"));
         }
     };
 
@@ -2445,11 +2462,18 @@ async fn get_collected_mixes(
             "cursor": next_cursor,
             "has_more": has_more
         })),
-        Err(error) => Ok(api_verify_or_error_response(
-            "获取收藏合集失败",
-            error,
-            "https://www.douyin.com/user/self?showTab=favorite_collection",
-        )),
+        Err(error) => {
+            let message = error.to_string();
+            if looks_like_login_error(&message) {
+                Ok(feature_login_required_response("收藏合集"))
+            } else {
+                Ok(api_verify_or_error_response(
+                    "获取收藏合集失败",
+                    error,
+                    "https://www.douyin.com/user/self?showTab=favorite_collection",
+                ))
+            }
+        }
     }
 }
 

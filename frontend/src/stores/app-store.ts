@@ -40,8 +40,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   cookieLoggedIn: false,
   cookieNickname: "",
-  setCookieLoggedIn: (loggedIn: boolean, nickname?: string) =>
-    set({ cookieLoggedIn: loggedIn, cookieNickname: nickname || "" }),
+  currentSecUid: "",
+  setCookieLoggedIn: (loggedIn: boolean, nickname?: string, secUid?: string) =>
+    set({ cookieLoggedIn: loggedIn, cookieNickname: nickname || "", currentSecUid: loggedIn ? secUid || "" : "" }),
 
   friendUnreadCount: 0,
   setFriendUnreadCount: (count: number) => set({ friendUnreadCount: Math.max(0, count) }),

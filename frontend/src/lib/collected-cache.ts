@@ -45,21 +45,34 @@ function writeCache<T>(key: string, data: T[]) {
   }
 }
 
-export function loadCollectedVideosCache(): VideoInfo[] {
-  const cache = readCache<unknown>(COLLECTED_VIDEOS_KEY);
+function scopedKey(baseKey: string, scope: string) {
+  const trimmed = scope.trim();
+  return trimmed ? `${baseKey}:${trimmed}` : "";
+}
+
+export function loadCollectedVideosCache(scope: string): VideoInfo[] {
+  const key = scopedKey(COLLECTED_VIDEOS_KEY, scope);
+  if (!key) return [];
+  const cache = readCache<unknown>(key);
   if (!cache?.data) return [];
   return cache.data.map(normalizeVideo).filter(Boolean) as VideoInfo[];
 }
 
-export function saveCollectedVideosCache(videos: VideoInfo[]) {
-  writeCache(COLLECTED_VIDEOS_KEY, videos);
+export function saveCollectedVideosCache(videos: VideoInfo[], scope: string) {
+  const key = scopedKey(COLLECTED_VIDEOS_KEY, scope);
+  if (!key) return;
+  writeCache(key, videos);
 }
 
-export function loadCollectedMixesCache(): CollectedMixItem[] {
-  const cache = readCache<CollectedMixItem>(COLLECTED_MIXES_KEY);
+export function loadCollectedMixesCache(scope: string): CollectedMixItem[] {
+  const key = scopedKey(COLLECTED_MIXES_KEY, scope);
+  if (!key) return [];
+  const cache = readCache<CollectedMixItem>(key);
   return cache?.data || [];
 }
 
-export function saveCollectedMixesCache(mixes: CollectedMixItem[]) {
-  writeCache(COLLECTED_MIXES_KEY, mixes);
+export function saveCollectedMixesCache(mixes: CollectedMixItem[], scope: string) {
+  const key = scopedKey(COLLECTED_MIXES_KEY, scope);
+  if (!key) return;
+  writeCache(key, mixes);
 }

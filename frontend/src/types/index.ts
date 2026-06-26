@@ -26,7 +26,8 @@ export interface AppState {
   setCommandMode: (mode: "search" | "link") => void;
   cookieLoggedIn: boolean;
   cookieNickname: string;
-  setCookieLoggedIn: (loggedIn: boolean, nickname?: string) => void;
+  currentSecUid: string;
+  setCookieLoggedIn: (loggedIn: boolean, nickname?: string, secUid?: string) => void;
   friendUnreadCount: number;
   setFriendUnreadCount: (count: number) => void;
 }

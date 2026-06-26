@@ -13,7 +13,7 @@ import {
   saveLikedAuthorsCache,
   saveLikedVideosCache,
 } from "@/lib/liked-cache";
-import { useLogStore } from "@/stores/app-store";
+import { useAppStore, useLogStore } from "@/stores/app-store";
 
 const DEFAULT_COUNT = 20;
 let latestVideosRequestId = 0;
@@ -42,6 +42,7 @@ interface LikedStoreState {
   videosHasMore: boolean;
   videosError: string | null;
   authorsError: string | null;
+  resetVideosForCurrentAccount: () => void;
   loadVideos: (force?: boolean, count?: number) => Promise<void>;
   loadMoreVideos: () => Promise<void>;
   loadAuthors: (force?: boolean, count?: number) => Promise<void>;
@@ -60,13 +61,30 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
   videosError: null,
   authorsError: null,
 
+  resetVideosForCurrentAccount: () => {
+    const cacheScope = useAppStore.getState().currentSecUid;
+    const cachedVideos = cacheScope ? loadLikedVideosCache(cacheScope) : [];
+    latestVideosRequestId += 1;
+    latestLoadMoreVideosRequestId += 1;
+    set({
+      videos: cachedVideos,
+      loadingVideos: false,
+      loadingMoreVideos: false,
+      videosLoaded: false,
+      videosCursor: 0,
+      videosHasMore: true,
+      videosError: null,
+    });
+  },
+
   loadVideos: async (force = false, count = DEFAULT_COUNT) => {
     const state = get();
     if (state.loadingVideos || state.loadingMoreVideos) return;
     if (!force && state.videosLoaded && state.videos.length > 0) return;
 
     const addLog = useLogStore.getState().addLog;
-    const cachedVideos = loadLikedVideosCache();
+    const cacheScope = useAppStore.getState().currentSecUid;
+    const cachedVideos = cacheScope ? loadLikedVideosCache(cacheScope) : [];
     const requestId = ++latestVideosRequestId;
     latestLoadMoreVideosRequestId += 1;
     set({
@@ -87,6 +105,18 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
 
       if (!result.success) {
         const message = result.message || "获取点赞视频失败";
+        if (result.need_login) {
+          set({
+            videos: [],
+            loadingVideos: false,
+            videosLoaded: true,
+            videosCursor: 0,
+            videosHasMore: false,
+            videosError: message,
+          });
+          addLog(message, "warning");
+          return;
+        }
         if (result.need_verify) {
           requestVerifyRecovery({
             verifyUrl: result.verify_url,
@@ -118,7 +148,7 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
       }
 
       const videos = result.data || [];
-      saveLikedVideosCache(videos);
+      saveLikedVideosCache(videos, cacheScope);
       set({
         videos,
         loadingVideos: false,
@@ -171,6 +201,11 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
 
       if (!result.success) {
         const message = result.message || "加载更多点赞视频失败";
+        if (result.need_login) {
+          set({ loadingMoreVideos: false, videosError: message });
+          addLog(message, "warning");
+          return;
+        }
         if (result.need_verify) {
           requestVerifyRecovery({
             verifyUrl: result.verify_url,
@@ -188,7 +223,8 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
       const currentVideos = get().videos;
       const nextVideos = uniqueVideos(currentVideos, incoming);
       const addedCount = nextVideos.length - currentVideos.length;
-      saveLikedVideosCache(nextVideos);
+      const cacheScope = useAppStore.getState().currentSecUid;
+      saveLikedVideosCache(nextVideos, cacheScope);
 
       set((current) => ({
         loadingMoreVideos: false,
@@ -228,6 +264,15 @@ export const useLikedStore = create<LikedStoreState>((set, get) => ({
       const result = await getLikedAuthors(count);
       if (!result.success) {
         const message = result.message || "获取点赞作者失败";
+        if (result.need_login) {
+          set({
+            loadingAuthors: false,
+            authorsLoaded: true,
+            authorsError: message,
+          });
+          addLog(message, "warning");
+          return;
+        }
         if (result.need_verify) {
           requestVerifyRecovery({
             verifyUrl: result.verify_url,

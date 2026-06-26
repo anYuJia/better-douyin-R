@@ -46,6 +46,8 @@ export function LikedView() {
   const loadVideos = useLikedStore((s) => s.loadVideos);
   const loadMoreVideos = useLikedStore((s) => s.loadMoreVideos);
   const loadAuthors = useLikedStore((s) => s.loadAuthors);
+  const resetVideosForCurrentAccount = useLikedStore((s) => s.resetVideosForCurrentAccount);
+  const currentSecUid = useAppStore((s) => s.currentSecUid);
   const { downloadVideo, downloadBatch } = useDownloads();
   const [detailVideo, setDetailVideo] = useState<VideoInfo | null>(null);
   const [playerIndex, setPlayerIndex] = useState<number | null>(null);
@@ -69,12 +71,16 @@ export function LikedView() {
   };
 
   useEffect(() => {
+    resetVideosForCurrentAccount();
+  }, [currentSecUid, resetVideosForCurrentAccount]);
+
+  useEffect(() => {
     if (tab === "videos") {
       void loadVideos();
     } else {
       void loadAuthors();
     }
-  }, [tab, loadAuthors, loadVideos]);
+  }, [tab, loadAuthors, loadVideos, currentSecUid]);
 
   return (
     <>
@@ -575,25 +581,23 @@ function EmptyState({ title, description, icon: Icon = Heart, loggedIn = false }
   const setView = useAppStore((s) => s.setView);
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center min-h-[400px] rounded-[var(--radius-xl)] bg-surface-solid/40 border border-border/50 p-12 text-center"
+      className="flex min-h-[360px] flex-col items-center justify-center rounded-[var(--radius-xl)] border border-border/50 bg-surface-solid/40 p-12 text-center"
     >
-      <div className="w-16 h-16 rounded-[20px] bg-accent-soft flex items-center justify-center mb-6 border border-accent/10 shadow-[0_8px_20px_rgba(254,44,85,0.1)]">
-        <Icon className="w-8 h-8 text-accent" />
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-[20px] border border-accent/10 bg-accent-soft shadow-[0_8px_20px_rgba(254,44,85,0.1)]">
+        <Icon className="h-8 w-8 text-accent" />
       </div>
-      <h3 className="text-[1.1rem] font-bold text-text mb-2">{title}</h3>
-      <p className="text-[0.82rem] text-text-muted mb-8 max-w-[280px] leading-relaxed">
-        {description}
-      </p>
+      <h3 className="mb-2 text-[1.05rem] font-bold text-text">{title}</h3>
+      <p className="mb-8 max-w-[280px] text-[0.82rem] leading-relaxed text-text-muted">{description}</p>
       {!loggedIn && (
         <Button
           variant="outline"
           size="lg"
           onClick={() => setView("settings")}
-          className="gap-2 rounded-[14px] px-8 border-accent/20 hover:bg-accent-soft hover:text-accent"
+          className="gap-2 rounded-[14px] border-accent/20 px-8 hover:bg-accent-soft hover:text-accent"
         >
-          <Key className="w-4 h-4" />
+          <Key className="h-4 w-4" />
           前往登录 Cookie
         </Button>
       )}
@@ -602,7 +606,8 @@ function EmptyState({ title, description, icon: Icon = Heart, loggedIn = false }
 }
 
 function ErrorState({ message }: { message: string }) {
-  const toast = useToastStore((s) => s.toast);
+  const setView = useAppStore((s) => s.setView);
+  const needsLogin = /请登录后获取|请先设置\s*Cookie|未登录/.test(message);
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
@@ -616,17 +621,29 @@ function ErrorState({ message }: { message: string }) {
       <p className="text-[0.78rem] text-text-secondary mb-6 max-w-[320px]">
         {message}
       </p>
-      <Button
-        variant="danger-outline"
-        size="sm"
-        onClick={() => {
-          window.location.reload();
-        }}
-        className="rounded-[10px]"
-      >
-        <RefreshCw className="w-3.5 h-3.5 mr-2" />
-        重试
-      </Button>
+      {needsLogin ? (
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setView("settings")}
+          className="rounded-[10px]"
+        >
+          <Key className="w-3.5 h-3.5 mr-2" />
+          去登录
+        </Button>
+      ) : (
+        <Button
+          variant="danger-outline"
+          size="sm"
+          onClick={() => {
+            window.location.reload();
+          }}
+          className="rounded-[10px]"
+        >
+          <RefreshCw className="w-3.5 h-3.5 mr-2" />
+          重试
+        </Button>
+      )}
     </motion.div>
   );
 }

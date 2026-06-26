@@ -45,14 +45,23 @@ function writeCache<T>(key: string, data: T[]) {
   }
 }
 
-export function loadLikedVideosCache(): VideoInfo[] {
-  const cache = readCache<unknown>(LIKED_VIDEOS_KEY);
+function scopedKey(baseKey: string, scope: string) {
+  const trimmed = scope.trim();
+  return trimmed ? `${baseKey}:${trimmed}` : "";
+}
+
+export function loadLikedVideosCache(scope: string): VideoInfo[] {
+  const key = scopedKey(LIKED_VIDEOS_KEY, scope);
+  if (!key) return [];
+  const cache = readCache<unknown>(key);
   if (!cache?.data) return [];
   return cache.data.map(normalizeLikedVideo).filter(Boolean) as VideoInfo[];
 }
 
-export function saveLikedVideosCache(videos: VideoInfo[]) {
-  writeCache(LIKED_VIDEOS_KEY, videos);
+export function saveLikedVideosCache(videos: VideoInfo[], scope: string) {
+  const key = scopedKey(LIKED_VIDEOS_KEY, scope);
+  if (!key) return;
+  writeCache(key, videos);
 }
 
 export function loadLikedAuthorsCache(): UserInfo[] {
