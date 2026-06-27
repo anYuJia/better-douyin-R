@@ -1,7 +1,7 @@
 //! 视频客户端逻辑 - 解析分享链接、获取视频详情
 
 use anyhow::{anyhow, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use regex::Regex;
 
@@ -34,12 +34,6 @@ fn looks_watermarked_media_url(url: &str) -> bool {
 fn is_dash_video_only_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.contains("media-video") || lower.contains("media_video")
-}
-
-fn clean_video_media_url(url: &str) -> String {
-    url.trim()
-        .replace("watermark=1", "watermark=0")
-        .replace("playwm", "play")
 }
 
 impl DouyinClient {
