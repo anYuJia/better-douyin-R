@@ -6,6 +6,7 @@ mod filename;
 mod http;
 #[allow(clippy::module_inception)]
 pub mod downloader;
+mod media_group;
 mod media_request;
 mod quality;
 
