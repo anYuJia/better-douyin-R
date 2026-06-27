@@ -187,3 +187,76 @@ pub(crate) fn combined_video_info_for_download(
 
     Some(combined)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::{BitRateInfo, VideoInfo};
+    use crate::downloader::{available_video_quality_height, video_quality_candidate_count};
+
+    #[test]
+    fn parses_video_info_from_download_payload_with_string_media_type() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "desc": "test",
+            "raw_media_type": "video",
+            "media_type": "video",
+            "author": { "nickname": "tester" },
+            "video": {
+                "cover": "https://example.com/cover.jpg",
+                "play_addr": "https://example.com/play.mp4",
+                "bit_rate": [
+                    {
+                        "gear_name": "normal_1080_0",
+                        "height": 1080,
+                        "play_addr_h264": "https://example.com/1080-h264.mp4"
+                    }
+                ]
+            }
+        });
+
+        let video_info = video_info_from_download_payload(&payload).expect("video info");
+
+        assert_eq!(video_info.aweme_id, "123");
+        assert_eq!(
+            video_info
+                .video
+                .bit_rate
+                .as_ref()
+                .and_then(|items| items.first())
+                .and_then(|item| item.play_addr_h264.as_deref()),
+            Some("https://example.com/1080-h264.mp4")
+        );
+    }
+
+    #[test]
+    fn combines_fresh_and_payload_quality_candidates() {
+        let mut fresh = VideoInfo::default();
+        fresh.aweme_id = "123".to_string();
+        fresh.video.play_addr = "https://example.com/fresh-play.mp4".to_string();
+        fresh.video.bit_rate = Some(vec![BitRateInfo {
+            gear_name: "normal_720_0".to_string(),
+            height: 720,
+            data_size: 720,
+            play_addr_h264: Some("https://example.com/720-h264.mp4".to_string()),
+            ..Default::default()
+        }]);
+
+        let mut payload = VideoInfo::default();
+        payload.aweme_id = "123".to_string();
+        payload.video.play_addr = "https://example.com/payload-play.mp4".to_string();
+        payload.video.bit_rate = Some(vec![BitRateInfo {
+            gear_name: "normal_1080_0".to_string(),
+            height: 1080,
+            data_size: 1080,
+            play_addr_h264: Some("https://example.com/1080-h264.mp4".to_string()),
+            ..Default::default()
+        }]);
+
+        let combined =
+            combined_video_info_for_download(Some(&fresh), Some(&payload), "123").expect("video");
+
+        assert_eq!(available_video_quality_height(&combined), 1080);
+        assert_eq!(video_quality_candidate_count(&combined), 2);
+    }
+}

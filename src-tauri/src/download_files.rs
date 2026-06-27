@@ -155,3 +155,51 @@ pub(crate) async fn build_download_file_index(
     *cache_store.lock().await = Some(cache.clone());
     Ok(cache)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn classifies_download_media_files_and_filters_auxiliary_files() {
+        assert_eq!(
+            download_file_media_kind(Path::new("clip.mp4")),
+            Some("video")
+        );
+        assert_eq!(
+            download_file_media_kind(Path::new("image.WEBP")),
+            Some("image")
+        );
+        assert_eq!(
+            download_file_media_kind(Path::new("sound.m4a")),
+            Some("audio")
+        );
+        assert_eq!(download_file_media_kind(Path::new(".downloaded")), None);
+        assert_eq!(download_file_media_kind(Path::new("metadata.json")), None);
+
+        assert!(is_hidden_download_path(Path::new(".DS_Store")));
+        assert!(is_hidden_download_path(Path::new(".downloaded")));
+        assert!(!is_hidden_download_path(Path::new("作品.mp4")));
+    }
+
+    #[test]
+    fn matches_download_files_by_full_index_fields() {
+        let item = DownloadFileEntry {
+            id: "/downloads/作者/风吹过我的头发.mp4".to_string(),
+            filename: "风吹过我的头发".to_string(),
+            path: "/downloads/作者/风吹过我的头发.mp4".to_string(),
+            author: "草坪穿搭".to_string(),
+            desc: String::new(),
+            size: 1024,
+            timestamp: 10,
+            file_type: "mp4".to_string(),
+            media_type: "video".to_string(),
+        };
+
+        assert!(download_file_matches_query(&item, "头发"));
+        assert!(download_file_matches_query(&item, "草坪"));
+        assert!(download_file_matches_query(&item, "mp4"));
+        assert!(!download_file_matches_query(&item, "不存在"));
+    }
+}

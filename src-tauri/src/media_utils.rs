@@ -828,6 +828,77 @@ mod tests {
     }
 
     #[test]
+    fn parses_flat_download_media_items() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "desc": "test",
+            "raw_media_type": "video",
+            "media_type": "video",
+            "media_urls": [{ "type": "video", "url": "https://example.com/test.mp4" }],
+        });
+
+        let parsed = parse_download_media_items(&payload, "video");
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].r#type, "video");
+        assert_eq!(parsed[0].url, "https://example.com/test.mp4");
+    }
+
+    #[test]
+    fn parses_nested_react_video_payload() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "desc": "test",
+            "media_type": "video",
+            "author": { "nickname": "tester" },
+            "video": {
+                "cover": "https://example.com/cover.jpg",
+                "play_addr": "https://example.com/play.mp4"
+            }
+        });
+
+        let parsed = parse_download_media_items(&payload, "video");
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].r#type, "video");
+        assert_eq!(parsed[0].url, "https://example.com/play.mp4");
+    }
+
+    #[test]
+    fn parses_image_and_live_photo_payloads() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "media_type": "mixed",
+            "images": ["https://example.com/1.jpg"],
+            "live_photos": ["https://example.com/1.mp4"]
+        });
+
+        let parsed = parse_download_media_items(&payload, "mixed");
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].r#type, "live_photo");
+        assert_eq!(parsed[1].r#type, "image");
+    }
+
+    #[test]
+    fn resolves_download_media_type_from_string_and_numeric_payloads() {
+        assert_eq!(
+            download_media_type_from_payload(
+                &serde_json::json!({ "raw_media_type": "live_photo" })
+            ),
+            "live_photo"
+        );
+        assert_eq!(
+            download_media_type_from_payload(&serde_json::json!({ "raw_media_type": 1 })),
+            "image"
+        );
+        assert_eq!(
+            download_media_type_from_payload(&serde_json::json!({ "media_type": "mixed" })),
+            "mixed"
+        );
+    }
+
+    #[test]
     fn resolves_media_type_from_payload_or_items() {
         assert_eq!(
             media_type_from_payload_or_items("image", &[]),
