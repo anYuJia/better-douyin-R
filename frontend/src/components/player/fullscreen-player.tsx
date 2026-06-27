@@ -6,28 +6,24 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type TouchEvent as ReactTouchEvent,
-  type UIEvent as ReactUIEvent,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { prewarmVideoForPlayback } from "@/lib/media-prewarm";
 import {
-  copyTextToClipboard,
-  getCommentReplies,
-  getComments,
-  getShareFriends,
   getVideoDetail,
   mediaProxyUrl,
-  publishComment,
-  sendFriendVideoShare,
   setVideoCollected,
-  setCommentLiked,
   setVideoLiked,
   type CommentInfo,
   type ShareFriend,
   type VideoInfo,
 } from "@/lib/tauri";
+import { usePlayerComments } from "./use-player-comments";
+import { usePlayerShare } from "./use-player-share";
+import { usePlayerBgm } from "./use-player-bgm";
+import { usePlayerActionControls } from "./use-player-action-controls";
+import { usePlayerSurfaceEvents } from "./use-player-surface-events";
+import { usePlayerProgressLoop } from "./use-player-progress-loop";
 import {
   collectVideoMedia,
   collectVideoQualityOptions,
@@ -116,28 +112,8 @@ export function FullscreenPlayer({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [showLoadStatus, setShowLoadStatus] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [bgmPlaying, setBgmPlaying] = useState(false);
   const [downloadSubmitting, setDownloadSubmitting] = useState(false);
-  const [shareFriends, setShareFriends] = useState<ShareFriend[]>([]);
-  const [shareFriendsLoading, setShareFriendsLoading] = useState(false);
-  const [shareFriendsError, setShareFriendsError] = useState("");
-  const [shareFriendsLoaded, setShareFriendsLoaded] = useState(false);
-  const [shareSendingFriendKey, setShareSendingFriendKey] = useState("");
-  const [shareSentFriendKeys, setShareSentFriendKeys] = useState<Set<string>>(() => new Set());
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [comments, setComments] = useState<CommentInfo[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentsError, setCommentsError] = useState("");
-  const [commentsCursor, setCommentsCursor] = useState(0);
-  const [commentsHasMore, setCommentsHasMore] = useState(false);
-  const [commentsTotal, setCommentsTotal] = useState(0);
-  const [commentsLoadedAwemeId, setCommentsLoadedAwemeId] = useState("");
-  const [commentReplies, setCommentReplies] = useState<CommentRepliesState>({});
-  const [expandedCommentReplyIds, setExpandedCommentReplyIds] = useState<Set<string>>(() => new Set());
-  const [commentDiggingIds, setCommentDiggingIds] = useState<Set<string>>(() => new Set());
-  const [commentDraft, setCommentDraft] = useState("");
-  const [commentSubmitting, setCommentSubmitting] = useState(false);
-  const [commentReplyTarget, setCommentReplyTarget] = useState<CommentReplyTarget>(null);
+
   const [videoOverrides, setVideoOverrides] = useState<Record<string, VideoInfo>>({});
   const [mediaTransitionDirection, setMediaTransitionDirection] = useState(0);
   const [navigationNotice, setNavigationNotice] = useState("");
@@ -145,13 +121,6 @@ export function FullscreenPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const surfaceHitRef = useRef<HTMLDivElement>(null);
   const bgmRef = useRef<HTMLAudioElement>(null);
-  const bgmSourceKeyRef = useRef("");
-  const bgmDesiredPlayingRef = useRef(false);
-  const bgmPlayPendingRef = useRef(false);
-  const bgmPlayRequestSeqRef = useRef(0);
-  const touchStart = useRef({ x: 0, y: 0 });
-  const wheelLocked = useRef(false);
-  const wheelAccumulatedDeltaRef = useRef(0);
   const loadMoreRequestedForLength = useRef(0);
   const imageAdvanceQueued = useRef(false);
   const desiredPlayingRef = useRef(true);
@@ -160,13 +129,10 @@ export function FullscreenPlayer({
   const mediaSwitchingRef = useRef(false);
   const mediaAdvanceSeqRef = useRef(0);
   const qualitySwitchingRef = useRef(false);
-  const bgmManuallyPausedRef = useRef(false);
   const mediaSwitchReleaseRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const qualitySwitchReleaseRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const panelCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const commentsHoverCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const commentsPanelStickyRef = useRef(false);
-  const wheelResetTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
   const loadStatusTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const loadTimeoutTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const bufferingTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -176,8 +142,6 @@ export function FullscreenPlayer({
   const relationRefreshSeqRef = useRef(0);
   const relationRefreshedIdsRef = useRef(new Set<string>());
   const refreshedDetailIdsRef = useRef(new Set<string>());
-  const videoProgressRafRef = useRef<number | null>(null);
-  const progressSampleRef = useRef(0);
   const surfaceTapStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const lastSurfaceToggleAtRef = useRef(0);
   const pendingQualitySeekRef = useRef<number | null>(null);
@@ -262,11 +226,16 @@ export function FullscreenPlayer({
     setRelationSubmitting(null);
   }, [currentVideo?.aweme_id, currentVideo?.is_liked, currentVideo?.is_collected]);
 
-  const stopVideoProgressLoop = useCallback(() => {
-    if (videoProgressRafRef.current === null) return;
-    window.cancelAnimationFrame(videoProgressRafRef.current);
-    videoProgressRafRef.current = null;
-  }, []);
+  const {
+    stopVideoProgressLoop,
+    syncVideoProgress,
+    startVideoProgressLoop,
+    progressSampleRef,
+  } = usePlayerProgressLoop({
+    videoRef,
+    setCurrentTime,
+    setDuration,
+  });
 
   useEffect(() => {
     playingRef.current = playing;
@@ -286,47 +255,6 @@ export function FullscreenPlayer({
       bufferingTimerRef.current = null;
     }
   }, []);
-
-  const syncVideoProgress = useCallback((node: HTMLVideoElement) => {
-    const nextTime = finiteMediaTime(node.currentTime);
-    const nextDuration = readMediaDuration(node);
-    setCurrentTime((current) => {
-      if (nextTime > 0 || current <= 0) return nextTime;
-      if (node.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || nextDuration <= 0) {
-        return current;
-      }
-      return nextTime;
-    });
-    if (nextDuration > 0) {
-      setDuration(nextDuration);
-    }
-  }, []);
-
-  const startVideoProgressLoop = useCallback(() => {
-    if (videoProgressRafRef.current !== null) return;
-
-    const tick = () => {
-      const node = videoRef.current;
-      if (!node) {
-        videoProgressRafRef.current = null;
-        return;
-      }
-
-      const now = performance.now();
-      if (now - progressSampleRef.current >= 50 || node.paused || node.ended) {
-        progressSampleRef.current = now;
-        syncVideoProgress(node);
-      }
-
-      if (!node.paused && !node.ended) {
-        videoProgressRafRef.current = window.requestAnimationFrame(tick);
-      } else {
-        videoProgressRafRef.current = null;
-      }
-    };
-
-    videoProgressRafRef.current = window.requestAnimationFrame(tick);
-  }, [syncVideoProgress]);
 
   const setVideoElementRef = useCallback((node: HTMLVideoElement | null) => {
     if (!node) return;
@@ -719,807 +647,167 @@ export function FullscreenPlayer({
     }
   }, [currentMedia, startVideoProgressLoop]);
 
-  const togglePlayFromSurface = useCallback((action?: "play" | "pause") => {
-    const now = Date.now();
-    if (now - lastSurfaceToggleAtRef.current < 420) return;
-    lastSurfaceToggleAtRef.current = now;
+  const {
+    handleSurfacePointerDown,
+    handleSurfacePointerUp,
+    handleSurfacePointerCancel,
+    handleSurfaceMouseDown,
+    handleSurfaceMouseUp,
+    handleSurfaceTouchStart,
+    handleSurfaceTouchEnd,
+    handleSurfaceClick,
+    handleWheel,
+    handleTouchStart,
+    handleTouchEnd,
+  } = usePlayerSurfaceEvents({
+    open,
+    surfaceHitRef,
+    playerRootRef,
+    videoRef,
+    playingRef,
+    setPlaying,
+    startVideoProgressLoop,
+    togglePlay,
+    desiredPlayingRef,
+    mediaAdvanceSeqRef,
+    playNextMedia,
+    playPrevMedia,
+    playNextVideo,
+    playPrevVideo,
+  });
 
-    const node = videoRef.current || getDocumentVideoNode(playerRootRef.current);
-    if (node) {
-      const surfaceLabel = surfaceHitRef.current?.getAttribute("aria-label");
-      const shouldPause = action ? action === "pause" : surfaceLabel === "暂停" || playingRef.current;
-      if (!shouldPause) {
-        desiredPlayingRef.current = true;
-        void node.play().then(() => {
-          playingRef.current = true;
-          setPlaying(true);
-          startVideoProgressLoop();
-        }).catch(() => setPlaying(false));
-      } else {
-        desiredPlayingRef.current = false;
-        playingRef.current = false;
-        setPlaying(false);
-        try {
-          node.pause();
-        } catch {
-          // Some embedded webviews expose media methods late; keep UI state consistent.
-        }
-      }
-      return;
-    }
-
-    togglePlay();
-  }, [startVideoProgressLoop, togglePlay]);
-
-  const rememberSurfaceTap = useCallback((x: number, y: number) => {
-    surfaceTapStartRef.current = { x, y, at: Date.now() };
-  }, []);
-
-  const finishSurfaceTap = useCallback((x: number, y: number) => {
-    const start = surfaceTapStartRef.current;
-    surfaceTapStartRef.current = null;
-    if (!start) return;
-    if (Date.now() - start.at > 700) return;
-    if (Math.abs(x - start.x) > 14 || Math.abs(y - start.y) > 14) return;
-    togglePlayFromSurface();
-  }, [togglePlayFromSurface]);
-
-  const handleSurfacePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.preventDefault();
-    rememberSurfaceTap(event.clientX, event.clientY);
-  }, [rememberSurfaceTap]);
-
-  const handleSurfacePointerUp = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.preventDefault();
-    finishSurfaceTap(event.clientX, event.clientY);
-  }, [finishSurfaceTap]);
-
-  const handleSurfacePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    event.stopPropagation();
-    surfaceTapStartRef.current = null;
-  }, []);
-
-  const handleSurfaceMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    const ownerWindow = event.currentTarget.ownerDocument.defaultView || window;
-    if (typeof ownerWindow.PointerEvent !== "undefined") return;
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.preventDefault();
-    rememberSurfaceTap(event.clientX, event.clientY);
-  }, [rememberSurfaceTap]);
-
-  const handleSurfaceMouseUp = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    const ownerWindow = event.currentTarget.ownerDocument.defaultView || window;
-    if (typeof ownerWindow.PointerEvent !== "undefined") return;
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    event.preventDefault();
-    finishSurfaceTap(event.clientX, event.clientY);
-  }, [finishSurfaceTap]);
-
-  const handleSurfaceTouchStart = useCallback((event: ReactTouchEvent<HTMLElement>) => {
-    const ownerWindow = event.currentTarget.ownerDocument.defaultView || window;
-    if (typeof ownerWindow.PointerEvent !== "undefined") return;
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-    event.stopPropagation();
-    rememberSurfaceTap(touch.clientX, touch.clientY);
-  }, [rememberSurfaceTap]);
-
-  const handleSurfaceTouchEnd = useCallback((event: ReactTouchEvent<HTMLElement>) => {
-    const ownerWindow = event.currentTarget.ownerDocument.defaultView || window;
-    if (typeof ownerWindow.PointerEvent !== "undefined") return;
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-    event.stopPropagation();
-    finishSurfaceTap(touch.clientX, touch.clientY);
-  }, [finishSurfaceTap]);
-
-  const handleSurfaceClick = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    event.stopPropagation();
-    event.preventDefault();
-    togglePlayFromSurface(event.currentTarget.getAttribute("aria-label") === "暂停" ? "pause" : "play");
-  }, [togglePlayFromSurface]);
-
-
-
-  useEffect(() => {
-    if (!open) return;
-    const node = surfaceHitRef.current;
-    if (!node) return;
-
-    const handleNativePointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      rememberSurfaceTap(event.clientX, event.clientY);
-    };
-    const handleNativePointerUp = (event: PointerEvent) => {
-      if (event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      surfaceTapStartRef.current = null;
-    };
-    const handleNativePointerCancel = (event: PointerEvent) => {
-      event.stopPropagation();
-      surfaceTapStartRef.current = null;
-    };
-    const handleNativeMouseDown = (event: MouseEvent) => {
-      const ownerWindow = node.ownerDocument.defaultView || window;
-      if (typeof ownerWindow.PointerEvent !== "undefined") return;
-      if (event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      rememberSurfaceTap(event.clientX, event.clientY);
-    };
-    const handleNativeMouseUp = (event: MouseEvent) => {
-      const ownerWindow = node.ownerDocument.defaultView || window;
-      if (typeof ownerWindow.PointerEvent !== "undefined") return;
-      if (event.button !== 0) return;
-      event.stopPropagation();
-      event.preventDefault();
-      finishSurfaceTap(event.clientX, event.clientY);
-    };
-    const handleNativeTouchStart = (event: TouchEvent) => {
-      const ownerWindow = node.ownerDocument.defaultView || window;
-      if (typeof ownerWindow.PointerEvent !== "undefined") return;
-      const touch = event.changedTouches[0];
-      if (!touch) return;
-      event.stopPropagation();
-      rememberSurfaceTap(touch.clientX, touch.clientY);
-    };
-    const handleNativeTouchEnd = (event: TouchEvent) => {
-      const ownerWindow = node.ownerDocument.defaultView || window;
-      if (typeof ownerWindow.PointerEvent !== "undefined") return;
-      const touch = event.changedTouches[0];
-      if (!touch) return;
-      event.stopPropagation();
-      finishSurfaceTap(touch.clientX, touch.clientY);
-    };
-    const handleNativeClick = (event: MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      togglePlayFromSurface(node.getAttribute("aria-label") === "暂停" ? "pause" : "play");
-    };
-
-    node.addEventListener("pointerdown", handleNativePointerDown);
-    node.addEventListener("pointerup", handleNativePointerUp);
-    node.addEventListener("pointercancel", handleNativePointerCancel);
-    node.addEventListener("mousedown", handleNativeMouseDown);
-    node.addEventListener("mouseup", handleNativeMouseUp);
-    node.addEventListener("touchstart", handleNativeTouchStart, { passive: false });
-    node.addEventListener("touchend", handleNativeTouchEnd, { passive: false });
-    node.addEventListener("touchcancel", handleNativeTouchEnd, { passive: false });
-    node.addEventListener("click", handleNativeClick);
-
-    return () => {
-      node.removeEventListener("pointerdown", handleNativePointerDown);
-      node.removeEventListener("pointerup", handleNativePointerUp);
-      node.removeEventListener("pointercancel", handleNativePointerCancel);
-      node.removeEventListener("mousedown", handleNativeMouseDown);
-      node.removeEventListener("mouseup", handleNativeMouseUp);
-      node.removeEventListener("touchstart", handleNativeTouchStart);
-      node.removeEventListener("touchend", handleNativeTouchEnd);
-      node.removeEventListener("touchcancel", handleNativeTouchEnd);
-      node.removeEventListener("click", handleNativeClick);
-    };
-  }, [finishSurfaceTap, open, rememberSurfaceTap, togglePlayFromSurface]);
-
-  const clearPanelCloseTimer = useCallback(() => {
-    if (!panelCloseTimerRef.current) return;
-    window.clearTimeout(panelCloseTimerRef.current);
-    panelCloseTimerRef.current = null;
-  }, []);
-
-  const openToolPanel = useCallback((panel: PlayerPanel) => {
-    clearPanelCloseTimer();
-    setOpenPanel(panel);
-  }, [clearPanelCloseTimer]);
-
-  const schedulePanelClose = useCallback((panel?: PlayerPanel) => {
-    clearPanelCloseTimer();
-    panelCloseTimerRef.current = window.setTimeout(() => {
-      setOpenPanel((value) => (!panel || value === panel ? null : value));
-      panelCloseTimerRef.current = null;
-    }, PLAYER_PANEL_CLOSE_DELAY_MS);
-  }, [clearPanelCloseTimer]);
-
-  const openPanelOnPointerEnter = useCallback((panel: PlayerPanel, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType === "touch") return;
-    openToolPanel(panel);
-  }, [openToolPanel]);
-
-  const closePanelOnPointerLeave = useCallback((panel: PlayerPanel, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType === "touch") return;
-    schedulePanelClose(panel);
-  }, [schedulePanelClose]);
-
-  const togglePanel = useCallback((panel: PlayerPanel, event: ReactMouseEvent) => {
-    event.stopPropagation();
-    clearPanelCloseTimer();
-    setOpenPanel(panel);
-  }, [clearPanelCloseTimer]);
-
-  const openPanelOnPointerDown = useCallback((panel: PlayerPanel, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    event.stopPropagation();
-    clearPanelCloseTimer();
-    setOpenPanel(panel);
-  }, [clearPanelCloseTimer]);
-
-  const copyCurrentMediaUrl = useCallback((event: ReactMouseEvent) => {
-    event.stopPropagation();
-    const url = currentPlaybackUrl || currentMedia?.url || "";
-    if (!url) return;
-    void copyTextToClipboard(url).then((success) => {
-      if (success) setOpenPanel(null);
-    });
-  }, [currentMedia?.url, currentPlaybackUrl]);
-
-  const handleDownloadCurrent = useCallback((event: ReactMouseEvent) => {
-    event.stopPropagation();
-    clearPanelCloseTimer();
-    setOpenPanel(null);
-
-    if (!currentVideo || !onDownload || downloadSubmitting) return;
-
-    setDownloadSubmitting(true);
-    Promise.resolve(onDownload(currentVideo)).finally(() => {
-      window.setTimeout(() => setDownloadSubmitting(false), 350);
-    });
-  }, [clearPanelCloseTimer, currentVideo, downloadSubmitting, onDownload]);
-
-  const loadShareFriends = useCallback(async () => {
-    if (shareFriendsLoading || shareFriendsLoaded) return;
-    setShareFriendsLoading(true);
-    setShareFriendsError("");
-    try {
-      const result = await getShareFriends(50);
-      if (!result.success) {
-        throw new Error(result.message || "获取好友列表失败");
-      }
-      setShareFriends(Array.isArray(result.friends) ? result.friends : []);
-      setShareFriendsLoaded(true);
-    } catch (error) {
-      setShareFriendsError(error instanceof Error ? error.message : "获取好友列表失败");
-    } finally {
-      setShareFriendsLoading(false);
-    }
-  }, [shareFriendsLoaded, shareFriendsLoading]);
-
-  const handleShareFriendClick = useCallback(async (friend: ShareFriend, event: ReactMouseEvent) => {
-    event.stopPropagation();
-    if (!currentVideo || shareSendingFriendKey) return;
-    const toUserId = String(friend.uid || "").trim();
-    if (!toUserId) {
-      showNavigationNotice("这个好友缺少 uid，暂时无法分享");
-      return;
-    }
-    const friendKey = friend.sec_uid || friend.uid;
-    setShareSendingFriendKey(friendKey);
-    try {
-      const result = await sendFriendVideoShare({ toUserId, video: currentVideo });
-      if (!result.success) {
-        throw new Error(result.message || "分享失败");
-      }
-      setShareSentFriendKeys((prev) => {
-        const next = new Set(prev);
-        next.add(friendKey);
-        return next;
-      });
-      showNavigationNotice(friend.nickname ? `已分享给 ${friend.nickname}` : "已分享给好友");
-    } catch (error) {
-      showNavigationNotice(error instanceof Error ? error.message : "分享失败");
-    } finally {
-      setShareSendingFriendKey("");
-    }
-  }, [currentVideo, shareSendingFriendKey, showNavigationNotice]);
-
-  const loadComments = useCallback(async (mode: "initial" | "more" = "initial") => {
-    if (!currentVideo?.aweme_id || commentsLoading) return;
-    const isMore = mode === "more";
-    setCommentsLoading(true);
-    setCommentsError("");
-    try {
-      const result = await getComments(currentVideo.aweme_id, 20, isMore ? commentsCursor : 0);
-      if (!result.success) {
-        throw new Error(result.message || "获取评论失败");
-      }
-      const nextComments = Array.isArray(result.comments) ? result.comments : [];
-      setComments((prev) => (isMore ? [...prev, ...nextComments] : nextComments));
-      setCommentsCursor(Number(result.cursor || 0));
-      setCommentsHasMore(Boolean(result.has_more));
-      setCommentsTotal(Number(result.total || 0));
-      setCommentsLoadedAwemeId(currentVideo.aweme_id);
-    } catch (error) {
-      setCommentsError(error instanceof Error ? error.message : "获取评论失败");
-      if (!isMore) {
-        setComments([]);
-        setCommentsHasMore(false);
-      }
-    } finally {
-      setCommentsLoading(false);
-    }
-  }, [commentsCursor, commentsLoading, currentVideo?.aweme_id]);
-
-  const loadCommentReplies = useCallback(async (comment: CommentInfo, mode: "initial" | "more" = "initial") => {
-    if (!currentVideo?.aweme_id || !comment.cid) return;
-    const currentState = commentReplies[comment.cid];
-    if (currentState?.loading) return;
-    const isMore = mode === "more";
-    const cursor = isMore ? currentState?.cursor || 0 : 0;
-
-    setCommentReplies((prev) => ({
-      ...prev,
-      [comment.cid]: {
-        items: isMore ? prev[comment.cid]?.items || [] : prev[comment.cid]?.items || [],
-        cursor,
-        hasMore: isMore ? prev[comment.cid]?.hasMore ?? false : prev[comment.cid]?.hasMore ?? false,
-        loading: true,
-        error: "",
-        total: prev[comment.cid]?.total || comment.reply_comment_total || 0,
-        loaded: prev[comment.cid]?.loaded || false,
-      },
-    }));
-
-    try {
-      const result = await getCommentReplies(currentVideo.aweme_id, comment.cid, 6, cursor);
-      if (!result.success) {
-        throw new Error(result.message || "获取回复失败");
-      }
-      const nextReplies = Array.isArray(result.comments) ? result.comments : [];
-      setCommentReplies((prev) => {
-        const previous = prev[comment.cid];
-        return {
-          ...prev,
-          [comment.cid]: {
-            items: isMore ? [...(previous?.items || []), ...nextReplies] : nextReplies,
-            cursor: Number(result.cursor || 0),
-            hasMore: Boolean(result.has_more),
-            loading: false,
-            error: "",
-            total: Number(result.total || comment.reply_comment_total || nextReplies.length || 0),
-            loaded: true,
-          },
-        };
-      });
-    } catch (error) {
-      setCommentReplies((prev) => ({
-        ...prev,
-        [comment.cid]: {
-          items: prev[comment.cid]?.items || [],
-          cursor: prev[comment.cid]?.cursor || 0,
-          hasMore: prev[comment.cid]?.hasMore || false,
-          loading: false,
-          error: error instanceof Error ? error.message : "获取回复失败",
-          total: prev[comment.cid]?.total || comment.reply_comment_total || 0,
-          loaded: true,
-        },
-      }));
-    }
-  }, [commentReplies, currentVideo?.aweme_id]);
-
-  const toggleCommentReplies = useCallback((comment: CommentInfo) => {
-    const willExpand = !expandedCommentReplyIds.has(comment.cid);
-    setExpandedCommentReplyIds((prev) => {
-      const next = new Set(prev);
-      if (willExpand) {
-        next.add(comment.cid);
-      } else {
-        next.delete(comment.cid);
-      }
-      return next;
-    });
-    const replyState = commentReplies[comment.cid];
-    if (willExpand && !replyState?.loaded && !replyState?.loading) {
-      void loadCommentReplies(comment, "initial");
-    }
-  }, [commentReplies, expandedCommentReplyIds, loadCommentReplies]);
-
-  const updateCommentById = useCallback((commentId: string, updater: (comment: CommentInfo) => CommentInfo) => {
-    setComments((prev) => prev.map((comment) => (comment.cid === commentId ? updater(comment) : comment)));
-    setCommentReplies((prev) => {
-      const next: CommentRepliesState = {};
-      let anyChanged = false;
-      for (const [cid, state] of Object.entries(prev)) {
-        let itemsChanged = false;
-        const nextItems = state.items.map((reply) => {
-          if (reply.cid !== commentId) return reply;
-          itemsChanged = true;
-          return updater(reply);
-        });
-        if (itemsChanged) {
-          anyChanged = true;
-          next[cid] = { ...state, items: nextItems };
-        } else {
-          next[cid] = state;
-        }
-      }
-      return anyChanged ? next : prev;
-    });
-  }, []);
-
-  const toggleCommentLike = useCallback(async (comment: CommentInfo, level: number) => {
-    if (!currentVideo?.aweme_id || !comment.cid || commentDiggingIds.has(comment.cid)) return;
-    const wasLiked = Number(comment.user_digged || 0) > 0;
-    const nextLiked = !wasLiked;
-    const delta = nextLiked ? 1 : -1;
-
-    setCommentDiggingIds((prev) => new Set(prev).add(comment.cid));
-    updateCommentById(comment.cid, (item) => ({
-      ...item,
-      user_digged: nextLiked ? 1 : 0,
-      digg_count: Math.max(0, Number(item.digg_count || 0) + delta),
-    }));
-
-    try {
-      const result = await setCommentLiked(currentVideo.aweme_id, comment.cid, nextLiked, level);
-      if (!result.success) {
-        throw new Error(result.message || "评论点赞失败");
-      }
-    } catch (error) {
-      updateCommentById(comment.cid, (item) => ({
-        ...item,
-        user_digged: wasLiked ? 1 : 0,
-        digg_count: Math.max(0, Number(item.digg_count || 0) - delta),
-      }));
-      showNavigationNotice(error instanceof Error ? error.message : "评论点赞失败");
-    } finally {
-      setCommentDiggingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(comment.cid);
-        return next;
-      });
-    }
-  }, [commentDiggingIds, currentVideo?.aweme_id, showNavigationNotice, updateCommentById]);
-
-  const submitComment = useCallback(async () => {
-    const text = commentDraft.trim();
-    if (!currentVideo?.aweme_id || !text || commentSubmitting) return;
-    const target = commentReplyTarget;
-    setCommentSubmitting(true);
-    try {
-      const result = await publishComment(
-        currentVideo.aweme_id,
-        text,
-        target?.replyId || "",
-        target?.replyToReplyId || ""
-      );
-      if (!result.success) {
-        throw new Error(result.message || "发表评论失败");
-      }
-      const created = result.comment;
-      if (created?.cid) {
-        if (target?.replyId) {
-          setExpandedCommentReplyIds((prev) => new Set(prev).add(target.replyId));
-          setCommentReplies((prev) => {
-            const current = prev[target.replyId] || {
-              items: [],
-              cursor: 0,
-              hasMore: false,
-              loading: false,
-              error: "",
-              total: 0,
-              loaded: true,
-            };
-            return {
-              ...prev,
-              [target.replyId]: {
-                ...current,
-                items: [created, ...current.items],
-                total: current.total + 1,
-                loaded: true,
-              },
-            };
-          });
-          updateCommentById(target.replyId, (item) => ({
-            ...item,
-            reply_comment_total: Number(item.reply_comment_total || 0) + 1,
-          }));
-        } else {
-          setComments((prev) => [created, ...prev]);
-          setCommentsTotal((prev) => prev + 1);
-        }
-      } else if (target?.replyId) {
-        void loadCommentReplies({ cid: target.replyId } as CommentInfo, "initial");
-      } else {
-        void loadComments("initial");
-      }
-      setCommentDraft("");
-      setCommentReplyTarget(null);
-      showNavigationNotice("评论已发布");
-    } catch (error) {
-      showNavigationNotice(error instanceof Error ? error.message : "发表评论失败");
-    } finally {
-      setCommentSubmitting(false);
-    }
-  }, [
-    commentDraft,
-    commentReplyTarget,
-    commentSubmitting,
-    currentVideo?.aweme_id,
-    loadCommentReplies,
-    loadComments,
-    showNavigationNotice,
-    updateCommentById,
-  ]);
-
-  const handleCommentsScroll = useCallback((event: ReactUIEvent<HTMLDivElement>) => {
-    const target = event.currentTarget;
-    const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    if (distanceToBottom > 96 || commentsLoading || !commentsHasMore) return;
-    void loadComments("more");
-  }, [commentsHasMore, commentsLoading, loadComments]);
-
-  const clearCommentsHoverCloseTimer = useCallback(() => {
-    if (commentsHoverCloseTimerRef.current) {
-      window.clearTimeout(commentsHoverCloseTimerRef.current);
-      commentsHoverCloseTimerRef.current = null;
-    }
-  }, []);
-
-  const openCommentsPanel = useCallback((event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>, options?: { sticky?: boolean }) => {
-    event?.stopPropagation();
-    clearPanelCloseTimer();
-    clearCommentsHoverCloseTimer();
-    if (options?.sticky) {
-      commentsPanelStickyRef.current = true;
-    } else if (!commentsOpen) {
-      commentsPanelStickyRef.current = false;
-    }
-    setOpenPanel(null);
-    setCommentsOpen(true);
-  }, [clearCommentsHoverCloseTimer, clearPanelCloseTimer, commentsOpen]);
-
-  const markCommentsPanelSticky = useCallback((event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>) => {
-    event?.stopPropagation();
-    clearCommentsHoverCloseTimer();
-    commentsPanelStickyRef.current = true;
-  }, [clearCommentsHoverCloseTimer]);
-
-  const scheduleTransientCommentsClose = useCallback((event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>) => {
-    event?.stopPropagation();
-    clearCommentsHoverCloseTimer();
-    commentsHoverCloseTimerRef.current = window.setTimeout(() => {
-      if (!commentsPanelStickyRef.current) {
-        setCommentsOpen(false);
-      }
-      commentsHoverCloseTimerRef.current = null;
-    }, 180);
-  }, [clearCommentsHoverCloseTimer]);
-
-  const closeCommentsPanel = useCallback((event?: ReactMouseEvent) => {
-    event?.stopPropagation();
-    clearCommentsHoverCloseTimer();
-    commentsPanelStickyRef.current = false;
-    setCommentsOpen(false);
-  }, [clearCommentsHoverCloseTimer]);
-
-  const toggleMute = useCallback((event: ReactMouseEvent) => {
-    event.stopPropagation();
-    if (muted && volume === 0) {
-      setVolume(50);
-    }
-    setMuted((value) => !value);
-  }, [muted, volume]);
-
-  const handleVolumeChange = useCallback((nextVolume: number) => {
-    const safeVolume = Math.max(0, Math.min(100, nextVolume));
-    setVolume(safeVolume);
-    setMuted(safeVolume === 0);
-  }, []);
-
-  const syncPlaybackRate = useCallback((rate: number) => {
-    playbackRateRef.current = rate;
-    applyPlaybackRateToNode(videoRef.current || getDocumentVideoNode(playerRootRef.current), rate);
-    applyPlaybackRateToNode(bgmRef.current, rate);
-  }, []);
-
-  const handlePlaybackRateChange = useCallback((rate: number, event: ReactMouseEvent) => {
-    event.stopPropagation();
-    setPlaybackRate(rate);
-    syncPlaybackRate(rate);
-    window.requestAnimationFrame(() => syncPlaybackRate(rate));
-    window.setTimeout(() => syncPlaybackRate(rate), 120);
-    setOpenPanel(null);
-  }, [syncPlaybackRate]);
-
-  const handleQualityChange = useCallback((qualityKey: string, event: ReactMouseEvent) => {
-    event.stopPropagation();
-    if (qualityKey === selectedQualityKey) {
-      setOpenPanel(null);
-      return;
-    }
-
-    const nextQualityOption = qualityOptions.find((option) => option.key === qualityKey);
-    const nextPlaybackUrl =
-      currentMedia && currentMedia.type === "video" && nextQualityOption
-        ? nextQualityOption.url
-        : currentMedia?.url || "";
-    const nextMediaSrc = currentMedia
-      ? playerMediaProxyUrl(nextPlaybackUrl, getMediaProxyType(currentMedia), reloadKey)
-      : "";
-    const node = videoRef.current || getDocumentVideoNode(playerRootRef.current);
-    const nextTime = node ? finiteMediaTime(node.currentTime) : currentTime;
-    const shouldResume = playingRef.current || desiredPlayingRef.current;
-    pendingQualitySeekRef.current = nextTime > 0 ? nextTime : null;
-    desiredPlayingRef.current = shouldResume;
-    mediaSwitchingRef.current = true;
-    qualitySwitchingRef.current = true;
-    if (qualitySwitchReleaseRef.current) {
-      window.clearTimeout(qualitySwitchReleaseRef.current);
-    }
-    qualitySwitchReleaseRef.current = window.setTimeout(() => {
-      qualitySwitchingRef.current = false;
-      qualitySwitchReleaseRef.current = null;
-    }, 8000);
-    setSelectedQualityKey(qualityKey);
-    setPlaying(shouldResume);
-    setLoadState("loading");
-    setShowLoadStatus(true);
-    setDuration(0);
-    setOpenPanel(null);
-
-    if (node && nextMediaSrc) {
-      node.src = nextMediaSrc;
-      node.volume = effectiveVolume / 100;
-      const targetMuted = shouldUseBgmForCurrentMedia || muted || volume === 0;
-      node.muted = shouldResume && !targetMuted ? true : targetMuted;
-      applyPlaybackRateToNode(node, playbackRateRef.current);
-      node.load();
-      if (shouldResume) {
-        void node.play().then(() => {
-          node.muted = targetMuted;
-          playingRef.current = true;
-          setPlaying(true);
-          startVideoProgressLoop();
-        }).catch(() => {
-          node.muted = targetMuted;
-          setPlaying(false);
-        });
-      }
-    }
-  }, [
+  const {
+    clearPanelCloseTimer,
+    openToolPanel,
+    schedulePanelClose,
+    openPanelOnPointerEnter,
+    closePanelOnPointerLeave,
+    togglePanel,
+    openPanelOnPointerDown,
+    copyCurrentMediaUrl,
+    handleDownloadCurrent,
+    toggleMute,
+    handleVolumeChange,
+    syncPlaybackRate,
+    handlePlaybackRateChange,
+    handleQualityChange,
+    restorePendingQualitySeek,
+    resumeVideoIfDesired,
+  } = usePlayerActionControls({
+    openPanel,
+    setOpenPanel,
+    volume,
+    setVolume,
+    muted,
+    setMuted,
+    playbackRate,
+    setPlaybackRate,
+    currentPlaybackUrl,
     currentMedia,
+    currentVideo,
+    onDownload,
+    downloadSubmitting,
+    setDownloadSubmitting,
+    reloadKey,
     currentTime,
+    setCurrentTime,
+    setPlaying,
+    setLoadState,
+    setShowLoadStatus,
+    setDuration,
+    effectiveVolume,
+    shouldUseBgmForCurrentMedia,
+    selectedQualityKey,
+    setSelectedQualityKey,
+    qualityOptions,
+    videoRef,
+    bgmRef,
+    playerRootRef,
+    playbackRateRef,
+    playingRef,
+    desiredPlayingRef,
+    mediaSwitchingRef,
+    qualitySwitchingRef,
+    qualitySwitchReleaseRef,
+    pendingQualitySeekRef,
+    panelCloseTimerRef,
+    startVideoProgressLoop,
+  });
+
+  const {
+    bgmPlaying,
+    bgmDesiredPlayingRef,
+    bgmManuallyPausedRef,
+    playBgm,
+    pauseBgm,
+    releaseBgm,
+    toggleBgm,
+  } = usePlayerBgm({
+    open,
+    currentVideo,
+    currentMedia,
+    musicUrl,
+    bgmProxyUrl,
+    shouldUseBgmForCurrentMedia,
     effectiveVolume,
     muted,
-    playbackRate,
-    qualityOptions,
-    reloadKey,
-    selectedQualityKey,
-    shouldUseBgmForCurrentMedia,
-    startVideoProgressLoop,
     volume,
-  ]);
+    playbackRateRef,
+    loadState,
+    mediaSwitchingRef,
+    desiredPlayingRef,
+    bgmRef,
+  });
 
-  const restorePendingQualitySeek = useCallback((node: HTMLVideoElement) => {
-    const pendingTime = pendingQualitySeekRef.current;
-    if (!pendingTime || pendingTime <= 0) return;
+  const {
+    shareFriends,
+    shareFriendsLoading,
+    shareFriendsError,
+    shareSendingFriendKey,
+    shareSentFriendKeys,
+    handleShareFriendClick,
+  } = usePlayerShare({
+    currentVideo,
+    openPanel,
+    showNavigationNotice,
+  });
 
-    const nodeDuration = readMediaDuration(node);
-    const safeTime = nodeDuration > 0 ? Math.min(pendingTime, Math.max(0, nodeDuration - 0.15)) : pendingTime;
-    try {
-      node.currentTime = safeTime;
-      setCurrentTime(safeTime);
-      pendingQualitySeekRef.current = null;
-    } catch {
-      // Some streams reject early seeking until canplay; the next metadata event will keep playback usable.
-    }
-  }, []);
+  const {
+    commentsOpen,
+    comments,
+    commentsLoading,
+    commentsError,
+    commentsHasMore,
+    commentsTotal,
+    commentReplies,
+    expandedCommentReplyIds,
+    commentDiggingIds,
+    commentDraft,
+    commentSubmitting,
+    commentReplyTarget,
+    setCommentDraft,
+    setCommentReplyTarget,
+    loadCommentReplies,
+    toggleCommentReplies,
+    toggleCommentLike,
+    submitComment,
+    handleCommentsScroll,
+    openCommentsPanel,
+    markCommentsPanelSticky,
+    scheduleTransientCommentsClose,
+    closeCommentsPanel,
+    loadComments,
+  } = usePlayerComments({
+    open,
+    currentVideo,
+    showNavigationNotice,
+    clearPanelCloseTimer,
+    setOpenPanel,
+  });
 
-  const resumeVideoIfDesired = useCallback((node: HTMLVideoElement) => {
-    if (!desiredPlayingRef.current || !currentMedia || !isVideoLikeMedia(currentMedia)) return;
-    const targetMuted = shouldUseBgmForCurrentMedia || muted || volume === 0;
-    const shouldTemporarilyMute = qualitySwitchingRef.current && !targetMuted;
-    if (!node.paused) {
-      node.muted = targetMuted;
-      setPlaying(true);
-      startVideoProgressLoop();
-      return;
-    }
 
-    if (shouldTemporarilyMute) {
-      node.muted = true;
-    }
-    void node.play().then(() => {
-      node.muted = targetMuted;
-      playingRef.current = true;
-      setPlaying(true);
-      startVideoProgressLoop();
-    }).catch(() => {
-      node.muted = targetMuted;
-      setPlaying(false);
-    });
-  }, [currentMedia, muted, shouldUseBgmForCurrentMedia, startVideoProgressLoop, volume]);
 
-  const ensureBgmSource = useCallback(() => {
-    const audio = bgmRef.current;
-    if (!audio || !bgmProxyUrl) return null;
-    if (bgmSourceKeyRef.current !== bgmProxyUrl) {
-      bgmPlayRequestSeqRef.current += 1;
-      bgmPlayPendingRef.current = false;
-      bgmSourceKeyRef.current = bgmProxyUrl;
-      audio.src = bgmProxyUrl;
-      audio.loop = true;
-      audio.preload = "auto";
-      audio.load();
-    }
-    audio.volume = effectiveVolume / 100;
-    audio.muted = muted || volume === 0;
-    applyPlaybackRateToNode(audio, playbackRateRef.current);
-    return audio;
-  }, [bgmProxyUrl, effectiveVolume, muted, volume]);
 
-  const playBgm = useCallback(() => {
-    if (bgmManuallyPausedRef.current) {
-      bgmDesiredPlayingRef.current = false;
-      return;
-    }
-    bgmDesiredPlayingRef.current = true;
-    const audio = ensureBgmSource();
-    if (!audio) return;
-    if (!audio.paused && !audio.ended) {
-      bgmPlayPendingRef.current = false;
-      setBgmPlaying(true);
-      return;
-    }
-    if (bgmPlayPendingRef.current) return;
-
-    const requestSeq = ++bgmPlayRequestSeqRef.current;
-    bgmPlayPendingRef.current = true;
-    void audio.play().then(() => {
-      if (requestSeq !== bgmPlayRequestSeqRef.current) return;
-      bgmPlayPendingRef.current = false;
-      if (!bgmDesiredPlayingRef.current || bgmManuallyPausedRef.current) {
-        audio.pause();
-        setBgmPlaying(false);
-        return;
-      }
-      setBgmPlaying(true);
-    }).catch(() => {
-      if (requestSeq !== bgmPlayRequestSeqRef.current) return;
-      bgmPlayPendingRef.current = false;
-      setBgmPlaying(false);
-    });
-  }, [ensureBgmSource]);
-
-  const pauseBgm = useCallback(() => {
-    bgmDesiredPlayingRef.current = false;
-    bgmPlayRequestSeqRef.current += 1;
-    bgmPlayPendingRef.current = false;
-    const audio = bgmRef.current;
-    if (!audio) return;
-    audio.pause();
-    setBgmPlaying(false);
-  }, []);
-
-  const releaseBgm = useCallback(() => {
-    bgmDesiredPlayingRef.current = false;
-    bgmPlayRequestSeqRef.current += 1;
-    bgmPlayPendingRef.current = false;
-    const audio = bgmRef.current;
-    bgmSourceKeyRef.current = "";
-    releaseMediaElement(audio);
-    setBgmPlaying(false);
-  }, []);
-
-  const toggleBgm = useCallback((event: ReactMouseEvent) => {
-    event.stopPropagation();
-    const audio = ensureBgmSource();
-    if (!audio) return;
-    if (audio.paused) {
-      bgmManuallyPausedRef.current = false;
-      playBgm();
-    } else {
-      bgmManuallyPausedRef.current = true;
-      pauseBgm();
-    }
-  }, [ensureBgmSource, pauseBgm, playBgm]);
 
   const handleSeek = useCallback((nextTime: number) => {
     if (!duration) return;
@@ -1621,15 +909,12 @@ export function FullscreenPlayer({
       retryCurrentMedia(undefined, true);
       return;
     }
-
     const refreshed = await refreshCurrentVideoDetail();
     if (refreshed) return;
-
     setLoadState("error");
     setPlaying(false);
     setShowLoadStatus(true);
   }, [clearLoadTimers, refreshCurrentVideoDetail, retryCurrentMedia, stopVideoProgressLoop]);
-
   const handleImageLoad = useCallback(() => {
     markMediaReady();
     releaseMediaSwitchSoon();
@@ -1637,11 +922,9 @@ export function FullscreenPlayer({
       setPlaying(true);
     }
   }, [markMediaReady, releaseMediaSwitchSoon]);
-
   const handleImageError = useCallback(() => {
     void handleMediaFailure();
   }, [handleMediaFailure]);
-
   const scheduleLoadTimeout = useCallback(() => {
     if (loadTimeoutTimerRef.current) {
       window.clearTimeout(loadTimeoutTimerRef.current);
@@ -1781,28 +1064,6 @@ export function FullscreenPlayer({
   }, [initialIndex, initialMediaIndex, initialVideoKey, open]);
 
   useEffect(() => {
-    setOpenPanel(null);
-    setComments([]);
-    setCommentsError("");
-    setCommentsCursor(0);
-    setCommentsHasMore(false);
-    setCommentsTotal(0);
-    setCommentsLoadedAwemeId("");
-    setCommentReplies({});
-    setExpandedCommentReplyIds(new Set());
-  }, [currentVideo?.aweme_id]);
-
-  useEffect(() => {
-    if (openPanel !== "share") return;
-    void loadShareFriends();
-  }, [loadShareFriends, openPanel]);
-
-  useEffect(() => {
-    if (!commentsOpen || !currentVideo?.aweme_id || commentsLoadedAwemeId === currentVideo.aweme_id) return;
-    void loadComments("initial");
-  }, [commentsLoadedAwemeId, commentsOpen, currentVideo?.aweme_id, loadComments]);
-
-  useEffect(() => {
     return () => {
       if (mediaSwitchReleaseRef.current) {
         window.clearTimeout(mediaSwitchReleaseRef.current);
@@ -1812,12 +1073,6 @@ export function FullscreenPlayer({
       }
       if (panelCloseTimerRef.current) {
         window.clearTimeout(panelCloseTimerRef.current);
-      }
-      if (commentsHoverCloseTimerRef.current) {
-        window.clearTimeout(commentsHoverCloseTimerRef.current);
-      }
-      if (wheelResetTimerRef.current) {
-        window.clearTimeout(wheelResetTimerRef.current);
       }
       if (navigationNoticeTimerRef.current) {
         window.clearTimeout(navigationNoticeTimerRef.current);
@@ -1833,13 +1088,10 @@ export function FullscreenPlayer({
 
   useEffect(() => {
     if (open) return;
-    clearCommentsHoverCloseTimer();
-    commentsPanelStickyRef.current = false;
-    setCommentsOpen(false);
     setPlaying(false);
     setShowLoadStatus(false);
     releasePlayerMediaResources();
-  }, [clearCommentsHoverCloseTimer, open, releasePlayerMediaResources]);
+  }, [open, releasePlayerMediaResources]);
 
   useEffect(() => {
     if (!open) return;
@@ -1880,9 +1132,7 @@ export function FullscreenPlayer({
     autoRetryCountRef.current = 0;
   }, [currentMedia?.url, currentVideo?.aweme_id, mediaIndex, selectedQualityKey]);
 
-  useEffect(() => {
-    bgmManuallyPausedRef.current = false;
-  }, [currentVideo?.aweme_id, musicUrl]);
+
 
   useEffect(() => {
     imageAdvanceQueued.current = false;
@@ -1985,51 +1235,7 @@ export function FullscreenPlayer({
     return () => window.cancelAnimationFrame(frame);
   }, [currentMedia, mediaKey, open, resumeVideoIfDesired]);
 
-  useEffect(() => {
-    const shouldKeepBgmPlaying = Boolean(
-      open &&
-        currentMedia &&
-        shouldUseBgmForCurrentMedia &&
-        desiredPlayingRef.current &&
-        loadState !== "error"
-    );
 
-    if (shouldKeepBgmPlaying) {
-      playBgm();
-      return;
-    }
-
-    if (
-      mediaSwitchingRef.current &&
-      bgmDesiredPlayingRef.current &&
-      open &&
-      currentMedia &&
-      musicUrl &&
-      loadState !== "error"
-    ) {
-      return;
-    }
-
-    pauseBgm();
-  }, [currentMedia, loadState, musicUrl, open, pauseBgm, playBgm, playing, shouldUseBgmForCurrentMedia]);
-
-  useEffect(() => {
-    const audio = bgmRef.current;
-    if (!audio) return;
-
-    const handlePlay = () => setBgmPlaying(true);
-    const handlePause = () => setBgmPlaying(false);
-    audio.addEventListener("play", handlePlay);
-    audio.addEventListener("pause", handlePause);
-    audio.addEventListener("ended", handlePause);
-    audio.addEventListener("emptied", handlePause);
-    return () => {
-      audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", handlePause);
-      audio.removeEventListener("ended", handlePause);
-      audio.removeEventListener("emptied", handlePause);
-    };
-  }, []);
 
   useEffect(() => {
     const nextVolume = effectiveVolume / 100;
@@ -2125,64 +1331,8 @@ export function FullscreenPlayer({
     return () => window.removeEventListener("keydown", handleKey, true);
   }, [closePlayer, open, playNextMedia, playNextVideo, playPrevMedia, playPrevVideo, togglePlay]);
 
-  const handleWheel = useCallback((event: ReactWheelEvent) => {
-    event.preventDefault();
-    if (wheelLocked.current) return;
 
-    const normalizedDeltaY = normalizeWheelDelta(event);
-    if (normalizedDeltaY === 0) return;
 
-    const previousDelta = wheelAccumulatedDeltaRef.current;
-    if (previousDelta !== 0 && Math.sign(previousDelta) !== Math.sign(normalizedDeltaY)) {
-      wheelAccumulatedDeltaRef.current = 0;
-    }
-    wheelAccumulatedDeltaRef.current += normalizedDeltaY;
-
-    if (wheelResetTimerRef.current) {
-      window.clearTimeout(wheelResetTimerRef.current);
-    }
-    wheelResetTimerRef.current = window.setTimeout(() => {
-      wheelAccumulatedDeltaRef.current = 0;
-      wheelResetTimerRef.current = null;
-    }, WHEEL_IDLE_RESET_MS);
-
-    if (Math.abs(wheelAccumulatedDeltaRef.current) < WHEEL_VIDEO_SWITCH_THRESHOLD) return;
-
-    const shouldPlayNext = wheelAccumulatedDeltaRef.current > 0;
-    wheelAccumulatedDeltaRef.current = 0;
-    wheelLocked.current = true;
-    window.setTimeout(() => {
-      wheelLocked.current = false;
-    }, WHEEL_VIDEO_SWITCH_LOCK_MS);
-
-    if (shouldPlayNext) playNextVideo();
-    else playPrevVideo();
-  }, [playNextVideo, playPrevVideo]);
-
-  const handleTouchStart = (event: ReactTouchEvent) => {
-    touchStart.current = {
-      x: event.touches[0]?.clientX || 0,
-      y: event.touches[0]?.clientY || 0,
-    };
-  };
-
-  const handleTouchEnd = (event: ReactTouchEvent) => {
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-    const deltaX = touchStart.current.x - touch.clientX;
-    const deltaY = touchStart.current.y - touch.clientY;
-
-    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 54) {
-      if (deltaX > 0) playNextMedia();
-      else playPrevMedia();
-      return;
-    }
-
-    if (Math.abs(deltaY) > 64) {
-      if (deltaY > 0) playNextVideo();
-      else playPrevVideo();
-    }
-  };
 
   return (
     <AnimatePresence>
@@ -2418,7 +1568,6 @@ export function FullscreenPlayer({
                 onClearPanelCloseTimer={clearPanelCloseTimer}
               />
             </div>
-
             <div className="mt-0.5">
               <PlayerPlaybackBar
                 duration={duration}
@@ -2430,11 +1579,9 @@ export function FullscreenPlayer({
                 onSeek={handleSeek}
                 onSelectMedia={switchToMedia}
               />
-
               <PlayerDescription currentVideo={currentVideo} />
             </div>
           </div>
-
           <audio
             ref={bgmRef}
             className="hidden"
