@@ -1,5 +1,6 @@
 //! 下载模块
 
+mod batch;
 mod downloaded_cache;
 mod events;
 mod filename;
