@@ -1,6 +1,7 @@
 //! 下载模块
 
 mod downloaded_cache;
+mod events;
 mod filename;
 mod http;
 #[allow(clippy::module_inception)]

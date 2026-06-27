@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 
 use super::downloaded_cache::{add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded};
+use super::events::{emit_event, estimate_batch_eta, wait_if_paused};
 use super::filename::{build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension, media_type_display, media_type_name, truncate_chars};
 use super::http::{build_download_client, build_download_headers};
 use super::quality::{ordered_video_urls, select_video_url, DownloadQuality};
@@ -2061,50 +2062,6 @@ async fn fresh_video_download_urls(config: &AppConfig, aweme_id: &str) -> Result
         &video,
         DownloadQuality::from_config(&config.download_quality),
     ))
-}
-
-async fn emit_event(
-    sender: &Option<mpsc::Sender<DownloaderEvent>>,
-    name: &'static str,
-    payload: serde_json::Value,
-) {
-    if let Some(tx) = sender {
-        let _ = tx.send(DownloaderEvent { name, payload }).await;
-    }
-}
-
-async fn wait_if_paused(
-    pause_tokens: &Arc<Mutex<std::collections::HashMap<String, bool>>>,
-    cancel_tokens: &Arc<Mutex<std::collections::HashMap<String, bool>>>,
-    task_id: &str,
-) -> Result<()> {
-    loop {
-        if *cancel_tokens.lock().await.get(task_id).unwrap_or(&false) {
-            return Err(anyhow!("Download cancelled"));
-        }
-        if !*pause_tokens.lock().await.get(task_id).unwrap_or(&false) {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-}
-
-fn estimate_batch_eta(
-    processed_count: usize,
-    total_count: usize,
-    started_at: Instant,
-) -> Option<u64> {
-    if processed_count == 0 || total_count == 0 || processed_count >= total_count {
-        return None;
-    }
-
-    let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
-    let remaining = total_count.saturating_sub(processed_count) as f64;
-    Some(
-        ((remaining * elapsed) / processed_count as f64)
-            .ceil()
-            .max(1.0) as u64,
-    )
 }
 
 
