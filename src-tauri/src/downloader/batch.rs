@@ -1,6 +1,6 @@
 //! 批量下载逻辑
 
-use crate::api::types::{DownloadMediaItem, DownloadStatus, DownloadTask, VideoInfo};
+use crate::api::types::{DownloadStatus, DownloadTask, VideoInfo};
 use crate::config::AppConfig;
 use crate::history::HistoryManager;
 use anyhow::{anyhow, Result};

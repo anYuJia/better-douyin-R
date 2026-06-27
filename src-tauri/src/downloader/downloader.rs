@@ -4,11 +4,10 @@ use crate::api::types::{DownloadMediaItem, DownloadStatus, DownloadTask, MediaTy
 use crate::api::DouyinClient;
 use crate::config::AppConfig;
 use crate::history::HistoryManager;
-use crate::media_utils::is_dash_video_only_url;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use futures::StreamExt;
-use reqwest::header::{HeaderMap, CONTENT_TYPE};
+use reqwest::header::CONTENT_TYPE;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,12 +18,12 @@ use tokio::sync::{mpsc, Mutex};
 
 use super::batch::{download_single_video, start_batch_download_impl};
 use super::downloaded_cache::{add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded};
-use super::events::{emit_event, estimate_batch_eta, wait_if_paused};
-use super::filename::{build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension, media_type_display, media_type_name, truncate_chars};
+use super::events::{emit_event, estimate_batch_eta};
+use super::filename::{build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension, media_type_name, truncate_chars};
 use super::http::{build_download_client, build_download_headers};
-use super::media_group::{collect_media_items, download_media_group};
+use super::media_group::download_media_group;
 use super::media_request::request_media_with_fallback;
-use super::quality::{ordered_video_urls, select_video_url, DownloadQuality};
+use super::quality::{select_video_url, DownloadQuality};
 
 
 
@@ -850,28 +849,6 @@ impl Downloader {
         Ok(())
     }
 
-    /// 下载单个视频
-    #[allow(clippy::too_many_arguments)]
-    async fn download_single_video(
-        client: reqwest::Client,
-        config: AppConfig,
-        video: VideoInfo,
-        history: Arc<Mutex<HistoryManager>>,
-        downloaded_cache: Arc<RwLock<HashSet<String>>>,
-        record_write_lock: Arc<Mutex<()>>,
-        cancel_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
-        pause_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
-        batch_task_id: String,
-        progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
-    ) -> Result<()> {
-        download_single_video(
-            client, config, video, history, downloaded_cache,
-            record_write_lock, cancel_tokens, pause_tokens,
-            batch_task_id, progress_tx,
-        ).await
-    }
-
-    /// 收集媒体项
     /// 批量并发下载视频列表
     pub async fn start_batch_download(
         &self,
