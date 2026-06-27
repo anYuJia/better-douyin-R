@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { prewarmVideoForPlayback } from "@/lib/media-prewarm";
@@ -14,8 +13,6 @@ import {
   mediaProxyUrl,
   setVideoCollected,
   setVideoLiked,
-  type CommentInfo,
-  type ShareFriend,
   type VideoInfo,
 } from "@/lib/tauri";
 import { usePlayerComments } from "./use-player-comments";
@@ -45,28 +42,20 @@ import {
   MAX_PRELOADED_MEDIA_NODES,
   PLAYER_MEDIA_ADVANCE_PRELOAD_TIMEOUT_MS,
   PLAYER_NEXT_VIDEO_PRELOAD_AHEAD_SECONDS,
-  PLAYER_PANEL_CLOSE_DELAY_MS,
   PLAYER_VIDEO_INITIAL_STATUS_DELAY_MS,
   PLAYER_VIDEO_LOAD_TIMEOUT_MS,
   PLAYER_VIDEO_MAX_AUTO_RETRIES,
   PLAYER_VIDEO_REBUFFER_STATUS_DELAY_MS,
   SESSION_CACHE_BUSTER,
-  WHEEL_IDLE_RESET_MS,
-  WHEEL_VIDEO_SWITCH_LOCK_MS,
-  WHEEL_VIDEO_SWITCH_THRESHOLD,
   applyPlaybackRateToNode,
   finiteMediaTime,
   getDocumentVideoNode,
   isKeyboardInputTarget,
   mediaMotionVariants,
-  normalizeWheelDelta,
   playerMediaProxyUrl,
-  readMediaDuration,
   releaseMediaElement,
   releaseScopedMediaElements,
   resolveMediaDirection,
-  type CommentRepliesState,
-  type CommentReplyTarget,
   type PlayerPanel,
 } from "./player-utils";
 
@@ -142,8 +131,6 @@ export function FullscreenPlayer({
   const relationRefreshSeqRef = useRef(0);
   const relationRefreshedIdsRef = useRef(new Set<string>());
   const refreshedDetailIdsRef = useRef(new Set<string>());
-  const surfaceTapStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
-  const lastSurfaceToggleAtRef = useRef(0);
   const pendingQualitySeekRef = useRef<number | null>(null);
   const preloadedMediaRef = useRef(new Map<string, boolean>());
   const preloadedReadyRef = useRef(new Set<string>());
@@ -1595,4 +1582,3 @@ export function FullscreenPlayer({
     </AnimatePresence>
   );
 }
-
