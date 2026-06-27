@@ -1,5 +1,6 @@
 pub(crate) mod config;
 pub(crate) mod content;
+pub(crate) mod content_relations;
 pub(crate) mod content_video;
 pub(crate) mod download_files_cmd;
 pub(crate) mod downloads;
