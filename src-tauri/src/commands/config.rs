@@ -174,7 +174,7 @@ pub(crate) async fn verify_cookie_simple(cookie: String) -> Result<bool, String>
 /// 验证 Cookie
 #[tauri::command]
 pub(crate) async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieStatus, String> {
-    let client = match crate::get_client(&state).await {
+    let client = match crate::api_helpers::get_client(&state).await {
         Ok(client) => client,
         Err(_) => {
             return Ok(CookieStatus {
@@ -197,7 +197,7 @@ pub(crate) async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieSt
 /// 获取当前用户信息
 #[tauri::command]
 pub(crate) async fn get_current_user(state: State<'_, AppState>) -> Result<UserInfo, String> {
-    let client = crate::get_client(&state).await?;
+    let client = crate::api_helpers::get_client(&state).await?;
 
     client.get_current_user().await.map_err(|e| e.to_string())
 }

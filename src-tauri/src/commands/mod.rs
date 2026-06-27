@@ -1,5 +1,9 @@
 pub(crate) mod config;
+pub(crate) mod content;
 pub(crate) mod download_files_cmd;
+pub(crate) mod downloads;
+pub(crate) mod friends;
 pub(crate) mod history;
+pub(crate) mod login;
 pub(crate) mod system;
 pub(crate) mod update_cmd;
