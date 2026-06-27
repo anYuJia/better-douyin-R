@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
 use super::client::DouyinClient;
-use super::client_im::crc32_hex;
+use super::client_im_parse::crc32_hex;
 use super::im_proto;
 use crate::config::get_user_agent;
 use crate::sign;

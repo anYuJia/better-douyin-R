@@ -9,6 +9,7 @@ pub mod client_im;
 pub mod client_im_friends;
 pub mod client_im_history;
 pub mod client_im_messages;
+pub mod client_im_parse;
 pub mod client_relations;
 pub mod client_user;
 pub mod client_video;
