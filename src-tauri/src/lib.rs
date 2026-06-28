@@ -11,6 +11,7 @@ mod media_proxy_headers;
 mod media_proxy_cache;
 mod media_proxy_crypto;
 mod media_proxy_local;
+mod media_proxy_remote;
 pub mod media_utils;
 pub mod reporter;
 pub mod sign;
