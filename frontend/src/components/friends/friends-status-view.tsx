@@ -67,6 +67,8 @@ export function FriendsStatusView() {
   const idsRef = useRef<string[]>([]);
   const savedIdsRef = useRef<string[]>([]);
   const lastQueryStartedAtRef = useRef(0);
+  const queryInFlightRef = useRef(false);
+  const pendingBackgroundQueryRef = useRef(false);
   const pendingBackgroundTimerRef = useRef<number | null>(null);
   const cookieRetryTimerRef = useRef<number | null>(null);
   const avatarRetryTimerRef = useRef<number | null>(null);
@@ -287,9 +289,6 @@ export function FriendsStatusView() {
       }
     }
   }, []);
-
-  const queryInFlightRef = useRef(false);
-  const pendingBackgroundQueryRef = useRef(false);
 
   useEffect(() => {
     idsRef.current = ids;
