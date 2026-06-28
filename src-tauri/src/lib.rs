@@ -13,6 +13,7 @@ mod media_proxy_crypto;
 mod media_proxy_local;
 mod media_proxy_remote;
 pub mod media_utils;
+mod media_utils_types;
 pub mod reporter;
 pub mod sign;
 pub mod download_files;

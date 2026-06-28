@@ -2,15 +2,12 @@
 
 use crate::api::{DownloadMediaItem, MediaType, VideoInfo};
 
-// ============================================================================
-// 常量
-// ============================================================================
+pub use crate::media_utils_types::{
+    MEDIA_TYPE_AUDIO, MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_MIXED, MEDIA_TYPE_VIDEO,
+    is_dash_video_only_url, media_type_from_payload_or_items, python_media_type,
+};
 
-pub const MEDIA_TYPE_VIDEO: &str = "video";
-pub const MEDIA_TYPE_IMAGE: &str = "image";
-pub const MEDIA_TYPE_LIVE_PHOTO: &str = "live_photo";
-pub const MEDIA_TYPE_MIXED: &str = "mixed";
-pub const MEDIA_TYPE_AUDIO: &str = "audio";
+
 
 pub fn normalize_video_duration_seconds(value: i64) -> i64 {
     if value <= 0 {
@@ -39,38 +36,7 @@ pub fn normalize_music_duration_seconds(value: i64) -> i64 {
     std::cmp::max(1, value)
 }
 
-pub fn python_media_type(video: &VideoInfo) -> &'static str {
-    let has_images = video
-        .image_urls
-        .as_ref()
-        .map(|urls| !urls.is_empty())
-        .unwrap_or(false);
-    let has_live = video.has_live_photo
-        || video
-            .live_photo_urls
-            .as_ref()
-            .map(|urls| !urls.is_empty())
-            .unwrap_or(false);
 
-    if has_live && has_images {
-        MEDIA_TYPE_MIXED
-    } else if has_live {
-        MEDIA_TYPE_LIVE_PHOTO
-    } else if has_images || video.is_image {
-        MEDIA_TYPE_IMAGE
-    } else if video
-        .video
-        .dash_addr
-        .as_ref()
-        .map(|url| !url.trim().is_empty())
-        .unwrap_or(false)
-        || !video.video.play_addr.is_empty()
-    {
-        MEDIA_TYPE_VIDEO
-    } else {
-        "unknown"
-    }
-}
 
 pub fn python_media_urls(video: &VideoInfo) -> Vec<serde_json::Value> {
     let mut items = Vec::new();
@@ -590,10 +556,7 @@ fn is_watermark_video_url(url: &str) -> bool {
         || normalized.contains("/aweme/v1/playwm")
 }
 
-pub fn is_dash_video_only_url(url: &str) -> bool {
-    let normalized = url.trim().to_ascii_lowercase();
-    normalized.contains("media-video") || normalized.contains("media_video")
-}
+
 
 fn no_watermark_video_url(video: &VideoInfo) -> Option<String> {
     for url in [
@@ -656,35 +619,7 @@ pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaIt
     items
 }
 
-pub fn media_type_from_payload_or_items(
-    raw_media_type: &str,
-    items: &[DownloadMediaItem],
-) -> MediaType {
-    if !raw_media_type.is_empty() {
-        return match raw_media_type {
-            MEDIA_TYPE_IMAGE => MediaType::Image,
-            MEDIA_TYPE_LIVE_PHOTO => MediaType::LivePhoto,
-            MEDIA_TYPE_MIXED => MediaType::Mixed,
-            MEDIA_TYPE_AUDIO => MediaType::Audio,
-            _ => MediaType::Video,
-        };
-    }
 
-    let has_live = items
-        .iter()
-        .any(|item| item.r#type == MEDIA_TYPE_LIVE_PHOTO);
-    let has_image = items.iter().any(|item| item.r#type == MEDIA_TYPE_IMAGE);
-
-    if has_live && has_image {
-        MediaType::Mixed
-    } else if has_live {
-        MediaType::LivePhoto
-    } else if has_image {
-        MediaType::Image
-    } else {
-        MediaType::Video
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -809,20 +744,7 @@ mod tests {
         assert!(python_media_urls(&video).is_empty());
     }
 
-    #[test]
-    fn determines_python_media_type() {
-        let video_only = sample_video_with_images(vec![], vec![]);
-        assert_eq!(python_media_type(&video_only), "video");
 
-        let images_only = sample_video_with_images(vec!["a.jpg".into()], vec![]);
-        assert_eq!(python_media_type(&images_only), "image");
-
-        let live_only = sample_video_with_images(vec![], vec!["a.mp4".into()]);
-        assert_eq!(python_media_type(&live_only), "live_photo");
-
-        let mixed = sample_video_with_images(vec!["a.jpg".into()], vec!["a.mp4".into()]);
-        assert_eq!(python_media_type(&mixed), "mixed");
-    }
 
     #[test]
     fn parses_flat_download_media_items() {
@@ -895,55 +817,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn resolves_media_type_from_payload_or_items() {
-        assert_eq!(
-            media_type_from_payload_or_items("image", &[]),
-            MediaType::Image
-        );
-        assert_eq!(
-            media_type_from_payload_or_items("live_photo", &[]),
-            MediaType::LivePhoto
-        );
-        assert_eq!(
-            media_type_from_payload_or_items("mixed", &[]),
-            MediaType::Mixed
-        );
-        assert_eq!(
-            media_type_from_payload_or_items(
-                "",
-                &[DownloadMediaItem {
-                    r#type: "image".into(),
-                    url: "".into()
-                }]
-            ),
-            MediaType::Image
-        );
-        assert_eq!(
-            media_type_from_payload_or_items(
-                "",
-                &[DownloadMediaItem {
-                    r#type: "live_photo".into(),
-                    url: "".into()
-                }]
-            ),
-            MediaType::LivePhoto
-        );
-        assert_eq!(
-            media_type_from_payload_or_items(
-                "",
-                &[
-                    DownloadMediaItem {
-                        r#type: "live_photo".into(),
-                        url: "".into()
-                    },
-                    DownloadMediaItem {
-                        r#type: "image".into(),
-                        url: "".into()
-                    }
-                ]
-            ),
-            MediaType::Mixed
-        );
-    }
+
 }
