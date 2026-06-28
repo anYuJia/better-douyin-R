@@ -1,49 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/stores/app-store";
 import {
-  getFriendChatState,
-  getFriendMessageHistory,
-  listenEvent,
-  saveFriendChatState,
-  sendFriendImageMessage,
-  sendFriendMessage,
-} from "@/lib/tauri";
-import type { FriendMessageHistoryItem, UserInfo } from "@/lib/contracts";
-import {
-  COOKIE_REQUIRED_PATTERN,
-  DEFAULT_REFRESH_INTERVAL_SECONDS,
-  MAX_SEND_IMAGE_BYTES,
-  STORAGE_KEY,
   type ChatDrafts,
   type ChatMessages,
   type ChatSummaries,
   type FriendStatusItem,
-  type HistoryPageState,
-  type ImConnectionStatus,
-  type JsonRecord,
-  type LocalChatMessage,
   type UnreadCounts,
 } from "./friends-status-types";
 import {
-  fallbackMessageText,
-  imageMessageRawContent,
-  isRecord,
-  latestChatMessage,
-  messagePreviewText,
-  normalizeMessageDirection,
-  normalizeMessageStatus,
-  numberField,
   persistChatDrafts,
-  persistChatMessages,
   persistChatSummaries,
   persistUnreadCounts,
   readChatDrafts,
   readChatMessages,
   readChatSummaries,
   readUnreadCounts,
-  readFileAsDataUrl,
-  readImageSize,
-  stringField,
 } from "./friends-status-utils";
 import { useFriendsChatPersistence } from "./use-friends-chat-persistence";
 import { useFriendsMessageSender } from "./use-friends-message-sender";
