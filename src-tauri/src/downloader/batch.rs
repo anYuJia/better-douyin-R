@@ -18,7 +18,10 @@ use tokio::sync::{mpsc, Mutex};
 use super::completion::record_completed_download;
 use super::downloader::{Downloader, DownloaderEvent};
 use super::events::{emit_event, estimate_batch_eta};
-use super::filename::{build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension, media_type_name, truncate_chars};
+use super::filename::{
+    build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension,
+    media_type_name, truncate_chars,
+};
 use super::http::build_download_headers;
 use super::media_group::collect_media_items;
 use super::media_request::request_media_with_fallback;
@@ -115,8 +118,7 @@ pub(crate) async fn download_single_video(
         }
 
         let (response, response_url) =
-            request_media_with_fallback(&client, &config, &video.aweme_id, media, &headers)
-                .await?;
+            request_media_with_fallback(&client, &config, &video.aweme_id, media, &headers).await?;
 
         let content_length = response.content_length().unwrap_or(0);
         let content_type = response
@@ -537,7 +539,8 @@ pub(crate) async fn start_batch_download_impl(
                 "failed": final_failed,
                 "message": format!("下载完成: {} 个视频, {} 个跳过", final_completed, final_skipped)
             }),
-        ).await;
+        )
+        .await;
     }
 
     // 清理

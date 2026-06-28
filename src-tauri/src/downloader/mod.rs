@@ -1,19 +1,19 @@
 //! 下载模块
 
 mod batch;
+mod completion;
 mod downloaded_cache;
+#[allow(clippy::module_inception)]
+pub mod downloader;
 mod events;
 mod filename;
 mod http;
-#[allow(clippy::module_inception)]
-pub mod downloader;
 mod media_group;
 mod media_request;
 mod quality;
-mod tasks;
 mod streaming;
-mod completion;
+mod tasks;
 
-pub(crate) use quality::{available_video_quality_height, video_quality_candidate_count};
-pub use quality::video_quality_diagnostic;
 pub use downloader::{Downloader, DownloaderEvent};
+pub use quality::video_quality_diagnostic;
+pub(crate) use quality::{available_video_quality_height, video_quality_candidate_count};

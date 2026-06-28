@@ -1,13 +1,17 @@
 use crate::api::types::{DownloadStatus, DownloadTask, MediaType};
 use crate::api::DownloadHistory;
+use crate::config::AppConfig;
+use crate::downloader::downloaded_cache::{
+    add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded,
+};
 use crate::downloader::downloader::{Downloader, DownloaderEvent};
-use crate::downloader::downloaded_cache::{add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded};
 use crate::downloader::events::emit_event;
-use crate::downloader::filename::{create_unique_output_file, media_extension, media_type_name, truncate_chars};
+use crate::downloader::filename::{
+    create_unique_output_file, media_extension, media_type_name, truncate_chars,
+};
 use crate::downloader::http::build_download_headers;
 use crate::downloader::media_request::request_media_with_fallback;
 use crate::history::HistoryManager;
-use crate::config::AppConfig;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use futures::StreamExt;

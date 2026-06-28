@@ -14,9 +14,6 @@ use super::events::emit_event;
 use super::http::build_download_client;
 use super::media_group::download_media_group;
 
-
-
-
 #[derive(Debug, Clone)]
 pub struct DownloaderEvent {
     pub name: &'static str,
@@ -50,7 +47,6 @@ pub struct Downloader {
     pub(crate) downloaded_cache_loaded: Arc<AtomicBool>,
     pub(crate) record_write_lock: Arc<Mutex<()>>,
 }
-
 
 impl Downloader {
     pub fn new(
@@ -88,9 +84,6 @@ impl Downloader {
         Ok(())
     }
 
-
-
-
     /// 开始下载
     pub async fn start_download(&self, task_id: &str) -> Result<()> {
         let task_id_owned = task_id.to_string();
@@ -125,9 +118,7 @@ impl Downloader {
         }
 
         tokio::spawn(async move {
-            if let Err(error) =
-                download_media_group(runtime.clone(), task_id_owned.clone()).await
-            {
+            if let Err(error) = download_media_group(runtime.clone(), task_id_owned.clone()).await {
                 let is_cancelled = error.to_string().to_lowercase().contains("cancelled")
                     || error.to_string().to_lowercase().contains("canceled")
                     || *runtime
@@ -189,7 +180,6 @@ impl Downloader {
         Ok(())
     }
 
-
     /// 批量并发下载视频列表
     pub async fn start_batch_download(
         &self,
@@ -199,27 +189,26 @@ impl Downloader {
     ) -> Result<()> {
         start_batch_download_impl(self, videos, batch_task_id, nickname).await
     }
-
-
 }
 
 /// 从作者目录的隐藏文件 `.downloaded` 加载已下载的 aweme_id 集合
-
-
 
 /// 选择视频下载URL
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::api::types::BitRateInfo;
-    use chrono::{TimeZone, Local};
-    use std::path::PathBuf;
-    use super::super::filename::{build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension, MAX_FILENAME_BYTES};
-    use super::super::quality::{select_video_url, DownloadQuality};
     use super::super::downloaded_cache::{
         extract_downloaded_aweme_id, is_complete_download_file, parse_downloaded_set,
     };
+    use super::super::filename::{
+        build_output_dir, create_unique_output_file, generate_filename_with_config,
+        media_extension, MAX_FILENAME_BYTES,
+    };
+    use super::super::quality::{select_video_url, DownloadQuality};
+    use super::*;
+    use crate::api::types::BitRateInfo;
+    use chrono::{Local, TimeZone};
+    use std::path::PathBuf;
 
     fn video_with_quality_candidates() -> VideoInfo {
         let mut video = VideoInfo::default();

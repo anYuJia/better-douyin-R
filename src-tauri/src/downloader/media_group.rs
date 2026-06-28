@@ -14,7 +14,9 @@ use tokio::io::AsyncWriteExt;
 use super::completion::record_completed_download;
 use super::downloader::DownloadRuntime;
 use super::events::{emit_event, wait_if_paused};
-use super::filename::{create_unique_output_file, media_extension, media_type_display, media_type_name, truncate_chars};
+use super::filename::{
+    create_unique_output_file, media_extension, media_type_display, media_type_name, truncate_chars,
+};
 use super::http::build_download_headers;
 use super::media_request::request_media_with_fallback;
 use super::quality::{select_video_url, DownloadQuality};

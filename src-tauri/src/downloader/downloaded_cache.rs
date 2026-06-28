@@ -21,7 +21,11 @@ pub(crate) async fn load_downloaded_set(dir: &Path) -> HashSet<String> {
 }
 
 /// 将 aweme_id 写入作者目录的隐藏文件 `.downloaded`
-pub(crate) async fn record_downloaded(dir: &Path, aweme_id: &str, write_lock: &Arc<Mutex<()>>) -> Result<()> {
+pub(crate) async fn record_downloaded(
+    dir: &Path,
+    aweme_id: &str,
+    write_lock: &Arc<Mutex<()>>,
+) -> Result<()> {
     let _guard = write_lock.lock().await;
     let record_path = dir.join(".downloaded");
     tokio::fs::create_dir_all(dir).await?;

@@ -2,7 +2,9 @@ use crate::api::types::{DownloadMediaItem, DownloadStatus, DownloadTask, MediaTy
 use crate::api::DouyinClient;
 use crate::downloader::downloader::Downloader;
 use crate::downloader::events::emit_event;
-use crate::downloader::filename::{build_output_dir, generate_filename_with_config, media_type_name};
+use crate::downloader::filename::{
+    build_output_dir, generate_filename_with_config, media_type_name,
+};
 use crate::downloader::quality::{select_video_url, DownloadQuality};
 use anyhow::{anyhow, Result};
 use chrono::Local;
