@@ -1,6 +1,6 @@
 use crate::api::{VideoInfo, UserInfo};
 use crate::media_utils_types::{
-    MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO, MEDIA_TYPE_MIXED,
+    MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO,
     python_media_type,
 };
 use crate::media_utils_normalize::{
