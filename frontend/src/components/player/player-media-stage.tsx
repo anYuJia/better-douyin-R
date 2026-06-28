@@ -119,7 +119,7 @@ export function PlayerMediaStage({
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
           className="absolute inset-0 flex items-center justify-center"
           style={{ backfaceVisibility: "hidden", contain: "layout paint", willChange: "transform" }}
         >

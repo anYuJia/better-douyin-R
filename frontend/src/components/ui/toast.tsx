@@ -115,12 +115,7 @@ function ToastItem({
     }
   }, [onDismiss, toast.duration]);
 
-  // Magnetic Stacking logic for top-center
-  const reverseIndex = total - 1 - index;
-  const scale = 1 - reverseIndex * 0.03;
-  const yOffset = reverseIndex * 8; // Stack downwards slightly
-  const zIndex = total - reverseIndex;
-  const opacity = 1 - reverseIndex * 0.15;
+  const zIndex = total - index;
 
   return (
     <motion.div
@@ -128,31 +123,23 @@ function ToastItem({
       aria-live={toast.type === "error" || toast.type === "warning" ? "assertive" : "polite"}
       aria-atomic="true"
       layout
-      initial={{ opacity: 0, y: -16, scale: 0.96, filter: "blur(10px)" }}
+      initial={{ opacity: 0, y: -12 }}
       animate={{
-        opacity,
-        scale,
-        y: yOffset,
-        filter: "blur(0px)",
+        opacity: 1,
+        y: 0,
         transition: {
-          type: "spring",
-          stiffness: 400,
-          damping: 32,
-          mass: 0.8,
-          layout: { duration: 0.2 }
+          duration: 0.18,
+          ease: "easeOut",
+          layout: { duration: 0.18 }
         },
       }}
       exit={{ 
         opacity: 0, 
-        y: -12, 
-        scale: 0.96, 
-        filter: "blur(10px)",
+        y: -8, 
         transition: { duration: 0.15, ease: "easeIn" } 
       }}
       style={{ 
         zIndex,
-        originX: 0.5,
-        originY: 0,
       }}
       className={cn(
         "pointer-events-auto relative flex w-full flex-col overflow-hidden rounded-[12px] sm:w-[280px]",
