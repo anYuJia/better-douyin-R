@@ -1,6 +1,6 @@
+use crate::media_proxy_headers::{apply_cors_headers, build_error_response};
 use axum::body::{Body, Bytes};
 use axum::http::{header, HeaderValue, Response, StatusCode};
-use crate::media_proxy_headers::{apply_cors_headers, build_error_response};
 
 pub(crate) const LOCAL_MEDIA_INITIAL_RANGE_BYTES: u64 = 1024 * 1024;
 pub(crate) const LOCAL_MEDIA_MAX_RANGE_BYTES: u64 = 4 * 1024 * 1024;
@@ -53,7 +53,10 @@ pub(crate) fn parse_byte_range(range_header: &str, file_size: u64) -> Option<(u6
     }
 }
 
-pub(crate) fn cap_remote_media_range(range_header: &str, requested_media_type: &str) -> Option<String> {
+pub(crate) fn cap_remote_media_range(
+    range_header: &str,
+    requested_media_type: &str,
+) -> Option<String> {
     if requested_media_type != "video" && requested_media_type != "audio" {
         return None;
     }

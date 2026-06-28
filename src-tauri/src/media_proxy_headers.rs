@@ -1,7 +1,10 @@
 use axum::body::Body;
 use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 
-pub(crate) fn apply_cors_headers(response_headers: &mut HeaderMap, allow_origin: Option<HeaderValue>) {
+pub(crate) fn apply_cors_headers(
+    response_headers: &mut HeaderMap,
+    allow_origin: Option<HeaderValue>,
+) {
     response_headers.insert(
         header::ACCESS_CONTROL_ALLOW_ORIGIN,
         allow_origin.unwrap_or_else(|| HeaderValue::from_static("*")),

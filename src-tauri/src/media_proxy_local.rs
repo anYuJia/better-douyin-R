@@ -5,12 +5,12 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use crate::AppState;
-use crate::media_proxy_security::allowed_request_origin;
-use crate::media_proxy_headers::build_error_response;
 use crate::media_proxy_cache::{
     parse_byte_range, LOCAL_MEDIA_INITIAL_RANGE_BYTES, LOCAL_MEDIA_MAX_RANGE_BYTES,
 };
+use crate::media_proxy_headers::build_error_response;
+use crate::media_proxy_security::allowed_request_origin;
+use crate::AppState;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct LocalMediaQuery {
@@ -65,7 +65,10 @@ pub(crate) fn local_media_kind(path: &Path) -> Option<&'static str> {
     }
 }
 
-pub(crate) async fn allowed_local_media_path(state: &AppState, raw_path: &str) -> Result<PathBuf, StatusCode> {
+pub(crate) async fn allowed_local_media_path(
+    state: &AppState,
+    raw_path: &str,
+) -> Result<PathBuf, StatusCode> {
     let trimmed = raw_path.trim();
     if trimmed.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
