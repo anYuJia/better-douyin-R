@@ -13,6 +13,7 @@ interface PlayerMediaStageProps {
   currentMediaSrc: string;
   currentVideo: VideoInfo;
   shouldAutoPlayCurrentMedia: boolean;
+  autoPlayNextVideo: boolean;
   hasMultipleMedia: boolean;
   shouldUseBgmForCurrentMedia: boolean;
   muted: boolean;
@@ -64,6 +65,7 @@ export function PlayerMediaStage({
   currentMediaSrc,
   currentVideo,
   shouldAutoPlayCurrentMedia,
+  autoPlayNextVideo,
   hasMultipleMedia,
   shouldUseBgmForCurrentMedia,
   muted,
@@ -117,7 +119,7 @@ export function PlayerMediaStage({
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
           className="absolute inset-0 flex items-center justify-center"
           style={{ backfaceVisibility: "hidden", contain: "layout paint", willChange: "transform" }}
         >
@@ -127,7 +129,7 @@ export function PlayerMediaStage({
               src={currentMediaSrc}
               className="pointer-events-none h-full max-h-full w-full max-w-full object-contain"
               autoPlay={shouldAutoPlayCurrentMedia}
-              loop={!hasMultipleMedia}
+              loop={!hasMultipleMedia && !autoPlayNextVideo}
               playsInline
               muted={shouldUseBgmForCurrentMedia || muted || volume === 0}
               preload={hasMultipleMedia ? "auto" : "metadata"}

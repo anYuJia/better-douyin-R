@@ -20,15 +20,12 @@ export const PROGRESS_PREVIEW_SAMPLE_RATIOS = [0.08, 0.22, 0.38, 0.55, 0.72, 0.8
 
 export const mediaMotionVariants: Variants = {
   enter: (direction = 0) => ({
-    opacity: 1,
     x: direction === 0 ? 0 : `${direction * 100}%`,
   }),
   center: {
-    opacity: 1,
     x: 0,
   },
   exit: (direction = 0) => ({
-    opacity: 1,
     x: direction === 0 ? 0 : `${direction * -100}%`,
   }),
 };
@@ -123,11 +120,12 @@ export function applyPlaybackRateToNode(node: HTMLMediaElement | null, rate: num
   }
 }
 
-export function resolveMediaDirection(currentIndex: number, nextIndex: number, total: number): number {
-  if (total <= 1 || currentIndex === nextIndex) return 0;
-  const forwardDistance = (nextIndex - currentIndex + total) % total;
-  const backwardDistance = (currentIndex - nextIndex + total) % total;
-  return forwardDistance <= backwardDistance ? 1 : -1;
+export function resolveMediaDirection(currentIndex: number, requestedIndex: number, total: number): number {
+  if (total <= 1) return 0;
+  if (requestedIndex >= total) return 1;
+  if (requestedIndex < 0) return -1;
+  if (currentIndex === requestedIndex) return 0;
+  return requestedIndex > currentIndex ? 1 : -1;
 }
 
 export function normalizeWheelDelta(event: React.WheelEvent): number {

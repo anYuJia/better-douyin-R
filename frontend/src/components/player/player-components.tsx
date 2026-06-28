@@ -38,7 +38,7 @@ export function InlinePlayerButton({
 }: {
   children: ReactNode;
   label: string;
-  count: number;
+  count?: number;
   active?: boolean;
   activeClassName?: string;
   disabled?: boolean;
@@ -59,9 +59,11 @@ export function InlinePlayerButton({
       >
         {children}
       </button>
-      <span className="text-[0.78rem] font-medium tabular-nums text-white/85 drop-shadow-md">
-        {formatNumber(count)}
-      </span>
+      {typeof count === "number" && (
+        <span className="text-[0.78rem] font-medium tabular-nums text-white/85 drop-shadow-md">
+          {formatNumber(count)}
+        </span>
+      )}
     </div>
   );
 }

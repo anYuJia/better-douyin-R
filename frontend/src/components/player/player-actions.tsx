@@ -1,4 +1,5 @@
 import {
+  ListVideo,
   Heart,
   Info,
   Loader2,
@@ -27,6 +28,8 @@ interface RelationButtonsProps {
   likeCount: number;
   favoriteCount: number;
   relationSubmitting: "like" | "collect" | null;
+  autoPlayNextVideo: boolean;
+  onToggleAutoPlayNextVideo: (event: ReactMouseEvent) => void;
   onToggleLike: (event: ReactMouseEvent) => void;
   onToggleCollect: (event: ReactMouseEvent) => void;
 }
@@ -37,11 +40,22 @@ function RelationButtons({
   likeCount,
   favoriteCount,
   relationSubmitting,
+  autoPlayNextVideo,
+  onToggleAutoPlayNextVideo,
   onToggleLike,
   onToggleCollect,
 }: RelationButtonsProps) {
   return (
     <>
+      <InlinePlayerButton
+        label={autoPlayNextVideo ? "关闭自动播放下一条" : "自动播放下一条"}
+        active={autoPlayNextVideo}
+        activeClassName="text-accent"
+        onClick={onToggleAutoPlayNextVideo}
+      >
+        <ListVideo className={cn("h-4 w-4", autoPlayNextVideo && "text-accent")} />
+      </InlinePlayerButton>
+
       <InlinePlayerButton
         label="点赞"
         count={likeCount}
@@ -83,6 +97,7 @@ interface PlayerActionButtonsProps {
   likeCount: number;
   favoriteCount: number;
   relationSubmitting: "like" | "collect" | null;
+  autoPlayNextVideo: boolean;
   openPanel: PlayerPanel | null;
   muted: boolean;
   volume: number;
@@ -117,6 +132,7 @@ interface PlayerActionButtonsProps {
   currentVideoCommentCount: number;
   // Callbacks
   onToggleLike: (event: ReactMouseEvent) => void;
+  onToggleAutoPlayNextVideo: (event: ReactMouseEvent) => void;
   onToggleCollect: (event: ReactMouseEvent) => void;
   onToggleMute: (event: ReactMouseEvent) => void;
   onVolumeChange: (nextVolume: number) => void;
@@ -155,6 +171,7 @@ export function PlayerActionButtons({
   likeCount,
   favoriteCount,
   relationSubmitting,
+  autoPlayNextVideo,
   openPanel,
   muted,
   volume,
@@ -187,6 +204,7 @@ export function PlayerActionButtons({
   commentReplyTarget,
   currentVideoCommentCount,
   onToggleLike,
+  onToggleAutoPlayNextVideo,
   onToggleCollect,
   onToggleMute,
   onVolumeChange,
@@ -225,6 +243,8 @@ export function PlayerActionButtons({
         likeCount={likeCount}
         favoriteCount={favoriteCount}
         relationSubmitting={relationSubmitting}
+        autoPlayNextVideo={autoPlayNextVideo}
+        onToggleAutoPlayNextVideo={onToggleAutoPlayNextVideo}
         onToggleLike={onToggleLike}
         onToggleCollect={onToggleCollect}
       />
