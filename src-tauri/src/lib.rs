@@ -8,6 +8,7 @@ pub mod history;
 pub mod media_proxy;
 mod media_proxy_security;
 mod media_proxy_headers;
+mod media_proxy_cache;
 pub mod media_utils;
 pub mod reporter;
 pub mod sign;
