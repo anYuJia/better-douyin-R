@@ -45,6 +45,7 @@ import {
   readImageSize,
   stringField,
 } from "./friends-status-utils";
+import { useFriendsChatPersistence } from "./use-friends-chat-persistence";
 
 export function useFriendsChat(
   friends: FriendStatusItem[],
@@ -435,145 +436,17 @@ export function useFriendsChat(
     }
   }, [clearUnread, selectedFriend]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void getFriendChatState()
-      .then((result) => {
-        if (cancelled) return;
-        chatStateLoadedRef.current = true;
-        const summaries = isRecord(result.summaries) ? result.summaries : {};
-        const unread = isRecord(result.unreadCounts) ? result.unreadCounts : {};
-        const nextSummaries = readChatSummaries(currentSecUidRef.current);
-        let messagesMerged = false;
-
-        setChatMessages((currentChatMessages) => {
-          const nextChatMessages = { ...currentChatMessages };
-          for (const [secUid, value] of Object.entries(summaries)) {
-            if (!isRecord(value)) continue;
-            const latestRaw = isRecord(value.latestMessage) ? value.latestMessage : undefined;
-            const latestMessage = latestRaw ? {
-              id: stringField(latestRaw, ["id"]) || `${secUid}-${numberField(latestRaw, ["createdAt"])}`,
-              text: stringField(latestRaw, ["text"]),
-              rawContent: stringField(latestRaw, ["rawContent", "raw_content"]) || undefined,
-              imagePreviewUrl: stringField(latestRaw, ["imagePreviewUrl"]).startsWith("blob:") ? undefined : stringField(latestRaw, ["imagePreviewUrl"]) || undefined,
-              createdAt: numberField(latestRaw, ["createdAt"]),
-              status: normalizeMessageStatus(stringField(latestRaw, ["status"])),
-              direction: normalizeMessageDirection(stringField(latestRaw, ["direction"])),
-              senderUid: stringField(latestRaw, ["senderUid", "sender_uid"]),
-              error: stringField(latestRaw, ["error"]) || undefined,
-            } : undefined;
-
-            if (latestMessage && latestMessage.text) {
-              const currentList = nextChatMessages[secUid] || [];
-              if (!currentList.some((existing) =>
-                existing.id === latestMessage.id ||
-                (existing.text === latestMessage.text && Math.abs(existing.createdAt - latestMessage.createdAt) < 60000)
-              )) {
-                nextChatMessages[secUid] = [...currentList, latestMessage].sort((a, b) => a.createdAt - b.createdAt);
-                messagesMerged = true;
-              }
-            }
-
-            const latestMessageAt = Math.max(numberField(value, ["latestMessageAt"]), latestMessage?.createdAt || 0);
-            const unreadCount = Math.max(0, numberField(value, ["unreadCount"]));
-            const current = nextSummaries[secUid];
-            if (latestMessageAt >= (current?.latestMessageAt || 0)) {
-              nextSummaries[secUid] = {
-                latestMessage: latestMessage?.text ? latestMessage : current?.latestMessage,
-                latestMessageAt,
-                unreadCount: Math.max(unreadCount, current?.unreadCount || 0),
-              };
-            }
-          }
-          if (messagesMerged) {
-            persistChatMessages(nextChatMessages, currentSecUidRef.current);
-          }
-          return nextChatMessages;
-        });
-
-        for (const [secUid, value] of Object.entries(unread)) {
-          const count = Math.max(0, Number(value) || 0);
-          if (!count) continue;
-          nextSummaries[secUid] = {
-            latestMessage: nextSummaries[secUid]?.latestMessage,
-            latestMessageAt: nextSummaries[secUid]?.latestMessageAt || 0,
-            unreadCount: secUid === selectedFriendIdRef.current ? 0 : Math.max(count, nextSummaries[secUid]?.unreadCount || 0),
-          };
-        }
-        persistChatSummaries(nextSummaries, currentSecUidRef.current);
-        setChatSummaries(nextSummaries);
-        setUnreadCounts((current) => {
-          const next = { ...current };
-          for (const [secUid, summary] of Object.entries(nextSummaries)) {
-            if (summary.unreadCount > 0 && secUid !== selectedFriendIdRef.current) {
-              next[secUid] = Math.max(next[secUid] || 0, summary.unreadCount);
-            } else if (secUid === selectedFriendIdRef.current) {
-              delete next[secUid];
-            }
-          }
-          persistUnreadCounts(next, currentSecUidRef.current);
-          return next;
-        });
-      })
-      .catch(() => {
-        chatStateLoadedRef.current = false;
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentSecUid]);
-
-  useEffect(() => {
-    setChatSummaries((current) => {
-      let changed = false;
-      const next: ChatSummaries = { ...current };
-      for (const [secUid, messages] of Object.entries(chatMessages)) {
-        const latestMessage = latestChatMessage(messages);
-        if (!latestMessage) continue;
-        const unreadCount = unreadCounts[secUid] || 0;
-        const currentSummary = next[secUid];
-        if (
-          latestMessage.createdAt >= (currentSummary?.latestMessageAt || 0) ||
-          unreadCount !== (currentSummary?.unreadCount || 0)
-        ) {
-          next[secUid] = {
-            latestMessage,
-            latestMessageAt: Math.max(latestMessage.createdAt, currentSummary?.latestMessageAt || 0),
-            unreadCount,
-          };
-          changed = true;
-        }
-      }
-      for (const [secUid, count] of Object.entries(unreadCounts)) {
-        if ((next[secUid]?.unreadCount || 0) === count) continue;
-        next[secUid] = {
-          latestMessage: next[secUid]?.latestMessage,
-          latestMessageAt: next[secUid]?.latestMessageAt || 0,
-          unreadCount: count,
-        };
-        changed = true;
-      }
-      if (!changed) return current;
-      persistChatSummaries(next, currentSecUidRef.current);
-      return next;
-    });
-  }, [chatMessages, unreadCounts]);
-
-  useEffect(() => {
-    const total = Object.values(unreadCounts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
-    setFriendUnreadCount(total);
-  }, [setFriendUnreadCount, unreadCounts]);
-
-  useEffect(() => {
-    if (!chatStateLoadedRef.current) return;
-    const timer = window.setTimeout(() => {
-      void saveFriendChatState({
-        summaries: chatSummaries,
-        unreadCounts,
-      }, currentSecUidRef.current).catch(() => undefined);
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [chatSummaries, unreadCounts]);
+  // Call the persistence hook to manage syncing summaries and unread counts
+  useFriendsChatPersistence({
+    currentSecUid,
+    selectedFriendIdRef,
+    chatMessages,
+    unreadCounts,
+    chatSummaries,
+    setChatMessages,
+    setUnreadCounts,
+    setChatSummaries,
+  });
 
   return {
     chatDrafts,
