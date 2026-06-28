@@ -16,6 +16,12 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use url::Url;
 
+use crate::media_proxy_headers::{apply_cors_headers, build_error_response};
+use crate::media_proxy_security::{
+    allowed_request_origin, guess_content_type, is_allowed_media_url, media_url_label,
+    resolve_redirect_target, should_send_cookie,
+};
+
 pub const MEDIA_PROXY_PORT: u16 = 39143;
 const INITIAL_VIDEO_RANGE: &str = "bytes=0-1048575";
 const LOCAL_MEDIA_INITIAL_RANGE_BYTES: u64 = 1024 * 1024;
@@ -59,35 +65,7 @@ struct SeekDebugQuery {
     src: Option<String>,
 }
 
-fn host_matches(host: &str, allowed_domain: &str) -> bool {
-    host == allowed_domain || host.ends_with(&format!(".{}", allowed_domain))
-}
 
-fn is_allowed_media_url(url: &Url) -> bool {
-    if url.scheme() != "https" && url.scheme() != "http" {
-        return false;
-    }
-
-    let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) else {
-        return false;
-    };
-
-    const ALLOWED_MEDIA_DOMAINS: &[&str] = &[
-        "douyin.com",
-        "douyinvod.com",
-        "douyinpic.com",
-        "douyinstatic.com",
-        "byteimg.com",
-        "ixigua.com",
-        "amemv.com",
-        "snssdk.com",
-        "pstatp.com",
-    ];
-
-    ALLOWED_MEDIA_DOMAINS
-        .iter()
-        .any(|domain| host_matches(&host, domain))
-}
 
 fn hex_to_bytes(value: &str) -> Option<Vec<u8>> {
     let trimmed = value.trim();
@@ -129,129 +107,13 @@ fn decrypt_im_image_bytes(encrypted: &[u8], skey: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-fn should_send_cookie(url: &Url) -> bool {
-    let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) else {
-        return false;
-    };
 
-    const COOKIE_DOMAINS: &[&str] = &["douyin.com", "amemv.com", "snssdk.com"];
-
-    COOKIE_DOMAINS
-        .iter()
-        .any(|domain| host_matches(&host, domain))
-}
-
-fn media_url_label(raw_url: &str) -> String {
-    Url::parse(raw_url)
-        .ok()
-        .and_then(|url| {
-            let host = url.host_str()?.to_string();
-            Some(format!("{}{}", host, url.path()))
-        })
-        .unwrap_or_else(|| raw_url.chars().take(80).collect::<String>())
-}
-
-fn allowed_request_origin(request_headers: &HeaderMap) -> Option<Option<HeaderValue>> {
-    let Some(origin) = request_headers.get(header::ORIGIN) else {
-        return Some(None);
-    };
-
-    let origin_str = origin.to_str().ok()?;
-    let parsed = Url::parse(origin_str).ok()?;
-    let scheme = parsed.scheme();
-    let host = parsed.host_str()?.to_ascii_lowercase();
-    let port = parsed.port_or_known_default();
-
-    let allowed =
-        (scheme == "http" && (host == "127.0.0.1" || host == "localhost") && port.is_some())
-            || (scheme == "http" && host == "tauri.localhost")
-            || (scheme == "tauri" && host == "localhost");
-
-    if allowed {
-        Some(Some(origin.clone()))
-    } else {
-        None
-    }
-}
-
-fn apply_cors_headers(response_headers: &mut HeaderMap, allow_origin: Option<HeaderValue>) {
-    response_headers.insert(
-        header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        allow_origin.unwrap_or_else(|| HeaderValue::from_static("*")),
-    );
-    response_headers.insert(
-        header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET, OPTIONS"),
-    );
-    response_headers.insert(
-        header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("Range, Content-Type, Accept, X-Douyin-Prewarm"),
-    );
-    response_headers.insert(
-        header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges, Content-Type"),
-    );
-}
-
-fn build_error_response(status: StatusCode, message: &str) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(Body::from(message.to_string()))
-        .unwrap_or_else(|_| Response::new(Body::from(message.to_string())))
-}
 
 fn frontend_dist_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist")
 }
 
-fn resolve_redirect_target(current_url: &Url, location: &str) -> Option<String> {
-    if let Ok(url) = Url::parse(location) {
-        return Some(url.to_string());
-    }
-    current_url.join(location).ok().map(|url| url.to_string())
-}
 
-fn guess_content_type(
-    url: &str,
-    upstream_content_type: &str,
-    requested_media_type: &str,
-) -> Option<&'static str> {
-    let normalized = upstream_content_type
-        .split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase();
-
-    if requested_media_type == "audio" {
-        if normalized.starts_with("audio/") {
-            return Some("audio/mpeg");
-        }
-        if url.ends_with(".m4a") {
-            return Some("audio/mp4");
-        }
-        return Some("audio/mpeg");
-    }
-
-    if !normalized.is_empty() && normalized != "application/octet-stream" {
-        return None;
-    }
-
-    if url.contains(".mp4") || url.contains("/play/") || requested_media_type == "video" {
-        return Some("video/mp4");
-    }
-    if url.contains(".jpg") || url.contains(".jpeg") {
-        return Some("image/jpeg");
-    }
-    if url.contains(".png") {
-        return Some("image/png");
-    }
-    if url.contains(".webp") {
-        return Some("image/webp");
-    }
-
-    None
-}
 
 fn local_media_content_type(path: &Path) -> Option<&'static str> {
     let extension = path
@@ -1118,43 +980,6 @@ pub async fn spawn_media_proxy(state: AppState) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn validates_media_url_by_host() {
-        let allowed =
-            Url::parse("https://v3-dy-o-abtest.zjcdn.com.douyinvod.com/video.mp4").unwrap();
-        assert!(is_allowed_media_url(&allowed));
-
-        let malicious = Url::parse("https://evil.example/?next=douyin.com/video.mp4").unwrap();
-        assert!(!is_allowed_media_url(&malicious));
-
-        let lookalike = Url::parse("https://douyin.com.evil.example/video.mp4").unwrap();
-        assert!(!is_allowed_media_url(&lookalike));
-    }
-
-    #[test]
-    fn only_sends_cookie_to_login_related_hosts() {
-        let douyin = Url::parse("https://www.douyin.com/aweme/v1/play/").unwrap();
-        assert!(should_send_cookie(&douyin));
-
-        let cdn = Url::parse("https://example.douyinvod.com/video.mp4").unwrap();
-        assert!(!should_send_cookie(&cdn));
-    }
-
-    #[test]
-    fn validates_request_origin() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            header::ORIGIN,
-            HeaderValue::from_static("http://127.0.0.1:39143"),
-        );
-        assert!(allowed_request_origin(&headers).is_some());
-
-        headers.insert(
-            header::ORIGIN,
-            HeaderValue::from_static("https://evil.example"),
-        );
-        assert!(allowed_request_origin(&headers).is_none());
-    }
 
     #[test]
     fn caps_large_remote_video_ranges() {

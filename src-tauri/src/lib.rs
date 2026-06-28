@@ -6,6 +6,8 @@ pub mod cookie;
 pub mod downloader;
 pub mod history;
 pub mod media_proxy;
+mod media_proxy_security;
+mod media_proxy_headers;
 pub mod media_utils;
 pub mod reporter;
 pub mod sign;
