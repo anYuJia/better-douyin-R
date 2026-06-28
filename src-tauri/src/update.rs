@@ -1,6 +1,11 @@
 //! 更新器相关 helper。
 
 #[cfg(windows)]
+use std::path::Path;
+#[cfg(windows)]
+use tauri::{Emitter, Manager};
+
+#[cfg(windows)]
 pub(crate) fn is_windows_portable_runtime() -> bool {
     tauri::utils::platform::bundle_type().is_none()
 }
