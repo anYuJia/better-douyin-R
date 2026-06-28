@@ -115,6 +115,8 @@ interface PlayerActionButtonsProps {
   musicUrl: string;
   bgmPlaying: boolean;
   bgmProxyUrl: string;
+  bgmDownloadSubmitting: boolean;
+  canDownloadBgm: boolean;
   hasDownloadHandler: boolean;
   // Comment props
   commentsOpen: boolean;
@@ -142,6 +144,7 @@ interface PlayerActionButtonsProps {
   onDownloadCurrent: (event: ReactMouseEvent) => void;
   onCopyCurrentMediaUrl: (event: ReactMouseEvent) => void;
   onToggleBgm: (event: ReactMouseEvent) => void;
+  onDownloadBgm: (event: ReactMouseEvent) => void;
   onShowDetail: () => void;
   onTogglePanel: (panel: PlayerPanel, event: ReactMouseEvent) => void;
   onOpenPanelOnPointerEnter: (panel: PlayerPanel, event: ReactPointerEvent<HTMLElement>) => void;
@@ -189,6 +192,8 @@ export function PlayerActionButtons({
   musicUrl,
   bgmPlaying,
   bgmProxyUrl,
+  bgmDownloadSubmitting,
+  canDownloadBgm,
   hasDownloadHandler,
   commentsOpen,
   comments,
@@ -214,6 +219,7 @@ export function PlayerActionButtons({
   onDownloadCurrent,
   onCopyCurrentMediaUrl,
   onToggleBgm,
+  onDownloadBgm,
   onShowDetail,
   onTogglePanel,
   onOpenPanelOnPointerEnter,
@@ -381,7 +387,10 @@ export function PlayerActionButtons({
         musicUrl={musicUrl}
         bgmPlaying={bgmPlaying}
         bgmProxyUrl={bgmProxyUrl}
+        bgmDownloadSubmitting={bgmDownloadSubmitting}
+        canDownloadBgm={canDownloadBgm}
         onToggleBgm={onToggleBgm}
+        onDownloadBgm={onDownloadBgm}
         onTogglePanel={onTogglePanel}
         onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
         onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}

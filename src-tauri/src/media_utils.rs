@@ -558,9 +558,6 @@ fn push_download_item(
         _ => infer_download_item_type(&url, fallback_type),
     };
 
-    if media_type == MEDIA_TYPE_AUDIO {
-        return;
-    }
     if media_type == MEDIA_TYPE_VIDEO {
         url = clean_video_download_url(original_url);
         if url.is_empty() || is_watermark_video_url(&url) || is_dash_video_only_url(&url) {

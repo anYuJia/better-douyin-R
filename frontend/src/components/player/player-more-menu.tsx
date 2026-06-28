@@ -90,7 +90,10 @@ interface MusicPanelProps {
   musicUrl: string;
   bgmPlaying: boolean;
   bgmProxyUrl: string;
+  bgmDownloadSubmitting: boolean;
+  canDownloadBgm: boolean;
   onToggleBgm: (event: ReactMouseEvent) => void;
+  onDownloadBgm: (event: ReactMouseEvent) => void;
   onTogglePanel: (panel: PlayerPanel, event: ReactMouseEvent) => void;
   onOpenPanelOnPointerEnter: (panel: PlayerPanel, event: ReactPointerEvent<HTMLElement>) => void;
   onClosePanelOnPointerLeave: (panel: PlayerPanel, event: ReactPointerEvent<HTMLElement>) => void;
@@ -104,7 +107,10 @@ export function MusicPanel({
   musicUrl,
   bgmPlaying,
   bgmProxyUrl,
+  bgmDownloadSubmitting,
+  canDownloadBgm,
   onToggleBgm,
+  onDownloadBgm,
   onTogglePanel,
   onOpenPanelOnPointerEnter,
   onClosePanelOnPointerLeave,
@@ -153,15 +159,15 @@ export function MusicPanel({
                   {bgmPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 fill-current" />}
                   {bgmPlaying ? "暂停 BGM" : "播放 BGM"}
                 </button>
-                <a
-                  href={bgmProxyUrl}
-                  download
+                <button
+                  type="button"
+                  disabled={bgmDownloadSubmitting || !bgmProxyUrl || !canDownloadBgm}
                   className="flex h-8 items-center justify-center gap-1 rounded-md bg-white/[0.08] text-[0.72rem] font-semibold text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-                  onClick={(event) => event.stopPropagation()}
+                  onClick={onDownloadBgm}
                 >
-                  <Download className="h-3.5 w-3.5" />
-                  下载
-                </a>
+                  {bgmDownloadSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {bgmDownloadSubmitting ? "加入中" : "下载"}
+                </button>
               </div>
             ) : (
               <div className="rounded-md bg-white/[0.06] px-2 py-2 text-[0.72rem] text-white/55">

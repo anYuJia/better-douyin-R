@@ -66,6 +66,25 @@ function readStoredAutoPlayNextVideo(): boolean {
   return window.localStorage.getItem(AUTO_PLAY_NEXT_VIDEO_STORAGE_KEY) === "true";
 }
 
+function buildAudioDownloadVideo(video: VideoInfo, audioUrl: string): VideoInfo {
+  const title = video.music?.title || video.desc || video.aweme_id;
+  return {
+    ...video,
+    desc: title ? `${title} 音频` : "背景音乐",
+    media_type: "audio",
+    raw_media_type: "audio",
+    media_urls: [{ type: "audio", url: audioUrl }],
+    video: {
+      ...video.video,
+      audio_addr: audioUrl,
+      play_addr: audioUrl,
+      play_addr_h264: null,
+      play_addr_lowbr: null,
+      download_addr: audioUrl,
+    },
+  };
+}
+
 interface FullscreenPlayerProps {
   videos: VideoInfo[];
   initialIndex?: number;
@@ -109,6 +128,7 @@ export function FullscreenPlayer({
   const [showLoadStatus, setShowLoadStatus] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [downloadSubmitting, setDownloadSubmitting] = useState(false);
+  const [bgmDownloadSubmitting, setBgmDownloadSubmitting] = useState(false);
   const [autoPlayNextVideo, setAutoPlayNextVideo] = useState(readStoredAutoPlayNextVideo);
 
   const [videoOverrides, setVideoOverrides] = useState<Record<string, VideoInfo>>({});
@@ -739,6 +759,22 @@ export function FullscreenPlayer({
     panelCloseTimerRef,
     startVideoProgressLoop,
   });
+
+  const handleDownloadBgm = useCallback(async (event: ReactMouseEvent) => {
+    event.stopPropagation();
+    clearPanelCloseTimer();
+    setOpenPanel(null);
+    if (!musicUrl || !currentVideo || !onDownload || bgmDownloadSubmitting) return;
+
+    setBgmDownloadSubmitting(true);
+    try {
+      await Promise.resolve(onDownload(buildAudioDownloadVideo(currentVideo, musicUrl)));
+    } catch (error) {
+      console.warn("BGM download failed", error);
+    } finally {
+      setBgmDownloadSubmitting(false);
+    }
+  }, [bgmDownloadSubmitting, clearPanelCloseTimer, currentVideo, musicUrl, onDownload, setOpenPanel]);
 
   const {
     bgmPlaying,
@@ -1520,6 +1556,8 @@ export function FullscreenPlayer({
                 musicUrl={musicUrl}
                 bgmPlaying={bgmPlaying}
                 bgmProxyUrl={bgmProxyUrl}
+                bgmDownloadSubmitting={bgmDownloadSubmitting}
+                canDownloadBgm={Boolean(onDownload)}
                 hasDownloadHandler={Boolean(onDownload)}
                 commentsOpen={commentsOpen}
                 comments={comments}
@@ -1554,6 +1592,7 @@ export function FullscreenPlayer({
                 onDownloadCurrent={handleDownloadCurrent}
                 onCopyCurrentMediaUrl={copyCurrentMediaUrl}
                 onToggleBgm={toggleBgm}
+                onDownloadBgm={handleDownloadBgm}
                 onShowDetail={() => {
                   releasePlayerMediaResources();
                   onShowDetail?.(currentVideo);

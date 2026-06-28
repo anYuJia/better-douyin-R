@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,12 +37,14 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
   const [activeTab, setActiveTab] = useState<"cover" | "media">("cover");
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [copiedLinkType, setCopiedLinkType] = useState<string | null>(null);
+  const [audioDownloading, setAudioDownloading] = useState(false);
 
   useEffect(() => {
     if (!video) return;
     setActiveTab("cover");
     setCurrentMediaIndex(0);
     setCopiedLinkType(null);
+    setAudioDownloading(false);
   }, [video]);
 
   if (!video) return null;
@@ -80,6 +82,17 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
       window.setTimeout(() => setCopiedLinkType((current) => (current === link.type ? null : current)), 1_200);
     });
   };
+  const downloadAudio = useCallback(async () => {
+    if (!musicUrl || !onDownload || audioDownloading) return;
+    setAudioDownloading(true);
+    try {
+      await Promise.resolve(onDownload(buildAudioDownloadVideo(video, musicUrl)));
+    } catch (error) {
+      console.warn("Audio download failed", error);
+    } finally {
+      setAudioDownloading(false);
+    }
+  }, [audioDownloading, musicUrl, onDownload, video]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -280,7 +293,13 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
                         <div className="truncate text-[0.72rem] text-text-muted">{music.author}</div>
                       )}
                       {musicUrl && (
-                        <audio src={mediaProxyUrl(musicUrl, "audio")} controls className="mt-3 h-8 w-full min-w-0 max-w-full" />
+                        <div className="mt-3 flex min-w-0 items-center gap-2">
+                          <audio src={mediaProxyUrl(musicUrl, "audio")} controls className="h-8 min-w-0 flex-1" />
+                          <Button variant="secondary" size="sm" onClick={() => void downloadAudio()} disabled={audioDownloading || !onDownload} className="h-8 shrink-0">
+                            <Download className={cn("w-3.5 h-3.5", audioDownloading && "animate-pulse")} />
+                            {audioDownloading ? "下载中" : "下载音频"}
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -324,4 +343,23 @@ function uniqueDetailLinks(items: Array<DetailLink | false | "" | null | undefin
   }
 
   return result;
+}
+
+function buildAudioDownloadVideo(video: VideoInfo, audioUrl: string): VideoInfo {
+  const title = video.music?.title || video.desc || video.aweme_id;
+  return {
+    ...video,
+    desc: title ? `${title} 音频` : "背景音乐",
+    media_type: "audio",
+    raw_media_type: "audio",
+    media_urls: [{ type: "audio", url: audioUrl }],
+    video: {
+      ...video.video,
+      audio_addr: audioUrl,
+      play_addr: audioUrl,
+      play_addr_h264: null,
+      play_addr_lowbr: null,
+      download_addr: audioUrl,
+    },
+  };
 }
