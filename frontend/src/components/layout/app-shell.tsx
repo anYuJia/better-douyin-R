@@ -68,7 +68,7 @@ export function AppShell() {
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className={cn("relative flex flex-col min-w-0 flex-1", needsTopInset ? "pt-9" : "pt-4")}>
+      <main className={cn("relative flex min-w-0 flex-1 flex-col pb-4 pr-4", needsTopInset ? "pt-9" : "pt-4")}>
         <div
           className="pointer-events-none absolute left-0 right-[132px] top-0 z-30 h-9"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties & { WebkitAppRegion: string }}
