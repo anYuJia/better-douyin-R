@@ -17,6 +17,7 @@ mod media_utils_types;
 mod media_utils_extract;
 mod media_utils_normalize;
 mod media_utils_download_items;
+mod media_utils_python;
 pub mod reporter;
 pub mod sign;
 pub mod download_files;
