@@ -14,6 +14,8 @@ mod media_proxy_local;
 mod media_proxy_remote;
 pub mod media_utils;
 mod media_utils_types;
+mod media_utils_extract;
+mod media_utils_normalize;
 pub mod reporter;
 pub mod sign;
 pub mod download_files;
