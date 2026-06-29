@@ -88,7 +88,7 @@ export function ContextMenu() {
   const handleAbout = () => {
     setVisible(false);
     showAlert({
-      title: "better-douyin",
+      title: "better-douyin-R",
       variant: "info",
       description: (
         <div className="text-sm space-y-1">
