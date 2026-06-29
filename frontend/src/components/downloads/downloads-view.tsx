@@ -23,6 +23,7 @@ import {
   Trash2,
   CheckSquare,
   Square,
+  History,
 } from "lucide-react";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useHistory } from "@/hooks/use-history";
@@ -53,6 +54,7 @@ import {
   FilePagination,
   HistoryFileCard,
 } from "./downloads-components";
+import { DownloadRecordsModal } from "../modals/download-records-modal";
 
 
 export function DownloadsView() {
@@ -94,6 +96,7 @@ export function DownloadsView() {
   const [playerState, setPlayerState] = useState<DownloadPlayerState>(null);
   const [filePage, setFilePage] = useState(1);
   const [filePageSize, setFilePageSize] = useState<number>(24);
+  const [showRecordModal, setShowRecordModal] = useState(false);
   const diskRequestIdRef = useRef(0);
   const workRequestIdRef = useRef(0);
 
@@ -570,6 +573,15 @@ export function DownloadsView() {
             作品形式
           </button>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowRecordModal(true)}
+          className="h-8 text-[0.75rem] font-semibold gap-1.5 cursor-pointer shrink-0"
+        >
+          <History className="h-3.5 w-3.5" />
+          下载记录
+        </Button>
       </div>
 
       {/* Active Tasks */}
@@ -855,6 +867,12 @@ export function DownloadsView() {
           <p className="text-[0.8rem] text-text-muted">搜索用户或粘贴链接开始下载</p>
         </motion.div>
       )}
+
+      <DownloadRecordsModal
+        isOpen={showRecordModal}
+        onClose={() => setShowRecordModal(false)}
+        historyItems={historyItems}
+      />
     </div>
   );
 }
