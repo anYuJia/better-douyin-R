@@ -40,9 +40,11 @@ export function AppShell() {
   const currentView = useAppStore((s) => s.currentView);
   const commandOpen = useAppStore((s) => s.commandOpen);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isPyWebView = typeof window !== "undefined" && Boolean((window as any).pywebview);
   const isTauri = typeof window !== "undefined" && Boolean((window as any).__TAURI_INTERNALS__);
+  const isWindows = typeof navigator !== "undefined" && /Win/i.test(navigator.platform || "");
   const isMacOS = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || "");
-  const needsTopInset = isTauri && !isMacOS;
+  const needsTopInset = (isPyWebView || isTauri) && isWindows && !isMacOS;
 
   useLayoutEffect(() => {
     scrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
@@ -66,12 +68,12 @@ export function AppShell() {
       <Sidebar />
 
       {/* Main Content Area */}
-      <main className="relative flex min-w-0 flex-1 flex-col">
+      <main className={cn("relative flex flex-col min-w-0 flex-1", needsTopInset ? "pt-9" : "pt-4")}>
         <div
           className="pointer-events-none absolute left-0 right-[132px] top-0 z-30 h-9"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties & { WebkitAppRegion: string }}
         />
-        <div ref={scrollRef} className={cn("relative flex-1 overflow-x-hidden overflow-y-auto pb-16", needsTopInset && "pt-9")}>
+        <div ref={scrollRef} className="relative flex-1 overflow-x-hidden overflow-y-auto pb-16 pt-2 rounded-t-[24px]">
           <AnimatePresence initial={false} mode="popLayout">
             {renderView(currentView)}
           </AnimatePresence>
