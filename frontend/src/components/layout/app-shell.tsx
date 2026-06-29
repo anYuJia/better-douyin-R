@@ -78,7 +78,7 @@ export function AppShell() {
           className={cn(
             "relative flex-1 overflow-x-hidden rounded-t-[24px]",
             currentView === "friends-status"
-              ? "flex flex-col overflow-y-hidden pb-[58px] pt-2"
+              ? "flex flex-col overflow-y-hidden pb-1 pt-2"
               : "overflow-y-auto pb-16 pt-2"
           )}
         >
@@ -86,7 +86,7 @@ export function AppShell() {
             {renderView(currentView)}
           </AnimatePresence>
         </div>
-        <BottomBar />
+        {currentView !== "friends-status" && <BottomBar />}
       </main>
 
       {/* Command Popover (Raycast-style) */}
