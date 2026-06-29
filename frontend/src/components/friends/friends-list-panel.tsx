@@ -27,10 +27,16 @@ export function FriendListPanel({
 }: FriendListPanelProps) {
   return (
     <section className="flex min-h-0 flex-col rounded-[var(--radius-lg)] border border-border bg-surface-solid/70 p-3 shadow-[var(--shadow-sm)]">
-      <div className="mb-3 grid shrink-0 grid-cols-3 gap-1.5">
-        <Metric label="总数" value={friends.length || idsLength} icon={Users} />
-        <Metric label="在线" value={onlineCount} icon={Wifi} tone="success" />
-        <Metric label="未在线" value={offlineCount} icon={WifiOff} tone="muted" />
+      <div className="mb-3 flex items-center justify-between shrink-0 px-0.5">
+        <span className="text-[0.76rem] font-bold text-text-secondary tracking-wide">联系人列表</span>
+        <div className="flex gap-1.5">
+          <span className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-border bg-surface-solid px-2 py-0.5 text-[0.66rem] font-medium text-text-muted">
+            全部 {friends.length || idsLength}
+          </span>
+          <span className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-success/20 bg-success-soft px-2 py-0.5 text-[0.66rem] font-medium text-success">
+            在线 {onlineCount}
+          </span>
+        </div>
       </div>
 
       {isInitialLoading ? (
