@@ -143,6 +143,9 @@ body {
   color: var(--color-text);
   min-height: 100vh;
   overflow: hidden;
+}
+
+aside, button, [role="button"], .select-none {
   user-select: none;
   -webkit-user-select: none;
 }
@@ -153,8 +156,7 @@ input, textarea, [contenteditable="true"], .select-text, .selectable {
 }
 
 ::selection {
-  background: var(--color-accent);
-  color: white;
+  background: rgba(254, 44, 85, 0.22);
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
