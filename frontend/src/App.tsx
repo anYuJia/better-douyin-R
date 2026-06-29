@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { AppShell } from "@/components/layout/app-shell";
 import { GlobalAlert, GlobalLoader, GlobalVerifyRecovery } from "@/components/layout/global-feedback";
+import { ContextMenu } from "@/components/layout/context-menu";
 import { useAlertStore, useAppStore, useLoaderStore, useLogStore, useUpdateStore } from "@/stores/app-store";
 import { useSocket } from "@/lib/socket";
 import { useKeyboard } from "@/hooks/use-keyboard";
@@ -524,6 +525,7 @@ export default function App() {
       <GlobalVerifyRecovery />
       <GlobalLoader />
       <Toaster />
+      <ContextMenu />
     </TooltipProvider>
   );
 }
