@@ -71,6 +71,23 @@ export function useFriendsMessageHistory({
           senderUid,
         };
         const currentMessages = next[friend.secUid] || [];
+        const localMatchIndex = currentMessages.findIndex((existing) =>
+          existing.direction === "out" &&
+          existing.text === message.text &&
+          Math.abs(existing.createdAt - message.createdAt) < 60000 &&
+          existing.id.includes(friend.secUid)
+        );
+        if (localMatchIndex !== -1) {
+          const matchedList = [...currentMessages];
+          matchedList[localMatchIndex] = {
+            ...matchedList[localMatchIndex],
+            id: message.id,
+            status: "sent"
+          };
+          next[friend.secUid] = matchedList.sort((a, b) => a.createdAt - b.createdAt);
+          mergedCount += 1;
+          continue;
+        }
         if (currentMessages.some((existing) => existing.id === message.id)) continue;
         next[friend.secUid] = [...currentMessages, message].sort((a, b) => a.createdAt - b.createdAt);
         mergedCount += 1;
