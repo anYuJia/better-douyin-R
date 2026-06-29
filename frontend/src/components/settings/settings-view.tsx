@@ -23,7 +23,7 @@ import {
   addAccount,
 } from "@/lib/tauri";
 import type { AccountInfo } from "@/lib/tauri";
-import type { ThemeMode } from "@/types";
+import type { ThemeMode, FontSizeMode } from "@/types";
 import type {
   LoginStatus,
   SavingFields,
@@ -39,6 +39,8 @@ import { SettingsAboutTab } from "./settings-about";
 export function SettingsView() {
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
+  const fontSize = useAppStore((s) => s.fontSize);
+  const setFontSize = useAppStore((s) => s.setFontSize);
   const cookieLoggedIn = useAppStore((s) => s.cookieLoggedIn);
   const cookieNickname = useAppStore((s) => s.cookieNickname);
   const setCookieLoggedIn = useAppStore((s) => s.setCookieLoggedIn);
@@ -401,6 +403,11 @@ export function SettingsView() {
     reportSettingSaved("theme", "外观主题已保存");
   };
 
+  const handleFontSizeChange = async (value: FontSizeMode) => {
+    setFontSize(value);
+    reportSettingSaved("font_size", "字体大小已保存");
+  };
+
   const handleQualityChange = async (value: string) => {
     const previousQuality = savedSettingsRef.current.downloadQuality;
     setDownloadQuality(value);
@@ -577,7 +584,7 @@ export function SettingsView() {
                 </div>
               )}
               {activeTab === "download" && (<SettingsDownloadTab downloadPath={downloadPath} setDownloadPath={setDownloadPath} downloadQuality={downloadQuality} maxConcurrent={maxConcurrent} filenameTemplate={filenameTemplate} setFilenameTemplate={setFilenameTemplate} folderNameTemplate={folderNameTemplate} setFolderNameTemplate={setFolderNameTemplate} autoCreateFolder={autoCreateFolder} choosingDirectory={choosingDirectory} savingFields={savingFields} fieldStatus={fieldStatus} handleChooseDirectory={handleChooseDirectory} handleQualityChange={handleQualityChange} handleMaxConcurrentChange={handleMaxConcurrentChange} handleAutoCreateFolderChange={handleAutoCreateFolderChange} saveFilenameTemplate={saveFilenameTemplate} saveFolderNameTemplate={saveFolderNameTemplate} appendFilenameToken={appendFilenameToken} appendFolderToken={appendFolderToken} />)}
-              {activeTab === "preferences" && (<SettingsAppearanceTab theme={theme} savingFields={savingFields} fieldStatus={fieldStatus} handleThemeChange={handleThemeChange} />)}
+              {activeTab === "preferences" && (<SettingsAppearanceTab theme={theme} fontSize={fontSize} savingFields={savingFields} fieldStatus={fieldStatus} handleThemeChange={handleThemeChange} handleFontSizeChange={handleFontSizeChange} />)}
               {activeTab === "about" && (<SettingsAboutTab appVersion={appVersion} updateStatus={updateStatus} updateMessage={updateMessage} updateInfo={updateInfo} updateProgress={updateProgress} updateCanRestart={updateCanRestart} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleRestart={handleRestart} />)}
             </motion.div>
           </AnimatePresence>

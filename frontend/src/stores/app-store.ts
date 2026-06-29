@@ -22,6 +22,17 @@ export const useAppStore = create<AppState>((set) => ({
     applyTheme(theme);
   },
 
+  fontSize: "medium",
+  setFontSize: (fontSize: any) => {
+    set({ fontSize });
+    try {
+      localStorage.setItem("dy_font_size", fontSize);
+    } catch {
+      // Ignore storage failures
+    }
+    applyFontSize(fontSize);
+  },
+
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
@@ -346,6 +357,14 @@ function applyTheme(theme: ThemeMode) {
   }
 }
 
+function applyFontSize(size: string) {
+  let pxSize = "16px";
+  if (size === "small") pxSize = "14px";
+  else if (size === "large") pxSize = "18px";
+  else if (size === "xlarge") pxSize = "20px";
+  document.documentElement.style.fontSize = pxSize;
+}
+
 export function initTheme() {
   let saved: ThemeMode = "auto";
   try {
@@ -355,6 +374,14 @@ export function initTheme() {
   }
 
   useAppStore.getState().setTheme(saved);
+
+  let savedFontSize: any = "medium";
+  try {
+    savedFontSize = localStorage.getItem("dy_font_size") || "medium";
+  } catch {
+    // Ignore
+  }
+  useAppStore.getState().setFontSize(savedFontSize);
 
   if (themeWatcherInitialized) return;
   themeWatcherInitialized = true;

@@ -6,6 +6,8 @@ export type ViewType = "home" | "search" | "user" | "link" | "recommended" | "do
 
 export type ThemeMode = "light" | "dark" | "auto";
 
+export type FontSizeMode = "small" | "medium" | "large" | "xlarge";
+
 export type DownloadStatus = "pending" | "downloading" | "completed" | "error" | "paused" | "cancelled";
 
 export interface AppState {
@@ -13,6 +15,8 @@ export interface AppState {
   setView: (view: ViewType) => void;
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
+  fontSize: FontSizeMode;
+  setFontSize: (size: FontSizeMode) => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   bottomBarExpanded: boolean;

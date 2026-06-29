@@ -4,6 +4,7 @@ export type LoginStatus = "idle" | "starting" | "waiting" | "success" | "error" 
 
 export type SettingsField =
   | "theme"
+  | "font_size"
   | "download_path"
   | "download_quality"
   | "max_concurrent"
