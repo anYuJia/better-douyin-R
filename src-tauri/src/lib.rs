@@ -117,6 +117,7 @@ pub fn run() {
             commands::friends::get_friend_message_history,
             commands::friends::get_friend_chat_state,
             commands::friends::save_friend_chat_state,
+            commands::notices::get_notices,
             commands::content_feed::get_recommended,
             commands::content_comments::get_comments,
             commands::content_comments::get_comment_replies,

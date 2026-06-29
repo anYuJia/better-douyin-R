@@ -10,5 +10,6 @@ pub(crate) mod downloads;
 pub(crate) mod friends;
 pub(crate) mod history;
 pub(crate) mod login;
+pub(crate) mod notices;
 pub(crate) mod system;
 pub(crate) mod update_cmd;
