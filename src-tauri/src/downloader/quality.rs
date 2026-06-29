@@ -209,6 +209,7 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
         480
     };
 
+    let mut dash_fallbacks = Vec::new();
     let mut push_candidate = |url: Option<String>,
                               metric: i64,
                               height: i32,
@@ -220,10 +221,11 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
             return;
         };
         let url = clean_video_download_url(&url);
-        if url.trim().is_empty() || is_dash_video_only_url(&url) || !seen.insert(url.clone()) {
+        if url.trim().is_empty() || !seen.insert(url.clone()) {
             return;
         }
-        candidates.push(VideoCandidate {
+        let is_dash = is_dash_video_only_url(&url);
+        let candidate = VideoCandidate {
             is_watermark: is_watermark_url(&url),
             url,
             metric,
@@ -232,7 +234,12 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
             is_quality_candidate,
             is_download_addr,
             is_lowbr,
-        });
+        };
+        if is_dash {
+            dash_fallbacks.push(candidate);
+        } else {
+            candidates.push(candidate);
+        }
     };
 
     push_candidate(
@@ -308,6 +315,10 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
         false,
         false,
     );
+
+    if candidates.is_empty() {
+        candidates = dash_fallbacks;
+    }
 
     candidates
 }

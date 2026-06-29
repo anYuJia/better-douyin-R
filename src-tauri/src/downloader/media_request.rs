@@ -24,22 +24,45 @@ pub(crate) async fn request_media_with_fallback(
         let fallback_urls = fresh_media_download_urls(config, aweme_id, media.r#type.as_str())
             .await
             .unwrap_or_default();
-        for url in fallback_urls {
-            if is_dash_video_only_url(&url) {
+        for url in &fallback_urls {
+            if is_dash_video_only_url(url) {
                 continue;
             }
 
-            let fallback_response = client.get(&url).headers(headers.clone()).send().await?;
+            let fallback_response = client.get(url).headers(headers.clone()).send().await?;
             if fallback_response.status().is_success() {
                 log::info!(
                     "download url refreshed from dash video-only source: aweme_id={}",
                     aweme_id
                 );
+                return Ok((fallback_response, url.clone()));
+            }
+        }
+
+        // Try the original DASH video URL directly
+        let response = client
+            .get(&media.url)
+            .headers(headers.clone())
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            log::info!(
+                "allowing dash video-only download as final fallback: aweme_id={}",
+                aweme_id
+            );
+            return Ok((response, media.url.clone()));
+        }
+
+        // Try other DASH fallback URLs
+        for url in fallback_urls {
+            let fallback_response = client.get(&url).headers(headers.clone()).send().await?;
+            if fallback_response.status().is_success() {
                 return Ok((fallback_response, url));
             }
         }
 
-        return Err(anyhow!("没有可用的带音频视频下载地址"));
+        return Err(anyhow!("没有可用的视频下载地址"));
     }
 
     let response = client
@@ -68,18 +91,30 @@ pub(crate) async fn request_media_with_fallback(
                 ));
             }
         };
-    for url in fallback_urls {
-        if url == media.url || is_dash_video_only_url(&url) {
+    for url in &fallback_urls {
+        if url == &media.url || is_dash_video_only_url(url) {
             continue;
         }
 
-        let fallback_response = client.get(&url).headers(headers.clone()).send().await?;
+        let fallback_response = client.get(url).headers(headers.clone()).send().await?;
         if fallback_response.status().is_success() {
             log::info!(
                 "download url refreshed after HTTP {}: aweme_id={}",
                 initial_status,
                 aweme_id
             );
+            return Ok((fallback_response, url.clone()));
+        }
+    }
+
+    // Secondary fallback: Allow any refreshed URLs even if they contain DASH media-video
+    for url in fallback_urls {
+        if url == media.url {
+            continue;
+        }
+
+        let fallback_response = client.get(&url).headers(headers.clone()).send().await?;
+        if fallback_response.status().is_success() {
             return Ok((fallback_response, url));
         }
     }

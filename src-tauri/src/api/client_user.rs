@@ -4,7 +4,6 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 
 use super::client::DouyinClient;
-use super::client_content::{self};
 use super::types::*;
 
 impl DouyinClient {

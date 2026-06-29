@@ -59,6 +59,31 @@ pub(crate) fn no_watermark_video_url(video: &VideoInfo) -> Option<String> {
             return Some(clean_url);
         }
     }
+
+    // Fallback: If no non-DASH urls found, allow dash_addr as a fallback
+    if let Some(dash_url) = &video.video.dash_addr {
+        let clean_url = clean_video_download_url(dash_url);
+        if !clean_url.is_empty() && !is_watermark_video_url(&clean_url) {
+            return Some(clean_url);
+        }
+    }
+
+    // Secondary fallback: Allow any valid video URL even if it's DASH-only
+    for url in [
+        video.video.play_addr_h264.as_deref(),
+        Some(video.video.play_addr.as_str()),
+        video.video.download_addr.as_deref(),
+        video.video.play_addr_lowbr.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let clean_url = clean_video_download_url(url);
+        if !clean_url.is_empty() && !is_watermark_video_url(&clean_url) {
+            return Some(clean_url);
+        }
+    }
+
     None
 }
 

@@ -338,6 +338,8 @@ mod tests {
         video.video.play_addr.clear();
         video.video.dash_addr = Some("https://example.com/media-video-avc1".into());
 
-        assert!(python_media_urls(&video).is_empty());
+        let urls = python_media_urls(&video);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0]["url"], "https://example.com/media-video-avc1");
     }
 }

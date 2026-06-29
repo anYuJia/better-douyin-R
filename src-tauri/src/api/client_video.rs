@@ -351,14 +351,17 @@ impl DouyinClient {
             !url.is_empty() && !looks_watermarked_media_url(url) && !is_dash_video_only_url(url)
         });
         let play_addr = primary_no_watermark
-            .or(bit_rate_play_addr.filter(|url| !is_dash_video_only_url(url)))
+            .or(bit_rate_play_addr.clone().filter(|url| !is_dash_video_only_url(url)))
             .or({
                 if fallback_play_addr.is_empty() || is_dash_video_only_url(&fallback_play_addr) {
                     None
                 } else {
-                    Some(fallback_play_addr)
+                    Some(fallback_play_addr.clone())
                 }
             })
+            .or(dash_addr.clone())
+            .or(bit_rate_play_addr)
+            .or(if fallback_play_addr.is_empty() { None } else { Some(fallback_play_addr) })
             .unwrap_or_default();
 
         let video = VideoData {
