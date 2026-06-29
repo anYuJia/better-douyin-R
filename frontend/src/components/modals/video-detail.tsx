@@ -39,6 +39,20 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
   const [copiedLinkType, setCopiedLinkType] = useState<string | null>(null);
   const [audioDownloading, setAudioDownloading] = useState(false);
 
+  const musicUrl = video ? getVideoBgmUrl(video) : "";
+
+  const downloadAudio = useCallback(async () => {
+    if (!video || !musicUrl || !onDownload || audioDownloading) return;
+    setAudioDownloading(true);
+    try {
+      await Promise.resolve(onDownload(buildAudioDownloadVideo(video, musicUrl)));
+    } catch (error) {
+      console.warn("Audio download failed", error);
+    } finally {
+      setAudioDownloading(false);
+    }
+  }, [audioDownloading, musicUrl, onDownload, video]);
+
   useEffect(() => {
     if (!video) return;
     setActiveTab("cover");
@@ -57,7 +71,6 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
   const stats = video.statistics;
   const author = video.author;
   const music = video.music;
-  const musicUrl = getVideoBgmUrl(video);
   const mediaLabel = getVideoMediaLabel(video);
 
   const statItems = [
@@ -82,17 +95,6 @@ export function VideoDetailModal({ video, open, onOpenChange, onDownload }: Vide
       window.setTimeout(() => setCopiedLinkType((current) => (current === link.type ? null : current)), 1_200);
     });
   };
-  const downloadAudio = useCallback(async () => {
-    if (!musicUrl || !onDownload || audioDownloading) return;
-    setAudioDownloading(true);
-    try {
-      await Promise.resolve(onDownload(buildAudioDownloadVideo(video, musicUrl)));
-    } catch (error) {
-      console.warn("Audio download failed", error);
-    } finally {
-      setAudioDownloading(false);
-    }
-  }, [audioDownloading, musicUrl, onDownload, video]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
