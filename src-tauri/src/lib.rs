@@ -47,7 +47,9 @@ pub fn run() {
             };
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
-                    .level(log_level)
+                    .level(log::LevelFilter::Warn)
+                    .level_for("app_lib", log_level)
+                    .level_for("better_douyin_r", log_level)
                     .build(),
             )?;
 
