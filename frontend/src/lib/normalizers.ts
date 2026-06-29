@@ -540,7 +540,13 @@ export function normalizeHistoryItem(value: unknown): HistoryItem | null {
   const item = value as Record<string, unknown>;
   const path = String(item.path || item.file_path || "").trim();
   const awemeId = String(item.aweme_id || item.id || "").trim();
-  const title = String(item.title || item.filename || item.desc || item.name || awemeId || "未命名作品").trim();
+  
+  // Extract filename stem from path to use as a fallback title
+  const filenameFromPath = path.split(/[\\/]/).pop() || "";
+  const dotIndex = filenameFromPath.lastIndexOf(".");
+  const fileStem = dotIndex <= 0 ? filenameFromPath : filenameFromPath.slice(0, dotIndex);
+  
+  const title = String(item.title || item.filename || item.desc || item.name || fileStem || awemeId || "未命名作品").trim();
   const fileSize = Number(item.file_size ?? item.size ?? 0) || 0;
   const timestamp = Number(item.timestamp ?? item.modified_at ?? item.create_time ?? 0) || 0;
   const mediaType = String(item.media_type || item.file_type || item.extension || "").trim();

@@ -108,12 +108,27 @@ export function getDownloadDeleteKey(item: HistoryItem): string {
   return item.path || item.id || item.aweme_id || item.filename || "";
 }
 
+export function buildTitleToAwemeIdMap(items: HistoryItem[]): Map<string, string> {
+  const titleToAwemeId = new Map<string, string>();
+  for (const item of items) {
+    const awemeId = String(item.aweme_id || "").trim();
+    if (isUsableAwemeId(awemeId, item)) {
+      const title = normalizeDownloadWorkTitle(resolveDownloadItemTitle(item));
+      const scope = (item.author || getParentDirectoryName(item.path) || "unknown").trim().toLowerCase();
+      const titleKey = `${scope}:${title.toLowerCase()}`;
+      titleToAwemeId.set(titleKey, awemeId);
+    }
+  }
+  return titleToAwemeId;
+}
+
 export function buildDownloadWorkGroups(items: HistoryItem[], sortBy: string): DownloadWorkGroup[] {
   const grouped = new Map<string, HistoryItem[]>();
+  const titleToAwemeId = buildTitleToAwemeIdMap(items);
 
   for (const item of dedupeDownloadItems(items)) {
     if (!item.path) continue;
-    const key = getDownloadWorkKey(item);
+    const key = getDownloadWorkKey(item, titleToAwemeId);
     const groupItems = grouped.get(key) || [];
     groupItems.push(item);
     grouped.set(key, groupItems);
@@ -148,7 +163,8 @@ export function findDownloadWorkGroupForItem(
   items: HistoryItem[],
   sortBy: string
 ): DownloadWorkGroup | null {
-  const targetKey = getDownloadWorkKey(item);
+  const titleToAwemeId = buildTitleToAwemeIdMap(items);
+  const targetKey = getDownloadWorkKey(item, titleToAwemeId);
   return buildDownloadWorkGroups(items, sortBy).find((group) => group.id === targetKey) || null;
 }
 
@@ -263,13 +279,20 @@ export function buildDownloadPlayerVideo(items: HistoryItem[]): VideoInfo | null
   };
 }
 
-export function getDownloadWorkKey(item: HistoryItem): string {
+export function getDownloadWorkKey(item: HistoryItem, titleToAwemeId?: Map<string, string>): string {
+  const title = normalizeDownloadWorkTitle(resolveDownloadItemTitle(item));
+  const scope = (item.author || getParentDirectoryName(item.path) || "unknown").trim().toLowerCase();
+  const titleKey = `${scope}:${title.toLowerCase()}`;
+
+  if (titleToAwemeId) {
+    const mappedAwemeId = titleToAwemeId.get(titleKey);
+    if (mappedAwemeId) return `aweme:${mappedAwemeId}`;
+  }
+
   const awemeId = String(item.aweme_id || "").trim();
   if (isUsableAwemeId(awemeId, item)) return `aweme:${awemeId}`;
 
-  const title = normalizeDownloadWorkTitle(resolveDownloadItemTitle(item));
-  const scope = (item.author || getParentDirectoryName(item.path) || "unknown").trim().toLowerCase();
-  return `work:${scope}:${title.toLowerCase()}`;
+  return `work:${titleKey}`;
 }
 
 export function isUsableAwemeId(awemeId: string, item: HistoryItem): boolean {
