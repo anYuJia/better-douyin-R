@@ -81,3 +81,13 @@ pub(crate) async fn list_download_files(
         "latest": latest
     }))
 }
+
+#[tauri::command]
+pub(crate) fn check_files_exist(paths: Vec<String>) -> Result<Vec<bool>, String> {
+    let result = paths
+        .into_iter()
+        .map(|path| std::path::Path::new(&path).exists())
+        .collect();
+    Ok(result)
+}
+

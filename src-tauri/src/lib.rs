@@ -140,6 +140,7 @@ pub fn run() {
             commands::downloads::pause_download,
             commands::downloads::resume_download,
             commands::download_files_cmd::list_download_files,
+            commands::download_files_cmd::check_files_exist,
             commands::history::get_history,
             commands::history::clear_history,
             commands::history::delete_history,
