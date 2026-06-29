@@ -1,6 +1,6 @@
 //! 视频客户端逻辑 - 解析分享链接、获取视频详情
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -1044,6 +1044,39 @@ mod tests {
         assert_eq!(
             bit_rate.play_addr_candidates,
             vec!["https://example.com/bitrate-video.mp4".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_video_info_uses_music_play_url_for_bgm() {
+        let client = DouyinClient::new(AppConfig::default()).expect("client");
+        let post = json!({
+            "aweme_id": "7655488193505330405",
+            "desc": "video post with original sound",
+            "author": {},
+            "statistics": {},
+            "status": {},
+            "video": {
+                "play_addr": {
+                    "url_list": ["https://example.com/video.mp4"]
+                }
+            },
+            "music": {
+                "play_url": {
+                    "url_list": [
+                        "https://example.com/music-primary.mp3",
+                        "https://example.com/music-backup.mp3"
+                    ]
+                }
+            }
+        });
+
+        let video = client.parse_video_info(&post).expect("video info");
+
+        assert_eq!(video.video.play_addr, "https://example.com/video.mp4");
+        assert_eq!(
+            video.music.and_then(|music| music.play_url),
+            Some("https://example.com/music-primary.mp3".to_string())
         );
     }
 

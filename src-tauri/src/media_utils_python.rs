@@ -1,10 +1,9 @@
-use crate::api::{VideoInfo, UserInfo};
-use crate::media_utils_types::{
-    MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO,
-    python_media_type,
-};
+use crate::api::{UserInfo, VideoInfo};
 use crate::media_utils_normalize::{
-    normalize_music_duration_seconds, normalize_video_duration_seconds, no_watermark_video_url,
+    no_watermark_video_url, normalize_music_duration_seconds, normalize_video_duration_seconds,
+};
+use crate::media_utils_types::{
+    python_media_type, MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO,
 };
 
 pub fn python_media_urls(video: &VideoInfo) -> Vec<serde_json::Value> {
@@ -104,11 +103,7 @@ pub fn python_video_summary(
 ) -> serde_json::Value {
     let media_type = python_media_type(video);
     let media_urls = python_media_urls(video);
-    let mut bgm_url = python_music_play_url(video);
-
-    if bgm_url.is_empty() && !video.video.play_addr.is_empty() {
-        bgm_url = video.video.play_addr.clone();
-    }
+    let bgm_url = python_music_play_url(video);
 
     let mut value = serde_json::json!({
         "aweme_id": video.aweme_id,
@@ -296,7 +291,7 @@ pub fn python_recommended_video(video: &VideoInfo) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{AuthorInfo, Statistics, Status, VideoData, MediaType};
+    use crate::api::{AuthorInfo, MediaType, MusicInfo, Statistics, Status, VideoData};
 
     fn sample_video_with_images(
         image_urls: Vec<String>,
@@ -341,5 +336,34 @@ mod tests {
         let urls = python_media_urls(&video);
         assert_eq!(urls.len(), 1);
         assert_eq!(urls[0]["url"], "https://example.com/media-video-avc1");
+    }
+
+    #[test]
+    fn python_video_summary_does_not_use_video_url_as_bgm_url() {
+        let mut video = sample_video_with_images(vec![], vec![]);
+        video.video.play_addr = "https://example.com/video.mp4".to_string();
+
+        let summary = python_video_summary(&video, true, true);
+
+        assert_eq!(summary["bgm_url"], "");
+        assert_eq!(summary["music"]["play_url"], "");
+    }
+
+    #[test]
+    fn python_video_summary_uses_music_play_url_as_bgm_url() {
+        let mut video = sample_video_with_images(vec![], vec![]);
+        video.video.play_addr = "https://example.com/video.mp4".to_string();
+        video.music = Some(MusicInfo {
+            play_url: Some("https://example.com/music.mp3".to_string()),
+            ..Default::default()
+        });
+
+        let summary = python_video_summary(&video, true, true);
+
+        assert_eq!(summary["bgm_url"], "https://example.com/music.mp3");
+        assert_eq!(
+            summary["music"]["play_url"],
+            "https://example.com/music.mp3"
+        );
     }
 }

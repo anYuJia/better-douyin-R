@@ -326,6 +326,34 @@ mod tests {
     }
 
     #[test]
+    fn parses_audio_download_media_items_without_video_fallback() {
+        let payload = serde_json::json!({
+            "aweme_id": "123",
+            "desc": "test audio",
+            "raw_media_type": "audio",
+            "media_type": "audio",
+            "media_urls": [{
+                "type": "audio",
+                "url": "https://lf9-music-east.douyinstatic.com/obj/ies-music/test.mp3"
+            }],
+            "video": {
+                "audio_addr": "https://lf9-music-east.douyinstatic.com/obj/ies-music/test.mp3",
+                "play_addr": "",
+                "download_addr": null
+            }
+        });
+
+        let parsed = parse_download_media_items(&payload, "audio");
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].r#type, "audio");
+        assert_eq!(
+            parsed[0].url,
+            "https://lf9-music-east.douyinstatic.com/obj/ies-music/test.mp3"
+        );
+    }
+
+    #[test]
     fn parses_nested_react_video_payload() {
         let payload = serde_json::json!({
             "aweme_id": "123",
