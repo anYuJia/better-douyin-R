@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import type { UpdateInfo, UpdateStatus } from "@/stores/app-store";
 import { SettingGroup } from "./settings-components";
+import wechatPayImg from "@/assets/wechat-pay.png";
+import qqGroupImg from "@/assets/qq-group.jpg";
 
 function formatBytes(bytes?: number) {
   if (!bytes || bytes <= 0) return "";
@@ -164,7 +166,7 @@ export function SettingsAboutTab({
             <div className="flex flex-col items-center text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] backdrop-blur-xl">
               <div className="w-[250px] h-[250px] flex items-center justify-center shrink-0 hover:scale-[1.03] transition-transform duration-200">
                 <img
-                  src="/wechat-pay.png"
+                  src={wechatPayImg}
                   alt="微信支付赞赏码"
                   className="w-full h-full object-contain rounded-lg"
                 />
@@ -181,7 +183,7 @@ export function SettingsAboutTab({
             <div className="flex flex-col items-center text-center p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] backdrop-blur-xl">
               <div className="w-[250px] h-[250px] flex items-center justify-center shrink-0 hover:scale-[1.03] transition-transform duration-200">
                 <img
-                  src="/qq-group.jpg"
+                  src={qqGroupImg}
                   alt="QQ群二维码"
                   className="w-full h-full object-contain rounded-lg"
                 />
