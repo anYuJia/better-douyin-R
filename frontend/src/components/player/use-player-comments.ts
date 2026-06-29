@@ -4,6 +4,7 @@ import type { CommentRepliesState, CommentReplyTarget, PlayerPanel } from "./pla
 
 interface UsePlayerCommentsProps {
   open: boolean;
+  openPanel: PlayerPanel | null;
   currentVideo: VideoInfo | null;
   showNavigationNotice: (message: string) => void;
   clearPanelCloseTimer: () => void;
@@ -12,6 +13,7 @@ interface UsePlayerCommentsProps {
 
 export function usePlayerComments({
   open,
+  openPanel,
   currentVideo,
   showNavigationNotice,
   clearPanelCloseTimer,
@@ -71,6 +73,15 @@ export function usePlayerComments({
       setCommentsOpen(false);
     }
   }, [open, clearCommentsHoverCloseTimer]);
+
+  // Close comments panel if another tool panel gets opened
+  useEffect(() => {
+    if (openPanel) {
+      clearCommentsHoverCloseTimer();
+      commentsPanelStickyRef.current = false;
+      setCommentsOpen(false);
+    }
+  }, [openPanel, clearCommentsHoverCloseTimer]);
 
   const loadComments = useCallback(async (mode: "initial" | "more" = "initial") => {
     if (!currentVideo?.aweme_id || commentsLoading) return;

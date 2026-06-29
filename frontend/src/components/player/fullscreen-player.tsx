@@ -841,6 +841,7 @@ export function FullscreenPlayer({
     loadComments,
   } = usePlayerComments({
     open,
+    openPanel,
     currentVideo,
     showNavigationNotice,
     clearPanelCloseTimer,
