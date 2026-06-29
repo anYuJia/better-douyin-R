@@ -47,7 +47,7 @@ export function fallbackMessageText(rawContent: string | undefined) {
   const parsed = parseJsonContent(rawContent);
   if (!parsed) return "[未知类型消息]";
   const aweType = numberField(parsed, ["aweType", "awe_type", "type"]);
-  if (aweType === 2701 || aweType === 5 || aweType === 8) return "[视频分享]";
+  if (aweType === 800 || aweType === 2701 || aweType === 5 || aweType === 8) return "[视频分享]";
   if (aweType === 2702 || aweType === 6) return "[评论分享]";
   if (aweType === 2704 || aweType === 7) return "[图片分享]";
   if (aweType === 2705 || aweType === 9) return "[分享卡片]";

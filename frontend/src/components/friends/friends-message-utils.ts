@@ -200,7 +200,7 @@ export function parseSharedMessage(message: LocalChatMessage): SharedMessageCard
   const root = parseJsonContent(content);
   if (!root) return null;
   const aweType = numberField(root, ["aweType", "awe_type", "type"]);
-  const isVideo = aweType === 2701 || aweType === 5 || aweType === 8;
+  const isVideo = aweType === 800 || aweType === 2701 || aweType === 5 || aweType === 8;
   const isComment = aweType === 2702 || aweType === 6;
   const isImage = aweType === 2704 || aweType === 7;
   const isShare = aweType === 2705 || aweType === 9;
@@ -213,14 +213,22 @@ export function parseSharedMessage(message: LocalChatMessage): SharedMessageCard
   if (!isVideo && !isComment && !isImage && !isShare && !isLocation && !isProduct) {
     return null;
   }
-  const title = stringField(root, ["title", "desc", "text", "name"]) || "";
+  const title = stringField(root, ["title", "content_title", "contentTitle", "desc", "text", "name"]) || "";
   const subtitle = stringField(root, ["sub_title", "subtitle", "hint", "anchor_name"]) || "";
-  const coverUrl = stringField(root, ["cover_url", "coverUrl", "image_url", "imageUrl"]) || "";
+  const coverUrl =
+    firstUrl(root.cover_url) ||
+    firstUrl(root.coverUrl) ||
+    stringField(root, ["cover_url", "coverUrl", "image_url", "imageUrl"]) ||
+    "";
   const skey = stringField(root, ["skey"]) || undefined;
-  const avatarUrl = stringField(root, ["avatar_url", "avatarUrl", "author_avatar", "authorAvatar"]) || "";
+  const avatarUrl =
+    firstUrl(root.content_thumb) ||
+    firstUrl(root.contentThumb) ||
+    stringField(root, ["avatar_url", "avatarUrl", "author_avatar", "authorAvatar"]) ||
+    "";
   const authorName = stringField(root, ["author_name", "authorName", "nickname"]) || "";
   const itemId = normalizeSharedItemId(
-    stringField(root, ["item_id", "itemId", "id", "gid", "group_id"]) || "",
+    stringField(root, ["item_id", "itemId", "id", "gid", "group_id", "aweme_id", "awemeId"]) || "",
   );
   let kind: SharedMessageCard["kind"] = "share";
   if (isVideo) kind = "video";
