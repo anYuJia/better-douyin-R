@@ -16,6 +16,7 @@ import {
   Star,
   Circle,
   Users,
+  Bell,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const navItems: NavItem[] = [
   { id: "downloads", label: "我的下载", icon: FolderOpen },
   { id: "liked", label: "点赞视频", icon: Heart },
   { id: "collected", label: "收藏视频", icon: Star },
+  { id: "notices", label: "通知", icon: Bell },
   { id: "friends-status", label: "好友", icon: Users },
   { id: "settings", label: "设置", icon: Settings },
 ];
@@ -73,6 +75,7 @@ export function Sidebar() {
   const setView = useAppStore((s) => s.setView);
   const cookieLoggedIn = useAppStore((s) => s.cookieLoggedIn);
   const friendUnreadCount = useAppStore((s) => s.friendUnreadCount);
+  const noticeUnreadCount = useAppStore((s) => s.noticeUnreadCount);
   const activeCount = useDownloadStore((s) => s.activeCount);
   const [activeAccount, setActiveAccount] = useState<AccountInfo | null>(null);
   const [allAccounts, setAllAccounts] = useState<AccountInfo[]>([]);
@@ -269,6 +272,11 @@ export function Sidebar() {
               {item.id === "friends-status" && friendUnreadCount > 0 && (
                 <Badge variant="default" size="sm" className={cn(collapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
                   {friendUnreadCount > 99 ? "99+" : friendUnreadCount}
+                </Badge>
+              )}
+              {item.id === "notices" && noticeUnreadCount > 0 && (
+                <Badge variant="default" size="sm" className={cn(collapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
+                  {noticeUnreadCount > 99 ? "99+" : noticeUnreadCount}
                 </Badge>
               )}
             </button>

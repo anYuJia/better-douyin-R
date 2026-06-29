@@ -57,6 +57,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   friendUnreadCount: 0,
   setFriendUnreadCount: (count: number) => set({ friendUnreadCount: Math.max(0, count) }),
+
+  noticeUnreadCount: 0,
+  setNoticeUnreadCount: (count: number) => set({ noticeUnreadCount: Math.max(0, count) }),
 }));
 
 // ── Alert Store ──

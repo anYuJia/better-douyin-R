@@ -15,6 +15,7 @@ import { SettingsView } from "@/components/settings/settings-view";
 import { LikedView } from "@/components/liked/liked-view";
 import { CollectedView } from "@/components/collected/collected-view";
 import { FriendsStatusView } from "@/components/friends/friends-status-view";
+import { NoticesView } from "@/components/notices/notices-view";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn, easeConfig } from "@/lib/utils";
 
@@ -77,7 +78,7 @@ export function AppShell() {
           ref={scrollRef}
           className={cn(
             "relative flex-1 overflow-x-hidden rounded-t-[24px]",
-            currentView === "friends-status"
+            currentView === "friends-status" || currentView === "notices"
               ? "flex flex-col overflow-y-hidden pb-1 pt-2"
               : "overflow-y-auto pb-16 pt-2"
           )}
@@ -86,7 +87,7 @@ export function AppShell() {
             {renderView(currentView)}
           </AnimatePresence>
         </div>
-        {currentView !== "friends-status" && <BottomBar />}
+        {currentView !== "friends-status" && currentView !== "notices" && <BottomBar />}
       </main>
 
       {/* Command Popover (Raycast-style) */}
@@ -158,6 +159,12 @@ function renderView(view: string) {
       return (
         <motion.div key="friends-status" {...variants} transition={transition} className="box-border h-full min-h-0 pt-2 pb-0 px-4">
           <FriendsStatusView />
+        </motion.div>
+      );
+    case "notices":
+      return (
+        <motion.div key="notices" {...variants} transition={transition} className="box-border h-full min-h-0 pt-2 pb-0 px-4">
+          <NoticesView />
         </motion.div>
       );
     case "settings":

@@ -2,7 +2,7 @@
 // TypeScript Type Exports
 // ═══════════════════════════════════════════════
 
-export type ViewType = "home" | "search" | "user" | "link" | "recommended" | "downloads" | "liked" | "collected" | "liked-authors" | "friends-status" | "settings";
+export type ViewType = "home" | "search" | "user" | "link" | "recommended" | "downloads" | "liked" | "collected" | "liked-authors" | "notices" | "friends-status" | "settings";
 
 export type ThemeMode = "light" | "dark" | "auto";
 
@@ -34,6 +34,8 @@ export interface AppState {
   setCookieLoggedIn: (loggedIn: boolean, nickname?: string, secUid?: string) => void;
   friendUnreadCount: number;
   setFriendUnreadCount: (count: number) => void;
+  noticeUnreadCount: number;
+  setNoticeUnreadCount: (count: number) => void;
 }
 
 export interface DownloadTask {

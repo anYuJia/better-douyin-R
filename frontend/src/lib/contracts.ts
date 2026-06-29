@@ -326,6 +326,49 @@ export interface FriendChatStateResponse extends ApiResponse {
   unreadCounts?: Record<string, number>;
 }
 
+export interface NoticeUser {
+  uid: string;
+  nickname: string;
+  sec_uid: string;
+  avatar: string;
+  unique_id?: string;
+  follow_status?: number;
+  follower_status?: number;
+  is_verified?: boolean;
+}
+
+export interface NoticeAweme {
+  aweme_id: string;
+  desc: string;
+  cover: string;
+  aweme_type?: number;
+}
+
+export interface NoticeItem {
+  id: string;
+  type: number;
+  type_label: string;
+  create_time: number;
+  has_read: boolean;
+  content: string;
+  merge_count: number;
+  label_text: string;
+  users: NoticeUser[];
+  aweme: NoticeAweme | null;
+  digg_type?: number | null;
+  is_comment_like?: boolean;
+  is_reply?: boolean;
+  comment_text?: string;
+}
+
+export interface NoticesResponse extends ApiResponse {
+  notices?: NoticeItem[];
+  count?: number;
+  unread_count?: number;
+  has_more?: boolean;
+  cursor?: number;
+}
+
 export interface CollectedVideosResponse extends ApiResponse {
   data?: VideoInfo[];
   count?: number;
