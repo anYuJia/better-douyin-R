@@ -252,7 +252,6 @@ impl DouyinClient {
         let videos = if let Some(list) = aweme_list {
             list.iter()
                 .filter_map(|v| self.parse_video_info(v).ok())
-                .filter(client_content::is_valid_recommended_video)
                 .collect()
         } else {
             vec![]

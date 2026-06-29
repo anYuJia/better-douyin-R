@@ -311,6 +311,7 @@ pub struct DownloadTask {
 
 /// 媒体类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum MediaType {
     #[default]
     Video,
