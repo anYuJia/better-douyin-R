@@ -143,6 +143,13 @@ body {
   color: var(--color-text);
   min-height: 100vh;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea, [contenteditable="true"], .select-text, .selectable {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 ::selection {
