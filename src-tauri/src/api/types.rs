@@ -55,6 +55,7 @@ pub struct AuthorInfo {
 pub struct VideoData {
     pub preview_addr: Option<String>, // 直接存储 URL 字符串
     pub play_addr: String,            // 直接存储 URL 字符串
+    pub play_addr_candidates: Vec<String>,
     pub dash_addr: Option<String>,
     pub audio_addr: Option<String>,
     pub play_addr_h264: Option<String>,
@@ -84,6 +85,8 @@ pub struct BitRateInfo {
     pub height: i32,
     pub play_addr: Option<String>,
     pub play_addr_h264: Option<String>,
+    pub play_addr_candidates: Vec<String>,
+    pub play_addr_h264_candidates: Vec<String>,
 }
 
 /// 视频 URL
@@ -216,6 +219,7 @@ pub struct LikedVideoMediaUrl {
 pub struct DownloadMediaItem {
     pub r#type: String,
     pub url: String,
+    pub fallback_urls: Vec<String>,
 }
 
 /// Python 版本 `/api/get_liked_videos` 的作者结构

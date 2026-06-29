@@ -5,7 +5,7 @@ use crate::downloader::events::emit_event;
 use crate::downloader::filename::{
     build_output_dir, generate_filename_with_config, media_type_name,
 };
-use crate::downloader::quality::{select_video_url, DownloadQuality};
+use crate::downloader::quality::{ordered_video_urls, DownloadQuality};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use std::path::PathBuf;
@@ -97,13 +97,6 @@ impl Downloader {
         Ok(task_id)
     }
 
-    fn select_video_download_url(&self, video: &VideoInfo) -> Option<String> {
-        select_video_url(
-            video,
-            DownloadQuality::from_config(&self.config.download_quality),
-        )
-    }
-
     pub(crate) fn collect_download_media_items(&self, video: &VideoInfo) -> Vec<DownloadMediaItem> {
         let mut items = Vec::new();
 
@@ -113,6 +106,7 @@ impl Downloader {
                     items.push(DownloadMediaItem {
                         r#type: "live_photo".to_string(),
                         url: url.clone(),
+                        fallback_urls: Vec::new(),
                     });
                 }
             }
@@ -124,21 +118,28 @@ impl Downloader {
                     items.push(DownloadMediaItem {
                         r#type: "image".to_string(),
                         url: url.clone(),
+                        fallback_urls: Vec::new(),
                     });
                 }
             }
         }
 
         if items.is_empty() {
-            if let Some(url) = self.select_video_download_url(video) {
+            let video_urls = ordered_video_urls(
+                video,
+                DownloadQuality::from_config(&self.config.download_quality),
+            );
+            if let Some(url) = video_urls.first() {
                 items.push(DownloadMediaItem {
                     r#type: "video".to_string(),
-                    url,
+                    url: url.clone(),
+                    fallback_urls: video_urls.iter().skip(1).cloned().collect(),
                 });
             } else if let Some(url) = DouyinClient::get_no_watermark_url(video) {
                 items.push(DownloadMediaItem {
                     r#type: "video".to_string(),
                     url,
+                    fallback_urls: Vec::new(),
                 });
             }
         }

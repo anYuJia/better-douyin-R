@@ -40,6 +40,7 @@ export interface AuthorInfo {
 export interface VideoData {
   preview_addr: string | null;
   play_addr: string;
+  play_addr_candidates?: string[] | null;
   dash_addr?: string | null;
   audio_addr?: string | null;
   play_addr_h264: string | null;
@@ -66,6 +67,8 @@ export interface BitRateInfo {
   height: number;
   play_addr: string | null;
   play_addr_h264: string | null;
+  play_addr_candidates?: string[] | null;
+  play_addr_h264_candidates?: string[] | null;
 }
 
 export interface Statistics {

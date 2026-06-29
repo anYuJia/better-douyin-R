@@ -152,6 +152,16 @@ pub(crate) fn media_type_display(media_type: &str) -> &'static str {
     }
 }
 
+pub(crate) fn media_download_success_action(media_type: &str) -> &'static str {
+    match media_type {
+        "video" => "下载视频",
+        "image" => "下载图片",
+        "live_photo" => "下载Live Photo",
+        "audio" => "下载音频",
+        _ => "下载媒体",
+    }
+}
+
 pub(crate) fn media_extension(media_type: &str, url: &str, content_type: Option<&str>) -> String {
     let normalized_content_type = content_type
         .unwrap_or_default()

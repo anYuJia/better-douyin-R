@@ -1,9 +1,9 @@
 //! 视频客户端逻辑 - 解析分享链接、获取视频详情
 
-use anyhow::{anyhow, Result};
-use std::collections::HashMap;
-use std::sync::LazyLock;
+use anyhow::{Result, anyhow};
 use regex::Regex;
+use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use super::client::DouyinClient;
 use super::types::*;
@@ -34,6 +34,15 @@ fn looks_watermarked_media_url(url: &str) -> bool {
 fn is_dash_video_only_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     lower.contains("media-video") || lower.contains("media_video")
+}
+
+fn looks_like_audio_media_url(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized.ends_with(".mp3")
+        || normalized.ends_with(".m4a")
+        || normalized.ends_with(".aac")
+        || normalized.contains("/ies-music/")
+        || normalized.contains("/music/")
 }
 
 impl DouyinClient {
@@ -327,22 +336,34 @@ impl DouyinClient {
                 .to_string(),
         };
 
-        // 视频数据 - 参考 Python 版本从 bit_rate[0]["play_addr"] 获取视频 URL
+        // 视频数据 - 参考 Python 版本收集多个候选 URL，避免批量下载只拿到音频 URL。
         let video_data = &data["video"];
 
         let dash_addr = Self::select_dash_video_url(video_data);
         let audio_addr = Self::select_dash_audio_url(video_data);
-        let bit_rate_play_addr = video_data["bit_rate"]
+        let bit_rate_play_addr_candidates = video_data["bit_rate"]
             .as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|br| self.get_first_url_opt(&br["play_addr"]));
-        let fallback_play_addr = self.get_first_url(&video_data["play_addr"]);
-        let download_addr = self.get_first_url_opt(&video_data["download_addr"]);
+            .map(|arr| {
+                arr.iter()
+                    .flat_map(|br| self.get_video_urls(&br["play_addr"]))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let bit_rate_play_addr = bit_rate_play_addr_candidates.first().cloned();
+        let fallback_play_addr_candidates = self.get_video_urls(&video_data["play_addr"]);
+        let fallback_play_addr = fallback_play_addr_candidates
+            .first()
+            .cloned()
+            .unwrap_or_default();
+        let play_addr_h264_candidates = self.get_video_urls(&video_data["play_addr_h264"]);
+        let play_addr_lowbr_candidates = self.get_video_urls(&video_data["play_addr_lowbr"]);
+        let download_addr_candidates = self.get_video_urls(&video_data["download_addr"]);
+        let download_addr = download_addr_candidates.first().cloned();
         let primary_no_watermark = [
             bit_rate_play_addr.clone(),
-            self.get_first_url_opt(&video_data["play_addr_h264"]),
+            play_addr_h264_candidates.first().cloned(),
             Some(fallback_play_addr.clone()),
-            self.get_first_url_opt(&video_data["play_addr_lowbr"]),
+            play_addr_lowbr_candidates.first().cloned(),
             download_addr.clone(),
         ]
         .into_iter()
@@ -351,7 +372,9 @@ impl DouyinClient {
             !url.is_empty() && !looks_watermarked_media_url(url) && !is_dash_video_only_url(url)
         });
         let play_addr = primary_no_watermark
-            .or(bit_rate_play_addr.clone().filter(|url| !is_dash_video_only_url(url)))
+            .or(bit_rate_play_addr
+                .clone()
+                .filter(|url| !is_dash_video_only_url(url)))
             .or({
                 if fallback_play_addr.is_empty() || is_dash_video_only_url(&fallback_play_addr) {
                     None
@@ -361,17 +384,32 @@ impl DouyinClient {
             })
             .or(dash_addr.clone())
             .or(bit_rate_play_addr)
-            .or(if fallback_play_addr.is_empty() { None } else { Some(fallback_play_addr) })
+            .or(if fallback_play_addr.is_empty() {
+                None
+            } else {
+                Some(fallback_play_addr)
+            })
             .unwrap_or_default();
+        let mut play_addr_candidates = Vec::new();
+        Self::push_unique_video_urls(&mut play_addr_candidates, std::slice::from_ref(&play_addr));
+        Self::push_unique_video_urls(&mut play_addr_candidates, &bit_rate_play_addr_candidates);
+        Self::push_unique_video_urls(&mut play_addr_candidates, &play_addr_h264_candidates);
+        Self::push_unique_video_urls(&mut play_addr_candidates, &fallback_play_addr_candidates);
+        Self::push_unique_video_urls(&mut play_addr_candidates, &play_addr_lowbr_candidates);
+        Self::push_unique_video_urls(&mut play_addr_candidates, &download_addr_candidates);
+        if let Some(url) = dash_addr.as_ref() {
+            Self::push_unique_video_urls(&mut play_addr_candidates, std::slice::from_ref(url));
+        }
 
         let video = VideoData {
             preview_addr: Some(play_addr.clone()),
             play_addr: play_addr.clone(),
+            play_addr_candidates,
             dash_addr,
             audio_addr,
-            play_addr_h264: self.get_first_url_opt(&video_data["play_addr_h264"]),
-            play_addr_lowbr: self.get_first_url_opt(&video_data["play_addr_lowbr"]),
-            download_addr: self.get_first_url_opt(&video_data["download_addr"]),
+            play_addr_h264: play_addr_h264_candidates.first().cloned(),
+            play_addr_lowbr: play_addr_lowbr_candidates.first().cloned(),
+            download_addr,
             cover: self.get_first_url(&video_data["cover"]["url_list"]),
             dynamic_cover: self.get_first_url(&video_data["dynamic_cover"]["url_list"]),
             origin_cover: self.get_first_url(&video_data["origin_cover"]["url_list"]),
@@ -382,6 +420,8 @@ impl DouyinClient {
             bit_rate: video_data["bit_rate"].as_array().map(|arr| {
                 arr.iter()
                     .map(|b| BitRateInfo {
+                        play_addr_candidates: self.get_video_urls(&b["play_addr"]),
+                        play_addr_h264_candidates: self.get_video_urls(&b["play_addr_h264"]),
                         gear_name: b["gear_name"].as_str().unwrap_or_default().to_string(),
                         format: b["format"].as_str().unwrap_or_default().to_string(),
                         bit_rate: b["bit_rate"].as_i64().unwrap_or(0),
@@ -390,8 +430,8 @@ impl DouyinClient {
                         data_size: b["data_size"].as_i64().unwrap_or(0),
                         width: b["width"].as_i64().unwrap_or(0) as i32,
                         height: b["height"].as_i64().unwrap_or(0) as i32,
-                        play_addr: self.get_first_url_opt(&b["play_addr"]),
-                        play_addr_h264: self.get_first_url_opt(&b["play_addr_h264"]),
+                        play_addr: self.get_first_video_url_opt(&b["play_addr"]),
+                        play_addr_h264: self.get_first_video_url_opt(&b["play_addr_h264"]),
                     })
                     .collect()
             }),
@@ -558,6 +598,72 @@ impl DouyinClient {
 
     pub(super) fn get_first_url(&self, data: &serde_json::Value) -> String {
         self.get_first_url_opt(data).unwrap_or_default()
+    }
+
+    pub(super) fn get_first_video_url_opt(&self, data: &serde_json::Value) -> Option<String> {
+        self.get_video_urls(data).into_iter().next()
+    }
+
+    pub(super) fn get_video_urls(&self, data: &serde_json::Value) -> Vec<String> {
+        let mut urls = Vec::new();
+        let mut seen = HashSet::new();
+        Self::collect_video_urls(data, &mut urls, &mut seen);
+        urls
+    }
+
+    fn collect_video_urls(
+        data: &serde_json::Value,
+        urls: &mut Vec<String>,
+        seen: &mut HashSet<String>,
+    ) {
+        if let Some(value) = data.as_str().map(str::trim).filter(|value| {
+            !value.is_empty()
+                && !looks_like_audio_media_url(value)
+                && (value.starts_with("http://") || value.starts_with("https://"))
+        }) {
+            if seen.insert(value.to_string()) {
+                urls.push(value.to_string());
+            }
+            return;
+        }
+
+        if let Some(arr) = data.as_array() {
+            for value in arr {
+                Self::collect_video_urls(value, urls, seen);
+            }
+            return;
+        }
+
+        if let Some(obj) = data.as_object() {
+            for key in [
+                "url_list",
+                "url",
+                "main_url",
+                "backup_url",
+                "fallback_url",
+                "play_addr",
+                "download_addr",
+                "download_url",
+                "display_url",
+                "uri",
+            ] {
+                if let Some(value) = obj.get(key) {
+                    Self::collect_video_urls(value, urls, seen);
+                }
+            }
+        }
+    }
+
+    fn push_unique_video_urls(target: &mut Vec<String>, urls: &[String]) {
+        for url in urls {
+            let trimmed = url.trim();
+            if !trimmed.is_empty()
+                && !target.iter().any(|existing| existing == trimmed)
+                && !looks_like_audio_media_url(trimmed)
+            {
+                target.push(trimmed.to_string());
+            }
+        }
     }
 
     pub(super) fn get_avatar_url(&self, data: &serde_json::Value, keys: &[&str]) -> String {
@@ -769,6 +875,7 @@ impl DouyinClient {
             if !clean_url.is_empty()
                 && !normalized.contains("playwm")
                 && !normalized.contains("watermark=1")
+                && !looks_like_audio_media_url(&clean_url)
                 && !normalized.contains("media-video")
                 && !normalized.contains("media_video")
             {
@@ -881,6 +988,62 @@ mod tests {
         assert_eq!(
             DouyinClient::select_dash_audio_url(&array_shape).as_deref(),
             Some("https://example.com/audio-array.mp4")
+        );
+    }
+
+    #[test]
+    fn parse_video_info_keeps_video_candidates_after_audio_like_urls() {
+        let client = DouyinClient::new(AppConfig::default()).expect("client");
+        let post = json!({
+            "aweme_id": "7656260748977151333",
+            "desc": "video post",
+            "author": {},
+            "statistics": {},
+            "status": {},
+            "video": {
+                "play_addr": {
+                    "url_list": [
+                        "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/7650434679425829659.mp3",
+                        "https://example.com/play-video.mp4"
+                    ]
+                },
+                "bit_rate": [{
+                    "gear_name": "720p",
+                    "bit_rate": 2000,
+                    "width": 1280,
+                    "height": 720,
+                    "play_addr": {
+                        "url_list": [
+                            "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/audio.mp3",
+                            "https://example.com/bitrate-video.mp4"
+                        ]
+                    }
+                }]
+            }
+        });
+
+        let video = client.parse_video_info(&post).expect("video info");
+
+        assert_eq!(
+            video.video.play_addr,
+            "https://example.com/bitrate-video.mp4"
+        );
+        assert_eq!(
+            video.video.play_addr_candidates,
+            vec![
+                "https://example.com/bitrate-video.mp4".to_string(),
+                "https://example.com/play-video.mp4".to_string()
+            ]
+        );
+        let bit_rate = video
+            .video
+            .bit_rate
+            .as_ref()
+            .and_then(|items| items.first())
+            .expect("bit rate");
+        assert_eq!(
+            bit_rate.play_addr_candidates,
+            vec!["https://example.com/bitrate-video.mp4".to_string()]
         );
     }
 

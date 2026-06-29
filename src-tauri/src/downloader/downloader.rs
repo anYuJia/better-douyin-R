@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn selection_skips_dash_video_only_candidates() {
+    fn selection_keeps_dash_video_only_candidates_as_fallbacks() {
         let mut video = VideoInfo::default();
         video.video.play_addr = "https://example.com/progressive.mp4".to_string();
         video.video.bit_rate = Some(vec![BitRateInfo {
@@ -451,6 +451,25 @@ mod tests {
         assert_eq!(
             select_video_url(&video, DownloadQuality::TargetHeight(2160)).as_deref(),
             Some("https://example.com/progressive.mp4")
+        );
+        assert!(super::super::quality::ordered_video_urls(
+            &video,
+            DownloadQuality::TargetHeight(2160)
+        )
+        .iter()
+        .any(|url| url.contains("media-video-avc1")));
+    }
+
+    #[test]
+    fn selection_skips_audio_music_candidates() {
+        let mut video = VideoInfo::default();
+        video.video.play_addr =
+            "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/123.mp3".to_string();
+        video.video.play_addr_h264 = Some("https://example.com/video.mp4".to_string());
+
+        assert_eq!(
+            select_video_url(&video, DownloadQuality::Auto).as_deref(),
+            Some("https://example.com/video.mp4")
         );
     }
 

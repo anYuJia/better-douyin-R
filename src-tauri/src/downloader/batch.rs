@@ -3,7 +3,7 @@
 use crate::api::types::{DownloadStatus, DownloadTask, VideoInfo};
 use crate::config::AppConfig;
 use crate::history::HistoryManager;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Local;
 use futures::StreamExt;
 use reqwest::header::CONTENT_TYPE;
@@ -13,14 +13,14 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use super::completion::record_completed_download;
 use super::downloader::{Downloader, DownloaderEvent};
 use super::events::{emit_event, estimate_batch_eta};
 use super::filename::{
     build_output_dir, create_unique_output_file, generate_filename_with_config, media_extension,
-    media_type_name, truncate_chars,
+    media_download_success_action, media_type_name, truncate_chars,
 };
 use super::http::build_download_headers;
 use super::media_group::collect_media_items;
@@ -197,6 +197,14 @@ pub(crate) async fn download_single_video(
                 last_emit = Instant::now();
             }
         }
+
+        log::info!(
+            "{} ({}/{}) 成功：{}",
+            media_download_success_action(media.r#type.as_str()),
+            index + 1,
+            total_files,
+            file_path.to_string_lossy()
+        );
 
         downloaded_files.push(file_path);
     }

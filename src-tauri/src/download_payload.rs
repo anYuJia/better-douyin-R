@@ -1,7 +1,10 @@
 //! 下载 payload 合并与候选质量分析
 
-use crate::api::{BitRateInfo, VideoInfo};
+use crate::api::{BitRateInfo, DownloadMediaItem, MediaType, VideoInfo};
 use crate::downloader::{available_video_quality_height, video_quality_candidate_count};
+use crate::media_utils_types::{
+    MEDIA_TYPE_AUDIO, MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO,
+};
 use std::collections::HashSet;
 
 pub(crate) fn video_info_has_download_candidates(video: &VideoInfo) -> bool {
@@ -49,6 +52,86 @@ pub(crate) fn video_info_from_download_payload(payload: &serde_json::Value) -> O
         .filter(video_info_has_download_candidates)
 }
 
+pub(crate) fn merge_download_media_items_into_video_info(
+    video: &mut VideoInfo,
+    media_items: &[DownloadMediaItem],
+) {
+    let mut image_urls = video.image_urls.take().unwrap_or_default();
+    let mut live_photo_urls = video.live_photo_urls.take().unwrap_or_default();
+    let mut has_video = false;
+
+    for media in media_items {
+        match media.r#type.as_str() {
+            MEDIA_TYPE_IMAGE => merge_url_list(&mut image_urls, std::slice::from_ref(&media.url)),
+            MEDIA_TYPE_LIVE_PHOTO => {
+                merge_url_list(&mut live_photo_urls, std::slice::from_ref(&media.url));
+            }
+            MEDIA_TYPE_VIDEO => {
+                has_video = true;
+                merge_url_list(
+                    &mut video.video.play_addr_candidates,
+                    std::slice::from_ref(&media.url),
+                );
+                merge_url_list(&mut video.video.play_addr_candidates, &media.fallback_urls);
+            }
+            _ => {}
+        }
+    }
+
+    video.image_urls = if image_urls.is_empty() {
+        None
+    } else {
+        Some(image_urls)
+    };
+    video.live_photo_urls = if live_photo_urls.is_empty() {
+        None
+    } else {
+        Some(live_photo_urls)
+    };
+    video.is_image = video
+        .image_urls
+        .as_ref()
+        .map(|urls| !urls.is_empty())
+        .unwrap_or(false);
+    video.has_live_photo = video
+        .live_photo_urls
+        .as_ref()
+        .map(|urls| !urls.is_empty())
+        .unwrap_or(false);
+
+    if video.has_live_photo && video.is_image {
+        video.media_type = MediaType::Mixed;
+    } else if video.has_live_photo {
+        video.media_type = MediaType::LivePhoto;
+    } else if video.is_image {
+        video.media_type = MediaType::Image;
+    } else if has_video {
+        video.media_type = MediaType::Video;
+    } else if media_items
+        .iter()
+        .any(|media| media.r#type == MEDIA_TYPE_AUDIO)
+    {
+        video.media_type = MediaType::Audio;
+    }
+
+    for media in media_items
+        .iter()
+        .filter(|media| media.r#type == MEDIA_TYPE_VIDEO)
+    {
+        merge_url_list(
+            &mut video.video.play_addr_candidates,
+            std::slice::from_ref(&media.url),
+        );
+        merge_url_list(&mut video.video.play_addr_candidates, &media.fallback_urls);
+    }
+
+    if video.video.play_addr.trim().is_empty() {
+        if let Some(url) = video.video.play_addr_candidates.first() {
+            video.video.play_addr = url.clone();
+        }
+    }
+}
+
 fn merge_non_empty(target: &mut String, source: &str) {
     if target.trim().is_empty() && !source.trim().is_empty() {
         *target = source.trim().to_string();
@@ -71,15 +154,39 @@ fn merge_optional_url(target: &mut Option<String>, source: &Option<String>) {
     }
 }
 
+fn merge_url_list(target: &mut Vec<String>, source: &[String]) {
+    for url in source
+        .iter()
+        .map(|url| url.trim())
+        .filter(|url| !url.is_empty())
+    {
+        if !target.iter().any(|existing| existing == url) {
+            target.push(url.to_string());
+        }
+    }
+}
+
 fn bit_rate_download_key(bit_rate: &BitRateInfo) -> String {
-    let url_key = [
+    let mut url_parts = [
         bit_rate.play_addr_h264.as_deref().unwrap_or("").trim(),
         bit_rate.play_addr.as_deref().unwrap_or("").trim(),
     ]
     .into_iter()
     .filter(|value| !value.is_empty())
-    .collect::<Vec<_>>()
-    .join("|");
+    .map(str::to_string)
+    .collect::<Vec<_>>();
+    for url in bit_rate
+        .play_addr_h264_candidates
+        .iter()
+        .chain(bit_rate.play_addr_candidates.iter())
+        .map(|url| url.trim())
+        .filter(|url| !url.is_empty())
+    {
+        if !url_parts.iter().any(|existing| existing == url) {
+            url_parts.push(url.to_string());
+        }
+    }
+    let url_key = url_parts.join("|");
     if !url_key.is_empty() {
         return url_key;
     }
@@ -105,6 +212,10 @@ fn merge_video_download_candidates(target: &mut VideoInfo, source: &VideoInfo) {
     }
 
     merge_non_empty(&mut target.video.play_addr, &source.video.play_addr);
+    merge_url_list(
+        &mut target.video.play_addr_candidates,
+        &source.video.play_addr_candidates,
+    );
     merge_optional_url(&mut target.video.preview_addr, &source.video.preview_addr);
     merge_optional_url(&mut target.video.dash_addr, &source.video.dash_addr);
     merge_optional_url(&mut target.video.audio_addr, &source.video.audio_addr);
@@ -179,8 +290,12 @@ pub(crate) fn combined_video_info_for_download(
         aweme_id,
         fresh_video.map(available_video_quality_height).unwrap_or(0),
         fresh_video.map(video_quality_candidate_count).unwrap_or(0),
-        payload_video.map(available_video_quality_height).unwrap_or(0),
-        payload_video.map(video_quality_candidate_count).unwrap_or(0),
+        payload_video
+            .map(available_video_quality_height)
+            .unwrap_or(0),
+        payload_video
+            .map(video_quality_candidate_count)
+            .unwrap_or(0),
         available_video_quality_height(&combined),
         video_quality_candidate_count(&combined)
     );
@@ -258,5 +373,38 @@ mod tests {
 
         assert_eq!(available_video_quality_height(&combined), 1080);
         assert_eq!(video_quality_candidate_count(&combined), 2);
+    }
+
+    #[test]
+    fn merge_download_media_items_marks_payload_as_image_post() {
+        let mut video = VideoInfo::default();
+        video.aweme_id = "123".to_string();
+        video.video.play_addr = "https://example.com/audio-like-video-field".to_string();
+
+        merge_download_media_items_into_video_info(
+            &mut video,
+            &[
+                DownloadMediaItem {
+                    r#type: MEDIA_TYPE_IMAGE.to_string(),
+                    url: "https://example.com/1.jpeg".to_string(),
+                    fallback_urls: Vec::new(),
+                },
+                DownloadMediaItem {
+                    r#type: MEDIA_TYPE_IMAGE.to_string(),
+                    url: "https://example.com/2.jpeg".to_string(),
+                    fallback_urls: Vec::new(),
+                },
+            ],
+        );
+
+        assert_eq!(video.media_type, MediaType::Image);
+        assert!(video.is_image);
+        assert_eq!(
+            video.image_urls,
+            Some(vec![
+                "https://example.com/1.jpeg".to_string(),
+                "https://example.com/2.jpeg".to_string()
+            ])
+        );
     }
 }

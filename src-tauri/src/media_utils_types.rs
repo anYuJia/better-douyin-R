@@ -147,7 +147,8 @@ mod tests {
                 "",
                 &[DownloadMediaItem {
                     r#type: "image".into(),
-                    url: "".into()
+                    url: "".into(),
+                    fallback_urls: Vec::new()
                 }]
             ),
             MediaType::Image
@@ -157,7 +158,8 @@ mod tests {
                 "",
                 &[DownloadMediaItem {
                     r#type: "live_photo".into(),
-                    url: "".into()
+                    url: "".into(),
+                    fallback_urls: Vec::new()
                 }]
             ),
             MediaType::LivePhoto
@@ -168,11 +170,13 @@ mod tests {
                 &[
                     DownloadMediaItem {
                         r#type: "live_photo".into(),
-                        url: "".into()
+                        url: "".into(),
+                        fallback_urls: Vec::new()
                     },
                     DownloadMediaItem {
                         r#type: "image".into(),
-                        url: "".into()
+                        url: "".into(),
+                        fallback_urls: Vec::new()
                     }
                 ]
             ),

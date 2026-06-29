@@ -1,6 +1,9 @@
 use crate::api::VideoInfo;
 use crate::api_helpers::*;
-use crate::download_payload::{combined_video_info_for_download, video_info_from_download_payload};
+use crate::download_payload::{
+    combined_video_info_for_download, merge_download_media_items_into_video_info,
+    video_info_from_download_payload,
+};
 use crate::friend_chat::coerce_i64;
 use crate::media_utils::*;
 use crate::state::AppState;
@@ -587,7 +590,10 @@ pub(crate) async fn add_download_task(
 
 /// 开始下载
 #[tauri::command]
-pub(crate) async fn start_download(state: State<'_, AppState>, task_id: String) -> Result<(), String> {
+pub(crate) async fn start_download(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<(), String> {
     let downloader_guard = state.downloader.lock().await;
     let downloader = downloader_guard
         .as_ref()
@@ -601,7 +607,9 @@ pub(crate) async fn start_download(state: State<'_, AppState>, task_id: String) 
 
 /// 获取下载任务列表
 #[tauri::command]
-pub(crate) async fn get_download_tasks(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub(crate) async fn get_download_tasks(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     let downloader_guard = state.downloader.lock().await;
     let downloader = downloader_guard
         .as_ref()
@@ -638,7 +646,10 @@ pub(crate) async fn cancel_download_task(
 
 /// 删除下载任务
 #[tauri::command]
-pub(crate) async fn remove_download_task(state: State<'_, AppState>, task_id: String) -> Result<(), String> {
+pub(crate) async fn remove_download_task(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<(), String> {
     let downloader_guard = state.downloader.lock().await;
     let downloader = downloader_guard
         .as_ref()
@@ -705,7 +716,10 @@ pub(crate) async fn download_videos(
 ) -> Result<serde_json::Value, String> {
     let mut parsed_videos = Vec::new();
     for video_val in videos {
-        if let Some(video_info) = video_info_from_download_payload(&video_val) {
+        let raw_media_type = download_media_type_from_payload(&video_val);
+        let media_items = parse_download_media_items(&video_val, &raw_media_type);
+        if let Some(mut video_info) = video_info_from_download_payload(&video_val) {
+            merge_download_media_items_into_video_info(&mut video_info, &media_items);
             parsed_videos.push(video_info);
         }
     }

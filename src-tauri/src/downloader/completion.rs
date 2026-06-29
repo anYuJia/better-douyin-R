@@ -7,7 +7,8 @@ use crate::downloader::downloaded_cache::{
 use crate::downloader::downloader::{Downloader, DownloaderEvent};
 use crate::downloader::events::emit_event;
 use crate::downloader::filename::{
-    create_unique_output_file, media_extension, media_type_name, truncate_chars,
+    create_unique_output_file, media_download_success_action, media_extension, media_type_name,
+    truncate_chars,
 };
 use crate::downloader::http::build_download_headers;
 use crate::downloader::media_request::request_media_with_fallback;
@@ -278,6 +279,14 @@ impl Downloader {
                     current_task.downloaded_size = total_downloaded_size;
                 }
             }
+
+            log::info!(
+                "{} ({}/{}) 成功：{}",
+                media_download_success_action(media.r#type.as_str()),
+                index + 1,
+                task.media_urls.len(),
+                file_path.to_string_lossy()
+            );
         }
 
         // 更新任务状态

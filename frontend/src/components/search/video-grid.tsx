@@ -13,9 +13,10 @@ import {
 import { VideoDetailModal } from "@/components/modals/video-detail";
 import { FullscreenPlayer } from "@/components/player/fullscreen-player";
 import { useDownloads } from "@/hooks/use-downloads";
+import { useDownloadStore, useLogStore } from "@/stores/app-store";
 import { useSearchStore } from "@/stores/search-store";
 import { formatNumber } from "@/lib/utils";
-import type { VideoInfo } from "@/lib/tauri";
+import { downloadUserVideos, type VideoInfo } from "@/lib/tauri";
 import { videoAuthorToUserInfo } from "@/lib/video-author";
 
 export function VideoGrid() {
@@ -28,6 +29,8 @@ export function VideoGrid() {
   const loadVideos = useSearchStore((s) => s.loadVideos);
   const loadMore = useSearchStore((s) => s.loadMore);
   const { downloadVideo, downloadBatch } = useDownloads();
+  const addLog = useLogStore((s) => s.addLog);
+  const updateTask = useDownloadStore((s) => s.updateTask);
   const [detailVideo, setDetailVideo] = useState<VideoInfo | null>(null);
   const [playerIndex, setPlayerIndex] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -69,6 +72,44 @@ export function VideoGrid() {
       if (value) setSelectedIds(new Set());
       return !value;
     });
+  };
+  const handleDownloadAll = async () => {
+    if (!currentUser || videos.length === 0) return;
+
+    if (selectedVideos.length > 0) {
+      await downloadBatch(selectedVideos, currentUser.nickname || "搜索作品");
+      return;
+    }
+
+    try {
+      addLog(`开始下载 ${currentUser.nickname} 的全部作品`, "info");
+      const result = await downloadUserVideos(
+        currentUser.sec_uid,
+        currentUser.nickname,
+        currentUser.aweme_count || videos.length
+      );
+      if (!result.success) {
+        throw new Error(result.message || "批量下载启动失败");
+      }
+      if (result.task_id) {
+        const totalVideos = result.total_videos ?? currentUser.aweme_count ?? videos.length;
+        updateTask({
+          id: result.task_id,
+          filename: `${result.nickname || currentUser.nickname || "用户"} 全部作品`,
+          progress: 0,
+          status: "downloading",
+          isBatch: true,
+          mediaCount: totalVideos,
+          fileTotal: totalVideos,
+          fileIndex: 0,
+          startTime: Date.now(),
+          speed: 0,
+        });
+      }
+      addLog(result.message || `开始下载 ${currentUser.nickname} 的全部作品`, "success");
+    } catch (error) {
+      addLog(error instanceof Error ? error.message : "批量下载启动失败", "error");
+    }
   };
 
   useEffect(() => {
@@ -139,7 +180,7 @@ export function VideoGrid() {
             <Button
               variant={selectedVideos.length > 0 ? "success-outline" : "default"}
               size="sm"
-              onClick={() => void downloadBatch(selectedVideos.length > 0 ? selectedVideos : videos, currentUser?.nickname || "搜索作品")}
+              onClick={() => void handleDownloadAll()}
               disabled={videos.length === 0}
             >
               <Download className="w-3.5 h-3.5" />

@@ -1,13 +1,13 @@
 use crate::api::DownloadMediaItem;
 use crate::api::VideoInfo;
-use crate::media_utils_types::{
-    MEDIA_TYPE_AUDIO, MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO, MEDIA_TYPE_VIDEO,
-    is_dash_video_only_url,
-};
+use crate::media_utils_extract::extract_payload_url;
 use crate::media_utils_normalize::{
     clean_video_download_url, is_watermark_video_url, no_watermark_video_url,
 };
-use crate::media_utils_extract::extract_payload_url;
+use crate::media_utils_types::{
+    is_dash_video_only_url, MEDIA_TYPE_AUDIO, MEDIA_TYPE_IMAGE, MEDIA_TYPE_LIVE_PHOTO,
+    MEDIA_TYPE_VIDEO,
+};
 
 pub fn download_media_type_from_payload(payload: &serde_json::Value) -> String {
     if let Some(value) = payload.get("raw_media_type") {
@@ -201,6 +201,7 @@ fn push_download_item(
     items.push(DownloadMediaItem {
         r#type: media_type,
         url,
+        fallback_urls: Vec::new(),
     });
 }
 
@@ -214,6 +215,7 @@ pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaIt
                 items.push(DownloadMediaItem {
                     r#type: MEDIA_TYPE_LIVE_PHOTO.to_string(),
                     url: url.clone(),
+                    fallback_urls: Vec::new(),
                 });
             }
         }
@@ -225,6 +227,7 @@ pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaIt
                 items.push(DownloadMediaItem {
                     r#type: MEDIA_TYPE_IMAGE.to_string(),
                     url: url.clone(),
+                    fallback_urls: Vec::new(),
                 });
             }
         }
@@ -237,6 +240,7 @@ pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaIt
             items.push(DownloadMediaItem {
                 r#type: MEDIA_TYPE_VIDEO.to_string(),
                 url,
+                fallback_urls: Vec::new(),
             });
         }
     }

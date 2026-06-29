@@ -54,6 +54,7 @@ pub(crate) fn no_watermark_video_url(video: &VideoInfo) -> Option<String> {
         let clean_url = clean_video_download_url(url);
         if !clean_url.is_empty()
             && !is_watermark_video_url(&clean_url)
+            && !is_audio_media_url(&clean_url)
             && !is_dash_video_only_url(&clean_url)
         {
             return Some(clean_url);
@@ -63,7 +64,10 @@ pub(crate) fn no_watermark_video_url(video: &VideoInfo) -> Option<String> {
     // Fallback: If no non-DASH urls found, allow dash_addr as a fallback
     if let Some(dash_url) = &video.video.dash_addr {
         let clean_url = clean_video_download_url(dash_url);
-        if !clean_url.is_empty() && !is_watermark_video_url(&clean_url) {
+        if !clean_url.is_empty()
+            && !is_watermark_video_url(&clean_url)
+            && !is_audio_media_url(&clean_url)
+        {
             return Some(clean_url);
         }
     }
@@ -79,12 +83,24 @@ pub(crate) fn no_watermark_video_url(video: &VideoInfo) -> Option<String> {
     .flatten()
     {
         let clean_url = clean_video_download_url(url);
-        if !clean_url.is_empty() && !is_watermark_video_url(&clean_url) {
+        if !clean_url.is_empty()
+            && !is_watermark_video_url(&clean_url)
+            && !is_audio_media_url(&clean_url)
+        {
             return Some(clean_url);
         }
     }
 
     None
+}
+
+fn is_audio_media_url(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized.ends_with(".mp3")
+        || normalized.ends_with(".m4a")
+        || normalized.ends_with(".aac")
+        || normalized.contains("/ies-music/")
+        || normalized.contains("/music/")
 }
 
 #[cfg(test)]

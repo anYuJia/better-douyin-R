@@ -221,7 +221,7 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
             return;
         };
         let url = clean_video_download_url(&url);
-        if url.trim().is_empty() || !seen.insert(url.clone()) {
+        if url.trim().is_empty() || is_audio_url(&url) || !seen.insert(url.clone()) {
             return;
         }
         let is_dash = is_dash_video_only_url(&url);
@@ -269,6 +269,17 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
         false,
         true,
     );
+    for url in &video.video.play_addr_candidates {
+        push_candidate(
+            Some(url.clone()),
+            0,
+            top_level_height,
+            false,
+            false,
+            false,
+            false,
+        );
+    }
 
     if let Some(bit_rates) = &video.video.bit_rate {
         for bit_rate in bit_rates {
@@ -276,6 +287,17 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
             let height = bit_rate_height(bit_rate);
             let h264_metric = if metric > 0 { metric + 1 } else { 0 };
 
+            for url in &bit_rate.play_addr_h264_candidates {
+                push_candidate(
+                    Some(url.clone()),
+                    h264_metric,
+                    height,
+                    true,
+                    true,
+                    false,
+                    false,
+                );
+            }
             push_candidate(
                 bit_rate.play_addr_h264.clone(),
                 h264_metric,
@@ -285,6 +307,17 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
                 false,
                 false,
             );
+            for url in &bit_rate.play_addr_candidates {
+                push_candidate(
+                    Some(url.clone()),
+                    metric,
+                    height,
+                    !bit_rate.is_h265,
+                    true,
+                    false,
+                    false,
+                );
+            }
             push_candidate(
                 bit_rate.play_addr.clone(),
                 metric,
@@ -316,9 +349,7 @@ pub(crate) fn collect_video_candidates(video: &VideoInfo) -> Vec<VideoCandidate>
         false,
     );
 
-    if candidates.is_empty() {
-        candidates = dash_fallbacks;
-    }
+    candidates.extend(dash_fallbacks);
 
     candidates
 }
@@ -415,6 +446,16 @@ pub(crate) fn is_watermark_url(url: &str) -> bool {
         || normalized.contains("/aweme/v1/playwm")
 }
 
+fn is_audio_url(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized.ends_with(".mp3")
+        || normalized.ends_with(".m4a")
+        || normalized.ends_with(".aac")
+        || normalized.contains("/ies-music/")
+        || normalized.contains("/music/")
+}
+
+#[cfg(test)]
 pub(crate) fn select_video_url(video: &VideoInfo, quality: DownloadQuality) -> Option<String> {
     ordered_video_urls(video, quality).into_iter().next()
 }
@@ -482,6 +523,16 @@ pub(crate) fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) ->
     if clean_candidates.is_empty() {
         return Vec::new();
     }
+    let primary_candidates = clean_candidates
+        .iter()
+        .copied()
+        .filter(|candidate| !is_dash_video_only_url(&candidate.url))
+        .collect::<Vec<_>>();
+    let selectable_candidates: Vec<&VideoCandidate> = if primary_candidates.is_empty() {
+        clean_candidates.clone()
+    } else {
+        primary_candidates
+    };
 
     let mut ordered = Vec::new();
     let mut seen = HashSet::new();
@@ -493,27 +544,27 @@ pub(crate) fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) ->
         }
     };
 
-    let download_addr = clean_candidates
+    let download_addr = selectable_candidates
         .iter()
         .copied()
         .find(|c| c.is_download_addr);
-    let h264_best = clean_candidates
+    let h264_best = selectable_candidates
         .iter()
         .copied()
         .filter(|c| c.is_h264 && !c.is_lowbr)
         .max_by_key(|c| c.metric);
-    let highest_metric = clean_candidates
+    let highest_metric = selectable_candidates
         .iter()
         .copied()
         .filter(|c| c.metric > 0 && !c.is_download_addr && !c.is_lowbr)
         .max_by_key(|c| c.metric);
-    let lowbr = clean_candidates.iter().copied().find(|c| c.is_lowbr);
-    let smallest_metric = clean_candidates
+    let lowbr = selectable_candidates.iter().copied().find(|c| c.is_lowbr);
+    let smallest_metric = selectable_candidates
         .iter()
         .copied()
         .filter(|c| c.metric > 0)
         .min_by_key(|c| c.metric);
-    let first = clean_candidates.first().copied();
+    let first = selectable_candidates.first().copied();
 
     match quality {
         DownloadQuality::Auto => {
@@ -541,9 +592,9 @@ pub(crate) fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) ->
             push(first);
         }
         DownloadQuality::TargetHeight(target_height) => {
-            let target_best = best_target_candidate(&clean_candidates, target_height);
+            let target_best = best_target_candidate(&selectable_candidates, target_height);
             let target_h264 = target_best.and_then(|selected| {
-                clean_candidates.iter().copied().find(|candidate| {
+                selectable_candidates.iter().copied().find(|candidate| {
                     candidate.is_h264
                         && candidate.height == selected.height
                         && !candidate.is_lowbr
@@ -559,7 +610,7 @@ pub(crate) fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) ->
         }
     }
 
-    let mut rest = clean_candidates.to_vec();
+    let mut rest = selectable_candidates.clone();
     match quality {
         DownloadQuality::TargetHeight(target_height) => {
             rest.sort_by(|a, b| {
@@ -585,6 +636,11 @@ pub(crate) fn ordered_video_urls(video: &VideoInfo, quality: DownloadQuality) ->
     }
     for candidate in rest {
         push(Some(candidate));
+    }
+    for candidate in &clean_candidates {
+        if is_dash_video_only_url(&candidate.url) {
+            push(Some(candidate));
+        }
     }
 
     let quality_label = match quality {

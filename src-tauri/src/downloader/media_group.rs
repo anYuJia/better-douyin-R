@@ -15,11 +15,12 @@ use super::completion::record_completed_download;
 use super::downloader::DownloadRuntime;
 use super::events::{emit_event, wait_if_paused};
 use super::filename::{
-    create_unique_output_file, media_extension, media_type_display, media_type_name, truncate_chars,
+    create_unique_output_file, media_download_success_action, media_extension, media_type_display,
+    media_type_name, truncate_chars,
 };
 use super::http::build_download_headers;
 use super::media_request::request_media_with_fallback;
-use super::quality::{select_video_url, DownloadQuality};
+use super::quality::{ordered_video_urls, DownloadQuality};
 
 pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
     let mut items = Vec::new();
@@ -31,6 +32,7 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
                 items.push(DownloadMediaItem {
                     r#type: "live_photo".to_string(),
                     url: url.clone(),
+                    fallback_urls: Vec::new(),
                 });
             }
         }
@@ -47,6 +49,7 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
                 items.push(DownloadMediaItem {
                     r#type: "image".to_string(),
                     url: url.clone(),
+                    fallback_urls: Vec::new(),
                 });
             }
         }
@@ -58,15 +61,18 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
 
     // 视频
     let quality = DownloadQuality::from_config(&config.download_quality);
-    if let Some(url) = select_video_url(video, quality) {
+    let video_urls = ordered_video_urls(video, quality);
+    if let Some(url) = video_urls.first() {
         items.push(DownloadMediaItem {
             r#type: "video".to_string(),
-            url,
+            url: url.clone(),
+            fallback_urls: video_urls.iter().skip(1).cloned().collect(),
         });
     } else if let Some(url) = DouyinClient::get_no_watermark_url(video) {
         items.push(DownloadMediaItem {
             r#type: "video".to_string(),
             url,
+            fallback_urls: Vec::new(),
         });
     }
 
@@ -313,15 +319,23 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
                 "task_id": task.id,
                 "display_name": display_name,
                 "message": format!(
-                    "✅ 第 {}/{} 个文件下载成功 ({})",
+                    "{} ({}/{}) 成功：{}",
+                    media_download_success_action(media.r#type.as_str()),
                     index + 1,
                     media_count,
-                    file_path.file_name().and_then(|value| value.to_str()).unwrap_or_default()
+                    file_path.to_string_lossy()
                 ),
                 "timestamp": Local::now().format("%H:%M:%S").to_string()
             }),
         )
         .await;
+        log::info!(
+            "{} ({}/{}) 成功：{}",
+            media_download_success_action(media.r#type.as_str()),
+            index + 1,
+            media_count,
+            file_path.to_string_lossy()
+        );
     }
 
     {

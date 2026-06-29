@@ -1,15 +1,42 @@
-use crate::api::types::VideoInfo;
 use crate::api::DouyinClient;
+use crate::api::types::VideoInfo;
 use crate::downloader::batch::download_single_video;
 use crate::downloader::downloader::Downloader;
 use crate::downloader::events::{emit_event, estimate_batch_eta};
 use crate::downloader::filename::truncate_chars;
+use crate::downloader::quality::{DownloadQuality, ordered_video_urls};
 use anyhow::Result;
 use futures::future;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::time::{Duration, Instant};
+
+use crate::api::types::MediaType;
+
+fn should_refresh_streaming_video(video: &VideoInfo, config: &crate::config::AppConfig) -> bool {
+    if matches!(
+        video.media_type,
+        MediaType::Image | MediaType::LivePhoto | MediaType::Mixed
+    ) {
+        return false;
+    }
+
+    let candidates = ordered_video_urls(
+        video,
+        DownloadQuality::from_config(&config.download_quality),
+    );
+    candidates.is_empty() || candidates.iter().all(|url| looks_like_audio_url(url))
+}
+
+fn looks_like_audio_url(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized.ends_with(".mp3")
+        || normalized.ends_with(".m4a")
+        || normalized.ends_with(".aac")
+        || normalized.contains("/ies-music/")
+        || normalized.contains("/music/")
+}
 
 impl Downloader {
     /// 边获取边下载（流式下载）
@@ -55,6 +82,7 @@ impl Downloader {
 
         let batch_id_fetch = batch_task_id.clone();
         let sec_uid_clone = sec_uid.clone();
+        let fetch_client = client.clone();
 
         // === 获取任务：分页获取视频并发送到队列 ===
         let fetch_handle = {
@@ -88,7 +116,7 @@ impl Downloader {
                     }
 
                     // 获取一页视频
-                    match client
+                    match fetch_client
                         .get_user_videos(&sec_uid_clone, cursor, page_size)
                         .await
                     {
@@ -154,6 +182,7 @@ impl Downloader {
             let total_discovered = total_discovered.clone();
             let batch_id = batch_task_id.clone();
             let estimated = estimated_total;
+            let api_client = client.clone();
 
             tokio::spawn(async move {
                 // 并发控制
@@ -251,13 +280,34 @@ impl Downloader {
                     let config = config.clone();
                     let http_client = http_client.clone();
                     let record_write_lock = record_write_lock.clone();
+                    let api_client = api_client.clone();
 
+                    let mut video = video;
                     let aweme_id = video.aweme_id.clone();
                     let _display_name = truncate_chars(&video.desc, 8);
                     let start_time = Instant::now();
 
                     // 启动下载任务
                     let handle = tokio::spawn(async move {
+                        if should_refresh_streaming_video(&video, &config) {
+                            match api_client.get_video_detail(&video.aweme_id).await {
+                                Ok(refreshed_video) => {
+                                    log::info!(
+                                        "streaming download refreshed video detail before download: aweme_id={}",
+                                        video.aweme_id
+                                    );
+                                    video = refreshed_video;
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "streaming download failed to refresh video detail before download: aweme_id={} error={}",
+                                        video.aweme_id,
+                                        error
+                                    );
+                                }
+                            }
+                        }
+
                         let result = download_single_video(
                             http_client,
                             config,

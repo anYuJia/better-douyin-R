@@ -1,6 +1,6 @@
 //! 收藏合集客户端逻辑 - 喜欢/收藏/合集视频
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 use super::client::DouyinClient;
@@ -167,6 +167,8 @@ impl DouyinClient {
                 .filter_map(|b| {
                     let play_addr = self.get_first_url_opt(&b["play_addr"]);
                     let play_addr_h264 = self.get_first_url_opt(&b["play_addr_h264"]);
+                    let play_addr_candidates = self.get_video_urls(&b["play_addr"]);
+                    let play_addr_h264_candidates = self.get_video_urls(&b["play_addr_h264"]);
                     if play_addr.is_none() && play_addr_h264.is_none() {
                         return None;
                     }
@@ -181,15 +183,35 @@ impl DouyinClient {
                         height: b["height"].as_i64().unwrap_or(0) as i32,
                         play_addr,
                         play_addr_h264,
+                        play_addr_candidates,
+                        play_addr_h264_candidates,
                     })
                 })
                 .collect::<Vec<_>>();
-            if items.is_empty() {
-                None
-            } else {
-                Some(items)
-            }
+            if items.is_empty() { None } else { Some(items) }
         });
+        let selected_play_addr_value = if selected_play_addr.is_empty() {
+            fallback_media_url.clone()
+        } else {
+            selected_play_addr
+        };
+        let mut play_addr_candidates = self.get_video_urls(&video_data["play_addr"]);
+        for url in media_urls
+            .iter()
+            .filter(|media| media.r#type == "video")
+            .map(|media| &media.url)
+        {
+            if !play_addr_candidates.iter().any(|existing| existing == url) {
+                play_addr_candidates.push(url.clone());
+            }
+        }
+        if !selected_play_addr_value.is_empty()
+            && !play_addr_candidates
+                .iter()
+                .any(|existing| existing == &selected_play_addr_value)
+        {
+            play_addr_candidates.insert(0, selected_play_addr_value.clone());
+        }
 
         Some(LikedVideoItem {
             aweme_id,
@@ -229,11 +251,8 @@ impl DouyinClient {
                 } else {
                     Some(preview_addr.clone())
                 },
-                play_addr: if selected_play_addr.is_empty() {
-                    fallback_media_url.clone()
-                } else {
-                    selected_play_addr
-                },
+                play_addr: selected_play_addr_value,
+                play_addr_candidates,
                 dash_addr,
                 audio_addr,
                 play_addr_h264: self.get_first_url_opt(&video_data["play_addr_h264"]),
