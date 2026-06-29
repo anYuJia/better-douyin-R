@@ -1,8 +1,11 @@
 use tauri::Emitter;
+use tauri::State;
 
 use crate::update::{
-    is_windows_portable_runtime, update_content_length, updater_install_mode,
+    configure_updater_builder, is_windows_portable_runtime, update_content_length,
+    updater_install_mode,
 };
+use crate::AppState;
 
 #[tauri::command]
 pub(crate) fn get_app_version(app_handle: tauri::AppHandle) -> String {
@@ -15,11 +18,16 @@ pub(crate) fn restart_app(app_handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub(crate) async fn check_update(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub(crate) async fn check_update(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     use tauri_plugin_updater::UpdaterExt;
 
     let portable = is_windows_portable_runtime();
-    let mut updater_builder = app_handle.updater_builder();
+    let manual_proxy = state.config.lock().await.proxy.clone();
+    let mut updater_builder =
+        configure_updater_builder(app_handle.updater_builder(), manual_proxy.as_deref());
     if portable {
         updater_builder = updater_builder.target("windows-x86_64-portable");
     }
@@ -41,7 +49,7 @@ pub(crate) async fn check_update(app_handle: tauri::AppHandle) -> Result<serde_j
                 "portable": portable,
                 "install_mode": updater_install_mode()
             }))
-        },
+        }
         Ok(None) => Ok(serde_json::json!({
             "success": true,
             "has_update": false,
@@ -58,11 +66,16 @@ pub(crate) async fn check_update(app_handle: tauri::AppHandle) -> Result<serde_j
 }
 
 #[tauri::command]
-pub(crate) async fn download_update(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub(crate) async fn download_update(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     use tauri_plugin_updater::UpdaterExt;
 
     let portable = is_windows_portable_runtime();
-    let mut updater_builder = app_handle.updater_builder();
+    let manual_proxy = state.config.lock().await.proxy.clone();
+    let mut updater_builder =
+        configure_updater_builder(app_handle.updater_builder(), manual_proxy.as_deref());
     if portable {
         updater_builder = updater_builder.target("windows-x86_64-portable");
     }

@@ -1,11 +1,22 @@
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { openExternalUrl } from "@/lib/tauri";
 import {
   Info,
+  Network,
   RefreshCw,
   Users,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { UpdateInfo, UpdateStatus } from "@/stores/app-store";
 import { SettingGroup } from "./settings-components";
 import wechatPayImg from "@/assets/wechat-pay.png";
@@ -33,6 +44,9 @@ interface SettingsAboutTabProps {
   handleCheckUpdate: () => void;
   handleDownloadUpdate: () => void;
   handleRestart: () => void;
+  updateProxy: string;
+  savingProxy: boolean;
+  handleSaveUpdateProxy: (proxy: string | null) => Promise<boolean>;
 }
 
 export function SettingsAboutTab({
@@ -45,7 +59,35 @@ export function SettingsAboutTab({
   handleCheckUpdate,
   handleDownloadUpdate,
   handleRestart,
+  updateProxy,
+  savingProxy,
+  handleSaveUpdateProxy,
 }: SettingsAboutTabProps) {
+  const [proxyOpen, setProxyOpen] = useState(false);
+  const [proxyDraft, setProxyDraft] = useState(updateProxy);
+  const [proxyError, setProxyError] = useState("");
+
+  useEffect(() => {
+    if (proxyOpen) {
+      setProxyDraft(updateProxy);
+      setProxyError("");
+    }
+  }, [proxyOpen, updateProxy]);
+
+  const saveProxy = async (value: string | null) => {
+    const nextProxy = (value || "").trim();
+    if (
+      nextProxy &&
+      !nextProxy.startsWith("http://") &&
+      !nextProxy.startsWith("https://")
+    ) {
+      setProxyError("代理地址需要以 http:// 或 https:// 开头");
+      return;
+    }
+    const saved = await handleSaveUpdateProxy(nextProxy || null);
+    if (saved) setProxyOpen(false);
+  };
+
   return (
     <div className="space-y-4">
       <SettingGroup icon={Info} label="关于">
@@ -104,6 +146,15 @@ export function SettingsAboutTab({
           <div className="flex gap-2">
             <Button
               variant="outline"
+              onClick={() => setProxyOpen(true)}
+              className="h-9 rounded-[8px] px-3 text-[0.76rem] gap-1 cursor-pointer"
+            >
+              <Network className="w-3.5 h-3.5" />
+              代理设置
+            </Button>
+
+            <Button
+              variant="outline"
               onClick={handleCheckUpdate}
               disabled={updateStatus === "checking" || updateStatus === "downloading"}
               className="flex-1 h-9 rounded-[8px] text-[0.76rem] gap-1 cursor-pointer"
@@ -136,6 +187,55 @@ export function SettingsAboutTab({
           </div>
         </div>
       </SettingGroup>
+
+      <Dialog open={proxyOpen} onOpenChange={setProxyOpen}>
+        <DialogContent className="max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>更新代理设置</DialogTitle>
+            <DialogDescription>
+              留空时使用系统或环境变量代理；填写后检查更新和下载更新会优先使用该代理。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 pt-2">
+            <Input
+              value={proxyDraft}
+              onChange={(event) => {
+                setProxyDraft(event.target.value);
+                setProxyError("");
+              }}
+              placeholder="http://127.0.0.1:7890"
+              spellCheck={false}
+              className="font-mono"
+            />
+            {proxyError ? (
+              <div className="text-[0.72rem] text-danger">{proxyError}</div>
+            ) : (
+              <div className="text-[0.72rem] text-text-muted">
+                支持 http:// 和 https:// 代理，例如 http://127.0.0.1:7890
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void saveProxy(null)}
+              disabled={savingProxy}
+            >
+              清空
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveProxy(proxyDraft)}
+              disabled={savingProxy}
+            >
+              {savingProxy ? "保存中" : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SettingGroup icon={Users} label="交流与支持">
         <div className="space-y-3.5">
