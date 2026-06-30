@@ -384,6 +384,9 @@ export function usePlayerComments({
   // 通知跳转：定位并高亮目标评论。依赖评论列表/回复列表变化以驱动翻页与子评论加载。
   useEffect(() => {
     if (!initialComment || locateDoneRef.current) return;
+    // 评论尚未加载完成时（视频切换会先清空 comments），不要判定为 deleted，
+    // 等 loadComments 把 commentsLoadedAwemeId 设为当前视频后再判定。
+    if (commentsLoadedAwemeId !== currentVideo?.aweme_id) return;
     const { rootCid, targetCid, isSub } = initialComment;
 
     const finishWith = (prompt: "" | "deleted" | "not_in_first_pages") => {
@@ -436,7 +439,7 @@ export function usePlayerComments({
       return;
     }
     finishWith("deleted");
-  }, [initialComment, comments, commentReplies, expandedCommentReplyIds, commentsHasMore, loadComments, toggleCommentReplies]);
+  }, [initialComment, comments, commentReplies, expandedCommentReplyIds, commentsHasMore, commentsLoadedAwemeId, currentVideo?.aweme_id, loadComments, toggleCommentReplies]);
 
   // 评论项 ref 回调工厂：el 为 null 时清理 stale 条目。
   const registerCommentRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {
