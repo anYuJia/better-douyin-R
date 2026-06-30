@@ -12,7 +12,7 @@
   <a href="https://github.com/anYuJia/better-douyin-R/releases/latest"><img src="https://img.shields.io/github/v/release/anYuJia/better-douyin-R?style=flat-square" alt="Release"></a>
   <a href="https://github.com/anYuJia/better-douyin-R/releases"><img src="https://img.shields.io/github/downloads/anYuJia/better-douyin-R/total?style=flat-square" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-555?style=flat-square" alt="Platform">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License"></a>
 </p>
 
 [下载安装](#下载安装) · [功能能力](#功能能力) · [界面预览](#界面预览) · [首次使用](#首次使用) · [加入交流群](#加入交流群)
@@ -26,6 +26,10 @@
 better-douyin-R 是 better-douyin 的 Rust / Tauri 桌面版本，重点放在更轻的运行时、更稳定的本地播放、更顺滑的桌面体验和更可靠的跨平台分发。
 
 如果你主要是日常使用，推荐使用本项目。如果你更关心 Python 源码、脚本改造或服务端集成，可以查看 [better-douyin](https://github.com/anYuJia/better-douyin)。
+
+## 许可协议
+
+本项目不再使用 MIT 协议。当前版本仅允许个人学习、研究和非商业使用，禁止未经授权的商业使用、销售、托管服务、商业集成或商业分发。详见 [LICENSE](LICENSE)。
 
 ## 功能能力
 
