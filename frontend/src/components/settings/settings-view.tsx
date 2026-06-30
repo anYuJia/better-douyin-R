@@ -86,6 +86,8 @@ export function SettingsView() {
   // Config state
   const [downloadPath, setDownloadPath] = useState("");
   const [downloadQuality, setDownloadQuality] = useState("auto");
+  const [downloadLivePhotoVideo, setDownloadLivePhotoVideo] = useState(true);
+  const [downloadLivePhotoImage, setDownloadLivePhotoImage] = useState(true);
   const [maxConcurrent, setMaxConcurrent] = useState("3");
   const [filenameTemplate, setFilenameTemplate] = useState("{title}_{aweme_id}");
   const [folderNameTemplate, setFolderNameTemplate] = useState("{author}");
@@ -100,6 +102,8 @@ export function SettingsView() {
   const savedSettingsRef = useRef({
     downloadPath: "",
     downloadQuality: "auto",
+    downloadLivePhotoVideo: true,
+    downloadLivePhotoImage: true,
     maxConcurrent: "3",
     filenameTemplate: "{title}_{aweme_id}",
     folderNameTemplate: "{author}",
@@ -143,6 +147,8 @@ export function SettingsView() {
         if (disposed) return;
         const nextDownloadPath = config.download_path || config.download_dir || "";
         const nextDownloadQuality = config.download_quality || "auto";
+        const nextDownloadLivePhotoVideo = config.download_live_photo_video ?? true;
+        const nextDownloadLivePhotoImage = config.download_live_photo_image ?? true;
         const nextMaxConcurrent = String(config.max_concurrent || 3);
         const nextFilenameTemplate = config.filename_template || "{title}_{aweme_id}";
         const nextFolderNameTemplate = config.folder_name_template || "{author}";
@@ -150,6 +156,8 @@ export function SettingsView() {
         const nextUpdateProxy = config.proxy || "";
         setDownloadPath(nextDownloadPath);
         setDownloadQuality(nextDownloadQuality);
+        setDownloadLivePhotoVideo(nextDownloadLivePhotoVideo);
+        setDownloadLivePhotoImage(nextDownloadLivePhotoImage);
         setMaxConcurrent(nextMaxConcurrent);
         setFilenameTemplate(nextFilenameTemplate);
         setFolderNameTemplate(nextFolderNameTemplate);
@@ -159,6 +167,8 @@ export function SettingsView() {
           ...savedSettingsRef.current,
           downloadPath: nextDownloadPath,
           downloadQuality: nextDownloadQuality,
+          downloadLivePhotoVideo: nextDownloadLivePhotoVideo,
+          downloadLivePhotoImage: nextDownloadLivePhotoImage,
           maxConcurrent: nextMaxConcurrent,
           filenameTemplate: nextFilenameTemplate,
           folderNameTemplate: nextFolderNameTemplate,
@@ -433,6 +443,26 @@ export function SettingsView() {
     else setMaxConcurrent(previousMaxConcurrent);
   };
 
+  const handleLivePhotoContentChange = async (kind: "video" | "image", value: boolean) => {
+    const previousVideo = savedSettingsRef.current.downloadLivePhotoVideo;
+    const previousImage = savedSettingsRef.current.downloadLivePhotoImage;
+    let nextVideo = kind === "video" ? value : downloadLivePhotoVideo;
+    let nextImage = kind === "image" ? value : downloadLivePhotoImage;
+    if (!nextVideo && !nextImage) nextVideo = true;
+    setDownloadLivePhotoVideo(nextVideo);
+    setDownloadLivePhotoImage(nextImage);
+    const field = kind === "video" ? "download_live_photo_video" : "download_live_photo_image";
+    if ((nextVideo === previousVideo && nextImage === previousImage) || savingFields.download_live_photo_video || savingFields.download_live_photo_image) return;
+    const saved = await saveSetting(field, { download_live_photo_video: nextVideo, download_live_photo_image: nextImage }, "实况图下载内容已保存");
+    if (saved) {
+      savedSettingsRef.current.downloadLivePhotoVideo = nextVideo;
+      savedSettingsRef.current.downloadLivePhotoImage = nextImage;
+    } else {
+      setDownloadLivePhotoVideo(previousVideo);
+      setDownloadLivePhotoImage(previousImage);
+    }
+  };
+
   const normalizeTemplate = (value: string, fallback: string) => value.trim() || fallback;
 
   const saveFilenameTemplate = async (value: string) => {
@@ -613,7 +643,7 @@ export function SettingsView() {
                   {loginStatus === "idle" && (<CookieInputSection cookieValue={cookieValue} setCookieValue={setCookieValue} cookieInputStatus={cookieInputStatus} savingCookie={savingCookie} loginMessage={loginMessage} handleValidateCookie={handleValidateCookie} handleSaveCookie={handleSaveCookie} />)}
                 </div>
               )}
-              {activeTab === "download" && (<SettingsDownloadTab downloadPath={downloadPath} setDownloadPath={setDownloadPath} downloadQuality={downloadQuality} maxConcurrent={maxConcurrent} filenameTemplate={filenameTemplate} setFilenameTemplate={setFilenameTemplate} folderNameTemplate={folderNameTemplate} setFolderNameTemplate={setFolderNameTemplate} autoCreateFolder={autoCreateFolder} choosingDirectory={choosingDirectory} savingFields={savingFields} fieldStatus={fieldStatus} handleChooseDirectory={handleChooseDirectory} handleQualityChange={handleQualityChange} handleMaxConcurrentChange={handleMaxConcurrentChange} handleAutoCreateFolderChange={handleAutoCreateFolderChange} saveFilenameTemplate={saveFilenameTemplate} saveFolderNameTemplate={saveFolderNameTemplate} appendFilenameToken={appendFilenameToken} appendFolderToken={appendFolderToken} />)}
+              {activeTab === "download" && (<SettingsDownloadTab downloadPath={downloadPath} setDownloadPath={setDownloadPath} downloadQuality={downloadQuality} downloadLivePhotoVideo={downloadLivePhotoVideo} downloadLivePhotoImage={downloadLivePhotoImage} maxConcurrent={maxConcurrent} filenameTemplate={filenameTemplate} setFilenameTemplate={setFilenameTemplate} folderNameTemplate={folderNameTemplate} setFolderNameTemplate={setFolderNameTemplate} autoCreateFolder={autoCreateFolder} choosingDirectory={choosingDirectory} savingFields={savingFields} fieldStatus={fieldStatus} handleChooseDirectory={handleChooseDirectory} handleQualityChange={handleQualityChange} handleLivePhotoContentChange={handleLivePhotoContentChange} handleMaxConcurrentChange={handleMaxConcurrentChange} handleAutoCreateFolderChange={handleAutoCreateFolderChange} saveFilenameTemplate={saveFilenameTemplate} saveFolderNameTemplate={saveFolderNameTemplate} appendFilenameToken={appendFilenameToken} appendFolderToken={appendFolderToken} />)}
               {activeTab === "preferences" && (<SettingsAppearanceTab theme={theme} fontSize={fontSize} savingFields={savingFields} fieldStatus={fieldStatus} handleThemeChange={handleThemeChange} handleFontSizeChange={handleFontSizeChange} />)}
               {activeTab === "about" && (<SettingsAboutTab appVersion={appVersion} updateStatus={updateStatus} updateMessage={updateMessage} updateInfo={updateInfo} updateProgress={updateProgress} updateCanRestart={updateCanRestart} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleRestart={handleRestart} updateProxy={updateProxy} savingProxy={savingProxy} handleSaveUpdateProxy={handleSaveUpdateProxy} />)}
             </motion.div>

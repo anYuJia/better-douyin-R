@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use chrono::Local;
 use futures::StreamExt;
 use reqwest::header::CONTENT_TYPE;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
@@ -15,12 +16,13 @@ use super::completion::record_completed_download;
 use super::downloader::DownloadRuntime;
 use super::events::{emit_event, wait_if_paused};
 use super::filename::{
-    create_unique_output_file, media_download_success_action, media_extension, media_type_display,
-    media_type_name, truncate_chars,
+    create_unique_output_file_with_same_stem, media_download_success_action, media_extension,
+    media_type_display, media_type_name, truncate_chars,
 };
 use super::http::build_download_headers;
 use super::media_request::request_media_with_fallback;
 use super::quality::{ordered_video_urls, DownloadQuality};
+use crate::media_utils::filter_live_photo_media_items;
 
 pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
     let mut items = Vec::new();
@@ -38,11 +40,6 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
         }
     }
 
-    // 图片
-    if !items.is_empty() {
-        return items;
-    }
-
     if let Some(urls) = &video.image_urls {
         for url in urls {
             if !url.trim().is_empty() {
@@ -56,7 +53,7 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
     }
 
     if !items.is_empty() {
-        return items;
+        return filter_live_photo_media_items(items, config);
     }
 
     // 视频
@@ -76,7 +73,7 @@ pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<
         });
     }
 
-    items
+    filter_live_photo_media_items(items, config)
 }
 
 pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: String) -> Result<()> {
@@ -135,8 +132,46 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
 
     let mut downloaded_files = Vec::new();
     let mut total_downloaded_size = 0u64;
+    let live_count = task
+        .media_urls
+        .iter()
+        .filter(|item| item.r#type == "live_photo")
+        .count();
+    let image_count = task
+        .media_urls
+        .iter()
+        .filter(|item| item.r#type == "image")
+        .count();
+    let live_pair_count = if task
+        .media_urls
+        .iter()
+        .all(|item| matches!(item.r#type.as_str(), "live_photo" | "image"))
+    {
+        live_count.min(image_count)
+    } else {
+        0
+    };
+    let use_live_pair_stems = live_pair_count > 0;
+    let mut live_pair_positions: HashMap<&str, usize> =
+        HashMap::from([("live_photo", 0usize), ("image", 0usize)]);
 
     for (index, media) in task.media_urls.iter().enumerate() {
+        let pair_index = if use_live_pair_stems {
+            live_pair_positions.get_mut(media.r#type.as_str()).map(|position| {
+                let current = *position;
+                *position += 1;
+                current
+            })
+        } else {
+            None
+        };
+        let use_same_stem_for_live_pair = pair_index.is_some();
+        let filename_total = if use_same_stem_for_live_pair {
+            live_pair_count
+        } else {
+            task.media_urls.len()
+        };
+        let filename_index = pair_index.unwrap_or(index);
         if *runtime
             .cancel_tokens
             .lock()
@@ -176,13 +211,18 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
             .headers()
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok());
-        let extension = media_extension(media.r#type.as_str(), &response_url, content_type);
-        let (file_path, mut file) = create_unique_output_file(
+        let extension = if use_same_stem_for_live_pair && media.r#type == "live_photo" {
+            "mp4".to_string()
+        } else {
+            media_extension(media.r#type.as_str(), &response_url, content_type)
+        };
+        let (file_path, mut file) = create_unique_output_file_with_same_stem(
             &save_dir,
             &task.filename,
-            index,
-            task.media_urls.len(),
+            filename_index,
+            filename_total,
             &extension,
+            use_same_stem_for_live_pair,
         )
         .await?;
         let mut file_downloaded_size = 0u64;

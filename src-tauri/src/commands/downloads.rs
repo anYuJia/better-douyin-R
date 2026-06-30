@@ -71,7 +71,9 @@ pub(crate) async fn download_video(
             .trim()
             .to_string();
     }
-    let mut media_urls = parse_download_media_items(&video, &raw_media_type);
+    let config = state.config.lock().await.clone();
+    let mut media_urls =
+        filter_live_photo_media_items(parse_download_media_items(&video, &raw_media_type), &config);
     let mut media_type = media_type_from_payload_or_items(&raw_media_type, &media_urls);
     let should_refresh_video_media =
         raw_media_type == MEDIA_TYPE_VIDEO || raw_media_type == "unknown";
@@ -100,7 +102,7 @@ pub(crate) async fn download_video(
                     published_at = refreshed_video.create_time;
                 }
                 if media_urls.is_empty() {
-                    media_urls = download_media_items_from_video(&refreshed_video);
+                    media_urls = download_media_items_from_video(&refreshed_video, &config);
                     media_type = refreshed_video.media_type.clone();
                 }
                 fresh_video = Some(refreshed_video);
@@ -540,7 +542,9 @@ pub(crate) async fn add_download_task(
             .map_err(|e| e.to_string());
     }
 
-    let media_urls = parse_download_media_items(&video, &raw_media_type);
+    let config = state.config.lock().await.clone();
+    let media_urls =
+        filter_live_photo_media_items(parse_download_media_items(&video, &raw_media_type), &config);
     if media_urls.is_empty() {
         return Err("没有可用的媒体URL".to_string());
     }
@@ -715,9 +719,11 @@ pub(crate) async fn download_videos(
     name: String,
 ) -> Result<serde_json::Value, String> {
     let mut parsed_videos = Vec::new();
+    let config = state.config.lock().await.clone();
     for video_val in videos {
         let raw_media_type = download_media_type_from_payload(&video_val);
-        let media_items = parse_download_media_items(&video_val, &raw_media_type);
+        let media_items =
+            filter_live_photo_media_items(parse_download_media_items(&video_val, &raw_media_type), &config);
         if let Some(mut video_info) = video_info_from_download_payload(&video_val) {
             merge_download_media_items_into_video_info(&mut video_info, &media_items);
             parsed_videos.push(video_info);

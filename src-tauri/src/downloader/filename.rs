@@ -237,14 +237,15 @@ pub(crate) fn extension_from_url(url: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn unique_output_path(
+pub(crate) fn unique_output_path_with_same_stem(
     save_dir: &Path,
     base_name: &str,
     index: usize,
     total: usize,
     extension: &str,
+    same_stem: bool,
 ) -> PathBuf {
-    let stem = if total <= 1 {
+    let stem = if total <= 1 || same_stem {
         sanitize_filename(base_name)
     } else {
         sanitize_filename(&format!("{}_{:02}", base_name, index + 1))
@@ -260,12 +261,23 @@ pub(crate) async fn create_unique_output_file(
     total: usize,
     extension: &str,
 ) -> Result<(PathBuf, File)> {
+    create_unique_output_file_with_same_stem(save_dir, base_name, index, total, extension, false).await
+}
+
+pub(crate) async fn create_unique_output_file_with_same_stem(
+    save_dir: &Path,
+    base_name: &str,
+    index: usize,
+    total: usize,
+    extension: &str,
+    same_stem: bool,
+) -> Result<(PathBuf, File)> {
     let extension = sanitize_extension(extension);
     for attempt in 0..1000 {
         let candidate = if attempt == 0 {
-            unique_output_path(save_dir, base_name, index, total, &extension)
+            unique_output_path_with_same_stem(save_dir, base_name, index, total, &extension, same_stem)
         } else {
-            let stem = if total <= 1 {
+            let stem = if total <= 1 || same_stem {
                 sanitize_filename(base_name)
             } else {
                 sanitize_filename(&format!("{}_{:02}", base_name, index + 1))

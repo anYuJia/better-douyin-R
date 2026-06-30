@@ -6,6 +6,7 @@ use crate::downloader::filename::{
     build_output_dir, generate_filename_with_config, media_type_name,
 };
 use crate::downloader::quality::{ordered_video_urls, DownloadQuality};
+use crate::media_utils::filter_live_photo_media_items;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use std::path::PathBuf;
@@ -144,7 +145,7 @@ impl Downloader {
             }
         }
 
-        items
+        filter_live_photo_media_items(items, &self.config)
     }
 
     pub async fn get_tasks(&self) -> Vec<DownloadTask> {

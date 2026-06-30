@@ -1,5 +1,6 @@
 use crate::api::DownloadMediaItem;
 use crate::api::VideoInfo;
+use crate::config::AppConfig;
 use crate::media_utils_extract::extract_payload_url;
 use crate::media_utils_normalize::{
     clean_video_download_url, is_watermark_video_url, no_watermark_video_url,
@@ -139,6 +140,33 @@ pub fn parse_download_media_items(
     items
 }
 
+pub fn filter_live_photo_media_items(
+    media_items: Vec<DownloadMediaItem>,
+    config: &AppConfig,
+) -> Vec<DownloadMediaItem> {
+    let has_live_photo = media_items
+        .iter()
+        .any(|item| item.r#type == MEDIA_TYPE_LIVE_PHOTO);
+    if !has_live_photo {
+        return media_items;
+    }
+
+    let mut keep_video = config.download_live_photo_video;
+    let keep_image = config.download_live_photo_image;
+    if !keep_video && !keep_image {
+        keep_video = true;
+    }
+
+    media_items
+        .into_iter()
+        .filter(|item| match item.r#type.as_str() {
+            MEDIA_TYPE_LIVE_PHOTO => keep_video,
+            MEDIA_TYPE_IMAGE => keep_image,
+            _ => true,
+        })
+        .collect()
+}
+
 fn append_media_array(
     items: &mut Vec<DownloadMediaItem>,
     value: Option<&serde_json::Value>,
@@ -205,7 +233,7 @@ fn push_download_item(
     });
 }
 
-pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaItem> {
+pub fn download_media_items_from_video(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
     use crate::api::DouyinClient;
     let mut items = Vec::new();
 
@@ -245,7 +273,7 @@ pub fn download_media_items_from_video(video: &VideoInfo) -> Vec<DownloadMediaIt
         }
     }
 
-    items
+    filter_live_photo_media_items(items, config)
 }
 
 #[cfg(test)]

@@ -32,6 +32,12 @@ pub struct AppConfig {
     /// 下载质量
     #[serde(default = "default_download_quality")]
     pub download_quality: String,
+    /// 实况图是否下载视频部分
+    #[serde(default = "default_true")]
+    pub download_live_photo_video: bool,
+    /// 实况图是否下载静图部分
+    #[serde(default = "default_true")]
+    pub download_live_photo_image: bool,
     /// 文件名模板
     #[serde(default)]
     pub filename_template: String,
@@ -94,6 +100,8 @@ impl Default for AppConfig {
             proxy: None,
             max_concurrent: 3,
             download_quality: default_download_quality(),
+            download_live_photo_video: true,
+            download_live_photo_image: true,
             filename_template: "{title}".to_string(),
             auto_create_folder: true,
             folder_name_template: "{author}".to_string(),
@@ -128,6 +136,9 @@ impl AppConfig {
 
     fn normalize(&mut self) {
         self.download_quality = Self::normalize_download_quality(&self.download_quality);
+        if !self.download_live_photo_video && !self.download_live_photo_image {
+            self.download_live_photo_video = true;
+        }
     }
 
     fn normalized(&self) -> Self {

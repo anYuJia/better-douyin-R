@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import {
   FileText,
+  FileImage,
   FolderOpen,
   FolderTree,
   Gauge,
@@ -28,6 +29,8 @@ interface SettingsDownloadTabProps {
   downloadPath: string;
   setDownloadPath: (value: string) => void;
   downloadQuality: string;
+  downloadLivePhotoVideo: boolean;
+  downloadLivePhotoImage: boolean;
   maxConcurrent: string;
   filenameTemplate: string;
   setFilenameTemplate: (value: string) => void;
@@ -39,6 +42,7 @@ interface SettingsDownloadTabProps {
   fieldStatus: (field: SettingsField) => SettingStatus | undefined;
   handleChooseDirectory: () => void;
   handleQualityChange: (value: string) => void;
+  handleLivePhotoContentChange: (kind: "video" | "image", value: boolean) => void;
   handleMaxConcurrentChange: (value: string) => void;
   handleAutoCreateFolderChange: (value: boolean) => void;
   saveFilenameTemplate: (value: string) => void;
@@ -51,6 +55,8 @@ export function SettingsDownloadTab({
   downloadPath,
   setDownloadPath,
   downloadQuality,
+  downloadLivePhotoVideo,
+  downloadLivePhotoImage,
   maxConcurrent,
   filenameTemplate,
   setFilenameTemplate,
@@ -62,6 +68,7 @@ export function SettingsDownloadTab({
   fieldStatus,
   handleChooseDirectory,
   handleQualityChange,
+  handleLivePhotoContentChange,
   handleMaxConcurrentChange,
   handleAutoCreateFolderChange,
   saveFilenameTemplate,
@@ -69,6 +76,34 @@ export function SettingsDownloadTab({
   appendFilenameToken,
   appendFolderToken,
 }: SettingsDownloadTabProps) {
+  const renderLivePhotoToggle = (kind: "video" | "image", label: string, checked: boolean) => (
+    <button
+      type="button"
+      onClick={() => void handleLivePhotoContentChange(kind, !checked)}
+      disabled={savingFields.download_live_photo_video || savingFields.download_live_photo_image}
+      className={cn(
+        "flex h-8 items-center justify-between rounded-[8px] border px-2.5 transition-[background-color,border-color,opacity]",
+        checked ? "border-accent/25 bg-accent/5" : "border-border bg-white/[0.01]",
+        (savingFields.download_live_photo_video || savingFields.download_live_photo_image) && "opacity-70"
+      )}
+    >
+      <span className="text-[0.76rem] font-semibold text-text">{label}</span>
+      <span
+        className={cn(
+          "relative h-4.5 w-8.5 rounded-full transition-colors",
+          checked ? "bg-accent" : "bg-white/[0.12]"
+        )}
+      >
+        <span
+          className={cn(
+            "absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform",
+            checked ? "translate-x-4.5" : "translate-x-0.5"
+          )}
+        />
+      </span>
+    </button>
+  );
+
   return (
     <div className="space-y-4">
       {/* Download Dir */}
@@ -227,6 +262,13 @@ export function SettingsDownloadTab({
           </Select>
         </SettingGroup>
       </div>
+
+      <SettingGroup icon={FileImage} label="实况图内容" status={fieldStatus("download_live_photo_video") || fieldStatus("download_live_photo_image")}>
+        <div className="grid grid-cols-2 gap-2">
+          {renderLivePhotoToggle("video", "视频", downloadLivePhotoVideo)}
+          {renderLivePhotoToggle("image", "图片", downloadLivePhotoImage)}
+        </div>
+      </SettingGroup>
     </div>
   );
 }
