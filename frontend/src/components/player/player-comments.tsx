@@ -17,6 +17,9 @@ interface CommentItemProps {
   onToggleCommentLike: (comment: CommentInfo, level: number) => void;
   onSetCommentReplyTarget: (target: CommentReplyTarget) => void;
   onLoadCommentReplies: (comment: CommentInfo, mode: "initial" | "more") => void;
+  registerRef?: (el: HTMLDivElement | null) => void;
+  registerReplyRef?: (cid: string) => (el: HTMLDivElement | null) => void;
+  highlightCid?: string;
 }
 
 function CommentItem({
@@ -30,12 +33,22 @@ function CommentItem({
   onToggleCommentLike,
   onSetCommentReplyTarget,
   onLoadCommentReplies,
+  registerRef,
+  registerReplyRef,
+  highlightCid,
 }: CommentItemProps) {
   const avatar = comment.user?.avatar_thumb || "";
   const replies = replyState?.items || [];
 
   return (
-    <div className="flex gap-2 rounded-lg px-1.5 py-2 transition-colors hover:bg-white/[0.04]">
+    <div
+      ref={registerRef}
+      data-cid={comment.cid}
+      className={cn(
+        "flex gap-2 rounded-lg px-1.5 py-2 transition-colors hover:bg-white/[0.04]",
+        highlightCid === comment.cid && "ring-2 ring-accent bg-accent-soft/40"
+      )}
+    >
       <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-white/[0.08]">
         {avatar ? (
           <img
@@ -124,7 +137,15 @@ function CommentItem({
               const replyLiked = Number(reply.user_digged || 0) > 0;
               const replyDigging = commentDiggingIds.has(reply.cid);
               return (
-                <div key={reply.cid} className="flex gap-2">
+                <div
+                  key={reply.cid}
+                  ref={registerReplyRef?.(reply.cid)}
+                  data-reply-cid={reply.cid}
+                  className={cn(
+                    "flex gap-2",
+                    highlightCid === reply.cid && "ring-2 ring-accent bg-accent-soft/40 rounded-lg"
+                  )}
+                >
                   <div className="h-6 w-6 shrink-0 overflow-hidden rounded-full bg-white/[0.08]">
                     {replyAvatar ? (
                       <img
@@ -245,6 +266,11 @@ interface CommentsPanelProps {
   onLoadMoreComments: () => void;
   onClose: (event?: ReactMouseEvent) => void;
   onMarkSticky: (event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>) => void;
+  registerCommentRef?: (cid: string) => (el: HTMLDivElement | null) => void;
+  registerReplyRef?: (cid: string) => (el: HTMLDivElement | null) => void;
+  highlightCid?: string;
+  locatePrompt?: "" | "deleted" | "not_in_first_pages";
+  onDismissLocatePrompt?: () => void;
 }
 
 export function CommentsPanel({
@@ -271,6 +297,11 @@ export function CommentsPanel({
   onLoadMoreComments,
   onClose,
   onMarkSticky,
+  registerCommentRef,
+  registerReplyRef,
+  highlightCid,
+  locatePrompt,
+  onDismissLocatePrompt,
 }: CommentsPanelProps) {
   return (
     <motion.div
@@ -301,6 +332,18 @@ export function CommentsPanel({
         </button>
       </div>
       <div className="share-friends-scroll min-h-0 flex-1 overflow-y-auto p-2" onScroll={onCommentsScroll}>
+        {locatePrompt && (
+          <div className="mb-1.5 flex items-center justify-between gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.72rem] text-warning">
+            <span>{locatePrompt === "deleted" ? "该评论可能已被删除" : "未在前 60 条评论中找到，可在评论区手动查找"}</span>
+            <button
+              type="button"
+              onClick={onDismissLocatePrompt}
+              className="shrink-0 text-warning/70 hover:text-warning"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {commentsLoading && comments.length === 0 ? (
           <div className="flex h-32 items-center justify-center gap-2 text-[0.74rem] text-white/58">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -334,6 +377,9 @@ export function CommentsPanel({
                   onToggleCommentLike={onToggleCommentLike}
                   onSetCommentReplyTarget={onSetCommentReplyTarget}
                   onLoadCommentReplies={onLoadCommentReplies}
+                  registerRef={registerCommentRef?.(comment.cid)}
+                  registerReplyRef={registerReplyRef}
+                  highlightCid={highlightCid}
                 />
               );
             })}

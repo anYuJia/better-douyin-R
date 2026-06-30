@@ -96,6 +96,8 @@ interface FullscreenPlayerProps {
   onShowDetail?: (video: VideoInfo) => void;
   onAuthor?: (video: VideoInfo) => void;
   onVideoUpdate?: (video: VideoInfo) => void;
+  openComments?: boolean;
+  initialComment?: { rootCid: string; targetCid: string; isSub: boolean } | null;
 }
 
 export function FullscreenPlayer({
@@ -109,6 +111,8 @@ export function FullscreenPlayer({
   onShowDetail,
   onAuthor,
   onVideoUpdate,
+  openComments = false,
+  initialComment = null,
 }: FullscreenPlayerProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [mediaTransition, setMediaTransition] = useState({ index: 0, direction: 0 });
@@ -827,6 +831,11 @@ export function FullscreenPlayer({
     commentDraft,
     commentSubmitting,
     commentReplyTarget,
+    highlightCid,
+    locatePrompt,
+    registerCommentRef,
+    registerReplyRef,
+    setLocatePrompt,
     setCommentDraft,
     setCommentReplyTarget,
     loadCommentReplies,
@@ -846,6 +855,8 @@ export function FullscreenPlayer({
     showNavigationNotice,
     clearPanelCloseTimer,
     setOpenPanel,
+    openComments,
+    initialComment,
   });
 
 
@@ -1617,6 +1628,11 @@ export function FullscreenPlayer({
                 onMarkCommentsPanelSticky={markCommentsPanelSticky}
                 onScheduleTransientCommentsClose={scheduleTransientCommentsClose}
                 onClearPanelCloseTimer={clearPanelCloseTimer}
+                registerCommentRef={registerCommentRef}
+                registerReplyRef={registerReplyRef}
+                highlightCid={highlightCid}
+                locatePrompt={locatePrompt}
+                onDismissLocatePrompt={() => setLocatePrompt("")}
               />
             </div>
             <div className="mt-0.5">

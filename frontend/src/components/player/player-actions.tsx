@@ -166,6 +166,11 @@ interface PlayerActionButtonsProps {
   onMarkCommentsPanelSticky: (event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>) => void;
   onScheduleTransientCommentsClose: (event?: ReactMouseEvent | ReactPointerEvent<HTMLElement>) => void;
   onClearPanelCloseTimer: () => void;
+  registerCommentRef?: (cid: string) => (el: HTMLDivElement | null) => void;
+  registerReplyRef?: (cid: string) => (el: HTMLDivElement | null) => void;
+  highlightCid?: string;
+  locatePrompt?: "" | "deleted" | "not_in_first_pages";
+  onDismissLocatePrompt?: () => void;
 }
 
 export function PlayerActionButtons({
@@ -240,6 +245,11 @@ export function PlayerActionButtons({
   onMarkCommentsPanelSticky,
   onScheduleTransientCommentsClose,
   onClearPanelCloseTimer,
+  registerCommentRef,
+  registerReplyRef,
+  highlightCid,
+  locatePrompt,
+  onDismissLocatePrompt,
 }: PlayerActionButtonsProps) {
   return (
     <div className="flex min-w-0 max-w-[66vw] items-center gap-1 overflow-visible pb-0.5">
@@ -348,6 +358,11 @@ export function PlayerActionButtons({
               onLoadMoreComments={onLoadMoreComments}
               onClose={onCloseCommentsPanel}
               onMarkSticky={onMarkCommentsPanelSticky}
+              registerCommentRef={registerCommentRef}
+              registerReplyRef={registerReplyRef}
+              highlightCid={highlightCid}
+              locatePrompt={locatePrompt}
+              onDismissLocatePrompt={onDismissLocatePrompt}
             />
           )}
         </AnimatePresence>

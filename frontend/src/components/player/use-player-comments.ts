@@ -9,6 +9,8 @@ interface UsePlayerCommentsProps {
   showNavigationNotice: (message: string) => void;
   clearPanelCloseTimer: () => void;
   setOpenPanel: (panel: PlayerPanel | null) => void;
+  openComments?: boolean;
+  initialComment?: { rootCid: string; targetCid: string; isSub: boolean } | null;
 }
 
 export function usePlayerComments({
@@ -18,6 +20,8 @@ export function usePlayerComments({
   showNavigationNotice,
   clearPanelCloseTimer,
   setOpenPanel,
+  openComments = false,
+  initialComment = null,
 }: UsePlayerCommentsProps) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<CommentInfo[]>([]);
@@ -33,6 +37,13 @@ export function usePlayerComments({
   const [commentDraft, setCommentDraft] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [commentReplyTarget, setCommentReplyTarget] = useState<CommentReplyTarget>(null);
+  // 通知跳转定位：高亮目标 cid + 定位失败提示。
+  const [highlightCid, setHighlightCid] = useState("");
+  const [locatePrompt, setLocatePrompt] = useState<"" | "deleted" | "not_in_first_pages">("");
+  const commentItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const replyItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const locateDoneRef = useRef(false);
+  const locatePageRef = useRef(0);
 
   const commentsHoverCloseTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const commentsPanelStickyRef = useRef(false);
@@ -361,6 +372,93 @@ export function usePlayerComments({
     void loadComments("initial");
   }, [commentsLoadedAwemeId, commentsOpen, currentVideo?.aweme_id, loadComments]);
 
+  // 通知跳转：打开时强制展开评论区（降级类型 41/45 也展开）。
+  useEffect(() => {
+    if (!open) return;
+    if (openComments || initialComment) {
+      setCommentsOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // 通知跳转：定位并高亮目标评论。依赖评论列表/回复列表变化以驱动翻页与子评论加载。
+  useEffect(() => {
+    if (!initialComment || locateDoneRef.current) return;
+    const { rootCid, targetCid, isSub } = initialComment;
+
+    const finishWith = (prompt: "" | "deleted" | "not_in_first_pages") => {
+      locateDoneRef.current = true;
+      if (prompt) setLocatePrompt(prompt);
+    };
+    const highlight = (cid: string) => {
+      setHighlightCid(cid);
+      window.setTimeout(() => setHighlightCid((cur) => (cur === cid ? "" : cur)), 2000);
+    };
+
+    if (!isSub) {
+      const node = commentItemRefs.current.get(targetCid);
+      if (node) {
+        node.scrollIntoView({ block: "center" });
+        highlight(targetCid);
+        finishWith("");
+        return;
+      }
+      if (commentsHasMore && locatePageRef.current < 3) {
+        locatePageRef.current += 1;
+        void loadComments("more");
+        return;
+      }
+      finishWith(commentsHasMore ? "not_in_first_pages" : "deleted");
+      return;
+    }
+
+    const rootComment = comments.find((c) => c.cid === rootCid);
+    if (!rootComment) {
+      if (commentsHasMore && locatePageRef.current < 3) {
+        locatePageRef.current += 1;
+        void loadComments("more");
+        return;
+      }
+      finishWith(commentsHasMore ? "not_in_first_pages" : "deleted");
+      return;
+    }
+    if (!expandedCommentReplyIds.has(rootCid)) {
+      toggleCommentReplies(rootComment);
+      return;
+    }
+    const replyState = commentReplies[rootCid];
+    if (!replyState?.loaded) return;
+    const replyNode = replyItemRefs.current.get(targetCid);
+    if (replyNode) {
+      replyNode.scrollIntoView({ block: "center" });
+      highlight(targetCid);
+      finishWith("");
+      return;
+    }
+    finishWith("deleted");
+  }, [initialComment, comments, commentReplies, expandedCommentReplyIds, commentsHasMore, loadComments, toggleCommentReplies]);
+
+  // 评论项 ref 回调工厂：el 为 null 时清理 stale 条目。
+  const registerCommentRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {
+    if (el) commentItemRefs.current.set(cid, el);
+    else commentItemRefs.current.delete(cid);
+  }, []);
+  const registerReplyRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {
+    if (el) replyItemRefs.current.set(cid, el);
+    else replyItemRefs.current.delete(cid);
+  }, []);
+
+  // 播放器关闭时重置定位状态（覆盖同实例复用情况）。
+  useEffect(() => {
+    if (open) return;
+    locateDoneRef.current = false;
+    locatePageRef.current = 0;
+    setLocatePrompt("");
+    setHighlightCid("");
+    commentItemRefs.current.clear();
+    replyItemRefs.current.clear();
+  }, [open]);
+
   return {
     commentsOpen,
     comments,
@@ -374,6 +472,11 @@ export function usePlayerComments({
     commentDraft,
     commentSubmitting,
     commentReplyTarget,
+    highlightCid,
+    locatePrompt,
+    registerCommentRef,
+    registerReplyRef,
+    setLocatePrompt,
     setCommentDraft,
     setCommentReplyTarget,
     loadCommentReplies,
