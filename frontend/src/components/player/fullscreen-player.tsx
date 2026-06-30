@@ -97,7 +97,13 @@ interface FullscreenPlayerProps {
   onAuthor?: (video: VideoInfo) => void;
   onVideoUpdate?: (video: VideoInfo) => void;
   openComments?: boolean;
-  initialComment?: { rootCid: string; targetCid: string; isSub: boolean } | null;
+  initialComment?: {
+    cid: string;
+    text: string;
+    digg_count: number;
+    create_time: number;
+    user: { uid: string; nickname: string; sec_uid: string; avatar: string };
+  } | null;
 }
 
 export function FullscreenPlayer({

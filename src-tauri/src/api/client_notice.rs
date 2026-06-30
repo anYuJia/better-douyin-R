@@ -188,12 +188,39 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
         label_text = label_text_from(&raw_label, &digg_val);
         if let Some(comment) = digg_val.get("comment").and_then(|v| v.as_object()) {
             is_comment_like = true;
-            comment_text = serde_json::Value::Object(comment.clone())
+            let comment_val = serde_json::Value::Object(comment.clone());
+            comment_text = comment_val
                 .get("text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            // 赞评论通知：被赞评论本身置顶高光。无 parent_id，root_cid 用 cid 自身。
+            let liked_cid = comment_val
+                .get("cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let mut liked_user: Option<serde_json::Value> = None;
+            if let Some(user) = comment_val.get("user") {
+                if let Some(formatted) = format_user(user) {
+                    liked_user = Some(formatted);
+                }
+            }
+            if let Some(user) = liked_user {
+                if !liked_cid.is_empty() {
+                    comment_brief = Some(serde_json::json!({
+                        "cid": liked_cid,
+                        "root_cid": liked_cid,
+                        "is_sub": false,
+                        "text": comment_text.clone(),
+                        "digg_count": comment_val.get("digg_count").and_then(|v| v.as_i64()).unwrap_or(0),
+                        "create_time": item.get("create_time").and_then(|v| v.as_i64()).unwrap_or(0),
+                        "user": user,
+                    }));
+                }
+            }
         }
         aweme_brief = digg_val
             .get("aweme")
@@ -236,6 +263,9 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
                     "cid": inner_cid,
                     "root_cid": parent_id,
                     "is_sub": true, // 实测 type 31 恒为子评论（parent_id 恒非空）
+                    "text": comment_text.clone(),
+                    "digg_count": inner_val.get("digg_count").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "create_time": item.get("create_time").and_then(|v| v.as_i64()).unwrap_or(0),
                     "user": inner_user.unwrap_or(serde_json::json!({})),
                 }));
             }

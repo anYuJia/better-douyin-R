@@ -366,6 +366,9 @@ export interface NoticeComment {
   cid: string;
   root_cid: string;
   is_sub: boolean;
+  text: string;
+  digg_count: number;
+  create_time: number;
   user: NoticeUser;
 }
 

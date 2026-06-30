@@ -10,7 +10,13 @@ interface UsePlayerCommentsProps {
   clearPanelCloseTimer: () => void;
   setOpenPanel: (panel: PlayerPanel | null) => void;
   openComments?: boolean;
-  initialComment?: { rootCid: string; targetCid: string; isSub: boolean } | null;
+  initialComment?: {
+    cid: string;
+    text: string;
+    digg_count: number;
+    create_time: number;
+    user: { uid: string; nickname: string; sec_uid: string; avatar: string };
+  } | null;
 }
 
 export function usePlayerComments({
@@ -381,65 +387,42 @@ export function usePlayerComments({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // 通知跳转：定位并高亮目标评论。依赖评论列表/回复列表变化以驱动翻页与子评论加载。
+  // 通知跳转：把目标评论置顶插入评论列表并高光。
+  // 不靠翻页找——抖音评论列表按热度排序，目标评论可能很靠后甚至不在前几页。
+  // 直接用通知 payload 已有的评论数据构造 CommentInfo 插到第一条。
   useEffect(() => {
     if (!initialComment || locateDoneRef.current) return;
-    // 评论尚未加载完成时（视频切换会先清空 comments），不要判定为 deleted，
-    // 等 loadComments 把 commentsLoadedAwemeId 设为当前视频后再判定。
+    // 评论尚未加载完成时（视频切换会先清空 comments），等加载完再插。
     if (commentsLoadedAwemeId !== currentVideo?.aweme_id) return;
-    const { rootCid, targetCid, isSub } = initialComment;
+    const { cid, text, digg_count, create_time, user } = initialComment;
 
-    const finishWith = (prompt: "" | "deleted" | "not_in_first_pages") => {
-      locateDoneRef.current = true;
-      if (prompt) setLocatePrompt(prompt);
-    };
-    const highlight = (cid: string) => {
-      setHighlightCid(cid);
-      window.setTimeout(() => setHighlightCid((cur) => (cur === cid ? "" : cur)), 2000);
-    };
-
-    if (!isSub) {
-      const node = commentItemRefs.current.get(targetCid);
-      if (node) {
-        node.scrollIntoView({ block: "center" });
-        highlight(targetCid);
-        finishWith("");
-        return;
-      }
-      if (commentsHasMore && locatePageRef.current < 3) {
-        locatePageRef.current += 1;
-        void loadComments("more");
-        return;
-      }
-      finishWith(commentsHasMore ? "not_in_first_pages" : "deleted");
-      return;
+    const exists = comments.some((c) => c.cid === cid);
+    if (!exists) {
+      const pinned: CommentInfo = {
+        cid,
+        text,
+        create_time,
+        digg_count,
+        user_digged: 0,
+        reply_comment_total: 0,
+        sub_comments: null,
+        user: {
+          uid: user.uid,
+          nickname: user.nickname,
+          sec_uid: user.sec_uid,
+          avatar_thumb: user.avatar,
+        },
+      };
+      setComments((prev) => [pinned, ...prev]);
     }
-
-    const rootComment = comments.find((c) => c.cid === rootCid);
-    if (!rootComment) {
-      if (commentsHasMore && locatePageRef.current < 3) {
-        locatePageRef.current += 1;
-        void loadComments("more");
-        return;
-      }
-      finishWith(commentsHasMore ? "not_in_first_pages" : "deleted");
-      return;
-    }
-    if (!expandedCommentReplyIds.has(rootCid)) {
-      toggleCommentReplies(rootComment);
-      return;
-    }
-    const replyState = commentReplies[rootCid];
-    if (!replyState?.loaded) return;
-    const replyNode = replyItemRefs.current.get(targetCid);
-    if (replyNode) {
-      replyNode.scrollIntoView({ block: "center" });
-      highlight(targetCid);
-      finishWith("");
-      return;
-    }
-    finishWith("deleted");
-  }, [initialComment, comments, commentReplies, expandedCommentReplyIds, commentsHasMore, commentsLoadedAwemeId, currentVideo?.aweme_id, loadComments, toggleCommentReplies]);
+    locateDoneRef.current = true;
+    setHighlightCid(cid);
+    window.setTimeout(() => setHighlightCid((cur) => (cur === cid ? "" : cur)), 2400);
+    window.requestAnimationFrame(() => {
+      const node = commentItemRefs.current.get(cid);
+      if (node) node.scrollIntoView({ block: "center" });
+    });
+  }, [initialComment, comments, commentsLoadedAwemeId, currentVideo?.aweme_id]);
 
   // 评论项 ref 回调工厂：el 为 null 时清理 stale 条目。
   const registerCommentRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {

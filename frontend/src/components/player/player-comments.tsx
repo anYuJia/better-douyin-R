@@ -46,7 +46,7 @@ function CommentItem({
       data-cid={comment.cid}
       className={cn(
         "flex gap-2 rounded-lg px-1.5 py-2 transition-colors hover:bg-white/[0.04]",
-        highlightCid === comment.cid && "ring-2 ring-accent bg-accent-soft/40"
+        highlightCid === comment.cid && "bg-accent-soft/50 border-l-2 border-l-accent"
       )}
     >
       <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-white/[0.08]">
@@ -143,7 +143,7 @@ function CommentItem({
                   data-reply-cid={reply.cid}
                   className={cn(
                     "flex gap-2",
-                    highlightCid === reply.cid && "ring-2 ring-accent bg-accent-soft/40 rounded-lg"
+                    highlightCid === reply.cid && "bg-accent-soft/50 border-l-2 border-l-accent rounded-lg"
                   )}
                 >
                   <div className="h-6 w-6 shrink-0 overflow-hidden rounded-full bg-white/[0.08]">
