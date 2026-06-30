@@ -172,39 +172,55 @@ impl DouyinClient {
         params.insert("os", "windows".to_string());
 
         // detail 接口必须带 a_bogus 签名（skip_sign=true 实测返回空/失败）。
-        let response = self
-            .request_raw_json_with_options(
-                "https://www.douyin.com/aweme/v1/web/aweme/detail/",
-                Some(params.clone()),
-                "GET",
-                None,
-                false,
-            )
-            .await;
-        // 对抗偶发空响应/限流：退避后重试一次。
-        let response = match response {
-            Ok(resp)
-                if resp["status_code"].as_i64().unwrap_or(-1) == 0
-                    && resp["aweme_detail"].is_object() =>
-            {
-                resp
+        // 偶发空响应/限流时递增退避重试，最多 3 次尝试。
+        let mut response: Option<serde_json::Value> = None;
+        let backoffs_ms = [0u64, 600, 1200];
+        for (attempt, backoff_ms) in backoffs_ms.iter().enumerate() {
+            if *backoff_ms > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(*backoff_ms)).await;
             }
-            _ => {
-                log::warn!(
-                    "video detail first attempt failed, retrying after backoff: aweme_id={}",
-                    aweme_id
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                self.request_raw_json_with_options(
+            match self
+                .request_raw_json_with_options(
                     "https://www.douyin.com/aweme/v1/web/aweme/detail/",
-                    Some(params),
+                    Some(params.clone()),
                     "GET",
                     None,
                     false,
                 )
-                .await?
+                .await
+            {
+                Ok(resp)
+                    if resp["status_code"].as_i64().unwrap_or(-1) == 0
+                        && resp["aweme_detail"].is_object() =>
+                {
+                    response = Some(resp);
+                    break;
+                }
+                Ok(resp) => {
+                    log::warn!(
+                        "video detail attempt {} rejected: status_code={} aweme_id={}",
+                        attempt + 1,
+                        resp["status_code"].as_i64().unwrap_or(-1),
+                        aweme_id
+                    );
+                    if attempt == backoffs_ms.len() - 1 {
+                        response = Some(resp);
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "video detail attempt {} failed: aweme_id={} error={}",
+                        attempt + 1,
+                        aweme_id,
+                        error
+                    );
+                    if attempt == backoffs_ms.len() - 1 {
+                        return Err(error);
+                    }
+                }
             }
-        };
+        }
+        let response = response.ok_or_else(|| anyhow!("video detail empty response: aweme_id={}", aweme_id))?;
 
         let status_code = response["status_code"].as_i64().unwrap_or(-1);
         if status_code != 0 {
