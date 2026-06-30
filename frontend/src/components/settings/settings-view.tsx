@@ -73,7 +73,7 @@ export function SettingsView() {
         setCurrentSecUid(res.current_sec_uid || "");
         const active = res.accounts?.find((a) => a.sec_uid === res.current_sec_uid);
         if (active) {
-          setCookieLoggedIn(true, active.nickname);
+          setCookieLoggedIn(true, active.nickname, active.sec_uid);
         } else {
           setCookieLoggedIn(false);
         }
@@ -179,7 +179,7 @@ export function SettingsView() {
           verifyCookie()
             .then((status) => {
               if (disposed) return;
-              setCookieLoggedIn(status.valid, status.user_name || undefined);
+              setCookieLoggedIn(status.valid, status.user_name || undefined, status.sec_uid || status.user_id || undefined);
               if (!status.valid) {
                 setLoginMessage(status.message || "Cookie 已失效，请重新登录");
               }
@@ -238,7 +238,7 @@ export function SettingsView() {
             if (cookie_set) {
               void verifyCookie()
                 .then((status) => {
-                  setCookieLoggedIn(status.valid, status.user_name || undefined);
+                  setCookieLoggedIn(status.valid, status.user_name || undefined, status.sec_uid || status.user_id || undefined);
                   if (!status.valid) {
                     setLoginStatus("error");
                     setLoginMessage(status.message || "Cookie 校验失败，请重新登录");
@@ -320,7 +320,7 @@ export function SettingsView() {
     try {
       const result = await addAccount(trimmed);
       if (!result.success) throw new Error(result.message || "添加账号失败");
-      setCookieLoggedIn(true, result.nickname);
+      setCookieLoggedIn(true, result.nickname, result.sec_uid);
       setCookieInputStatus("valid");
       setLoginMessage(result.message || "账号添加成功并激活");
       addLog(`成功添加并切换账号: ${result.nickname}`, "success");

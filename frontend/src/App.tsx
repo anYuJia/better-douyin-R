@@ -259,7 +259,7 @@ export default function App() {
             const status = await verifyCookie();
             if (disposed) return;
             if (status.valid) {
-              setCookieLoggedIn(true, status.user_name || undefined);
+              setCookieLoggedIn(true, status.user_name || undefined, status.sec_uid || status.user_id || undefined);
               return;
             }
             if (status.need_verify && !status.need_login) {
@@ -403,7 +403,7 @@ export default function App() {
             }
 
             if (status.valid) {
-              setCookieLoggedIn(true, status.user_name || undefined);
+              setCookieLoggedIn(true, status.user_name || undefined, status.sec_uid || status.user_id || undefined);
               prefetchTimer = window.setTimeout(() => {
                 void useRecommendedStore.getState().loadFeed();
               }, 1200);
