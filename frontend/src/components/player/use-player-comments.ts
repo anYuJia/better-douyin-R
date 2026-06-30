@@ -389,14 +389,18 @@ export function usePlayerComments({
 
   // 通知跳转：用 insert_ids=cid 拉评论列表，目标评论会被插入返回。
   // cid 在根列表 → 置顶高光根评论；cid 在某根评论的 sub_comments → 展开该根评论高光子评论。
+  // 不等 commentsLoadedAwemeId——抢先调 insert_ids 一步到位，省掉自动拉取的普通请求，
+  // 避免普通+insert_ids 两次串行请求导致进入慢。
   useEffect(() => {
     if (!initialComment || locateDoneRef.current) return;
-    if (commentsLoadedAwemeId !== currentVideo?.aweme_id) return;
     if (locatePageRef.current > 0) return; // 仅拉一次
     locatePageRef.current = 1;
     const { cid, text, digg_count, create_time, user } = initialComment;
     const awemeId = currentVideo?.aweme_id;
     if (!awemeId) return;
+    // 立即占位标记已加载，阻止自动拉取 effect 并发跑普通请求。
+    setCommentsLoadedAwemeId(awemeId);
+    setCommentsLoading(true);
 
     const highlight = (targetCid: string) => {
       setHighlightCid(targetCid);
@@ -471,9 +475,11 @@ export function usePlayerComments({
       } catch {
         locateDoneRef.current = true;
         setLocatePrompt("deleted");
+      } finally {
+        setCommentsLoading(false);
       }
     })();
-  }, [initialComment, commentsLoadedAwemeId, currentVideo?.aweme_id]);
+  }, [initialComment, currentVideo?.aweme_id]);
 
   // 评论项 ref 回调工厂：el 为 null 时清理 stale 条目。
   const registerCommentRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {
