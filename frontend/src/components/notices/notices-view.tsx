@@ -162,6 +162,8 @@ export function NoticesView() {
   const [cursor, setCursor] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(0);
   const requestedRef = useRef(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const applyResponse = useCallback(
     (resp: Awaited<ReturnType<typeof getNotices>>, append: boolean) => {
@@ -207,6 +209,26 @@ export function NoticesView() {
       setLoadingMore(false);
     }
   }, [applyResponse, hasMore, loadingMore, cursor]);
+
+  // 预翻页：sentinel 进入视口前 240px 即触发加载，让用户感觉不到"到底"。
+  const loadOlderRef = useRef(loadOlder);
+  loadOlderRef.current = loadOlder;
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const sentinel = sentinelRef.current;
+    if (!viewport || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadOlderRef.current();
+        }
+      },
+      { root: viewport, rootMargin: "0px 0px 240px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore]);
 
   useEffect(() => {
     if (requestedRef.current) return;
@@ -254,7 +276,7 @@ export function NoticesView() {
       )}
 
       <div className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
+        <ScrollArea className="h-full" viewportRef={viewportRef}>
           {loading && notices.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[0.8125rem] text-text-muted">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -271,17 +293,12 @@ export function NoticesView() {
                 <NoticeCard key={notice.id || `${notice.type}-${notice.create_time}`} notice={notice} />
               ))}
               {hasMore && (
-                <div className="flex justify-center py-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void loadOlder()}
-                    disabled={loadingMore}
-                    className="h-8"
-                  >
-                    {loadingMore ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                    加载更早
-                  </Button>
+                <div
+                  ref={sentinelRef}
+                  className="flex min-h-[28px] items-center justify-center gap-1.5 py-2 text-[0.72rem] text-text-muted"
+                >
+                  {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {loadingMore ? "正在加载…" : "滚动加载更多"}
                 </div>
               )}
               {!hasMore && notices.length > 0 && (
