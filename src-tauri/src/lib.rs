@@ -65,6 +65,7 @@ pub fn run() {
 
             let state = AppState::new();
             *state.app_handle.blocking_lock() = Some(app.handle().clone());
+            reporter::start_heartbeat(state.config.clone());
             tauri::async_runtime::spawn({
                 let state = state.clone();
                 async move {

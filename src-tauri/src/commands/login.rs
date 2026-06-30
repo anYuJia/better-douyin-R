@@ -534,18 +534,15 @@ pub(crate) async fn cookie_browser_login(
                             }),
                         )
                         .await;
-                        crate::reporter::report_event(
-                            "login_success".to_string(),
-                            format!("登录成功: {}", current_user.nickname),
+                        crate::reporter::report_login_success(
+                            current_user.nickname.clone(),
+                            current_user.uid.clone(),
+                            current_user.sec_uid.clone(),
+                            "native_window",
                             Some(serde_json::json!({
-                                "uid": current_user.uid,
-                                "sec_uid": current_user.sec_uid,
-                                "nickname": current_user.nickname,
                                 "friend_count": next_config.im_friend_sec_user_ids.len(),
                                 "relation_signer_ready": relation_signer_ready(&next_config.relation_signer),
-                                "report_status": "ok"
                             })),
-                            None,
                         );
                         break;
                     }
