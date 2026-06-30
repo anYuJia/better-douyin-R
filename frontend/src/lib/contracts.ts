@@ -359,6 +359,14 @@ export interface NoticeItem {
   is_comment_like?: boolean;
   is_reply?: boolean;
   comment_text?: string;
+  comment?: NoticeComment | null;
+}
+
+export interface NoticeComment {
+  cid: string;
+  root_cid: string;
+  is_sub: boolean;
+  user: NoticeUser;
 }
 
 export interface NoticesResponse extends ApiResponse {

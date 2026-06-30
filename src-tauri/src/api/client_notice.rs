@@ -148,6 +148,9 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
     // 赞作品（digg_type=1）则没有。用 comment 是否存在来区分，比硬编码 digg_type 稳。
     let mut is_comment_like = false;
     let mut is_reply = false;
+    // type 31 评论/回复通知的定位信息：cid（别人发的那条）+ root_cid（根评论）。
+    // 实测 comment_wrap.parent_id 恒为根评论 cid；reply_comment 不带 cid 不可用。
+    let mut comment_brief: Option<serde_json::Value> = None;
 
     let digg = obj.get("digg");
     let follow = obj.get("follow");
@@ -202,8 +205,16 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
         // comment.comment（含 text + user），被回复评论在 comment.reply_comment。
         if let Some(inner) = wrap_val.get("comment").and_then(|v| v.as_object()) {
             let inner_val = serde_json::Value::Object(inner.clone());
+            let inner_cid = inner_val
+                .get("cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let mut inner_user: Option<serde_json::Value> = None;
             if let Some(user) = inner_val.get("user") {
                 if let Some(formatted) = format_user(user) {
+                    inner_user = Some(formatted.clone());
                     users.push(formatted);
                 }
             }
@@ -213,6 +224,21 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            // 定位信息守卫：cid 与 parent_id 均非空才输出 comment 子对象。
+            let parent_id = wrap_val
+                .get("parent_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !inner_cid.is_empty() && !parent_id.is_empty() {
+                comment_brief = Some(serde_json::json!({
+                    "cid": inner_cid,
+                    "root_cid": parent_id,
+                    "is_sub": true, // 实测 type 31 恒为子评论（parent_id 恒非空）
+                    "user": inner_user.unwrap_or(serde_json::json!({})),
+                }));
+            }
         }
         if let Some(reply) = wrap_val.get("reply_comment").and_then(|v| v.as_object()) {
             let reply_val = serde_json::Value::Object(reply.clone());
@@ -360,6 +386,7 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
         "is_comment_like": is_comment_like,
         "is_reply": is_reply,
         "comment_text": comment_text,
+        "comment": comment_brief,
     }))
 }
 
