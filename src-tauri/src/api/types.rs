@@ -16,6 +16,8 @@ pub struct VideoInfo {
     /// 图片URL列表 (前端期望字段名为 images)
     #[serde(rename = "images")]
     pub image_urls: Option<Vec<String>>,
+    /// 每张图片的镜像候选列表（主地址在首位），403/限流时轮询，前端不使用
+    pub image_url_candidates: Option<Vec<Vec<String>>>,
     pub is_image: bool,
     pub media_type: MediaType,
     pub has_live_photo: bool,
@@ -24,6 +26,8 @@ pub struct VideoInfo {
     /// 实况照片视频URL列表 (前端期望字段名为 live_photos)
     #[serde(rename = "live_photos")]
     pub live_photo_urls: Option<Vec<String>>,
+    /// 每个 Live Photo 的镜像候选列表（主地址在首位），403/限流时轮询，前端不使用
+    pub live_photo_url_candidates: Option<Vec<Vec<String>>>,
     pub music: Option<MusicInfo>,
     pub raw_media_type: Option<i32>,
     pub text_extra: Option<Vec<TextExtra>>,

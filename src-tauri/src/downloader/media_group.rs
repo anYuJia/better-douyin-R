@@ -22,34 +22,28 @@ use super::filename::{
 use super::http::build_download_headers;
 use super::media_request::request_media_with_fallback;
 use super::quality::{ordered_video_urls, DownloadQuality};
-use crate::media_utils::filter_live_photo_media_items;
+use crate::media_utils::{filter_live_photo_media_items, push_image_like_items};
 
 pub(crate) fn collect_media_items(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
     let mut items = Vec::new();
 
     // Live Photo
     if let Some(urls) = &video.live_photo_urls {
-        for url in urls {
-            if !url.trim().is_empty() {
-                items.push(DownloadMediaItem {
-                    r#type: "live_photo".to_string(),
-                    url: url.clone(),
-                    fallback_urls: Vec::new(),
-                });
-            }
-        }
+        push_image_like_items(
+            &mut items,
+            urls,
+            video.live_photo_url_candidates.as_ref(),
+            "live_photo",
+        );
     }
 
     if let Some(urls) = &video.image_urls {
-        for url in urls {
-            if !url.trim().is_empty() {
-                items.push(DownloadMediaItem {
-                    r#type: "image".to_string(),
-                    url: url.clone(),
-                    fallback_urls: Vec::new(),
-                });
-            }
-        }
+        push_image_like_items(
+            &mut items,
+            urls,
+            video.image_url_candidates.as_ref(),
+            "image",
+        );
     }
 
     if !items.is_empty() {

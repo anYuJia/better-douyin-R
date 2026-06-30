@@ -45,6 +45,23 @@ fn looks_like_audio_media_url(url: &str) -> bool {
         || normalized.contains("/music/")
 }
 
+/// 从 JSON 数组提取去重保序的 URL 列表，过滤空值。
+fn dedup_url_list(urls: Option<&Vec<serde_json::Value>>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    if let Some(arr) = urls {
+        for value in arr {
+            if let Some(s) = value.as_str() {
+                let s = s.trim();
+                if !s.is_empty() && seen.insert(s.to_string()) {
+                    out.push(s.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
 impl DouyinClient {
     fn normalize_share_url_token(value: &str) -> String {
         let trimmed = value.trim();
@@ -491,26 +508,30 @@ impl DouyinClient {
         let is_image = images_data.is_some();
         let mut image_urls_list = Vec::new();
         let mut live_photo_urls_list = Vec::new();
+        let mut image_url_candidates: Vec<Vec<String>> = Vec::new();
+        let mut live_photo_url_candidates: Vec<Vec<String>> = Vec::new();
 
         if let Some(images) = images_data {
             for image in images {
-                if let Some(url) = image
-                    .get("video")
-                    .and_then(|value| value.get("play_addr"))
-                    .and_then(|value| value.get("url_list"))
-                    .and_then(|value| value.as_array())
-                    .and_then(|urls| urls.first())
-                    .and_then(|value| value.as_str())
-                {
-                    live_photo_urls_list.push(url.to_string());
+                // Live Photo: play_addr.url_list 去重保序，主地址取首项
+                let live_list = dedup_url_list(
+                    image
+                        .get("video")
+                        .and_then(|value| value.get("play_addr"))
+                        .and_then(|value| value.get("url_list"))
+                        .and_then(|value| value.as_array()),
+                );
+                if let Some(primary) = live_list.first() {
+                    live_photo_urls_list.push(primary.clone());
+                    live_photo_url_candidates.push(live_list);
                 }
-                if let Some(url) = image
-                    .get("url_list")
-                    .and_then(|value| value.as_array())
-                    .and_then(|urls| urls.last())
-                    .and_then(|value| value.as_str())
-                {
-                    image_urls_list.push(url.to_string());
+                // 图片: url_list 去重保序，主地址取末项(最高清)，候选=其余
+                let img_list = dedup_url_list(image.get("url_list").and_then(|value| value.as_array()));
+                if let Some(primary) = img_list.last() {
+                    image_urls_list.push(primary.clone());
+                    let mut ordered = vec![primary.clone()];
+                    ordered.extend(img_list.iter().filter(|u| u.as_str() != primary.as_str()).cloned());
+                    image_url_candidates.push(ordered);
                 }
             }
         }
@@ -526,6 +547,16 @@ impl DouyinClient {
             None
         } else {
             Some(live_photo_urls_list)
+        };
+        let image_url_candidates = if image_url_candidates.is_empty() {
+            None
+        } else {
+            Some(image_url_candidates)
+        };
+        let live_photo_url_candidates = if live_photo_url_candidates.is_empty() {
+            None
+        } else {
+            Some(live_photo_url_candidates)
         };
 
         // 确定媒体类型
@@ -607,12 +638,14 @@ impl DouyinClient {
             statistics,
             status,
             image_urls,
+            image_url_candidates,
             is_image,
             media_type,
             has_live_photo,
             is_liked,
             is_collected,
             live_photo_urls,
+            live_photo_url_candidates,
             music,
             raw_media_type,
             text_extra,
@@ -1120,7 +1153,10 @@ mod tests {
                 ],
                 "video": {
                     "play_addr": {
-                        "url_list": ["https://example.com/live-photo.mp4"]
+                        "url_list": [
+                            "https://example.com/live-photo.mp4",
+                            "https://example.com/live-photo-backup.mp4"
+                        ]
                     }
                 }
             }]
@@ -1135,6 +1171,21 @@ mod tests {
         assert_eq!(
             video.image_urls.as_ref().expect("images"),
             &vec!["https://example.com/image-large.jpeg".to_string()]
+        );
+        // 主地址失败时轮询的镜像候选：主地址在首位
+        assert_eq!(
+            video.live_photo_url_candidates.as_ref().expect("live photo candidates"),
+            &vec![vec![
+                "https://example.com/live-photo.mp4".to_string(),
+                "https://example.com/live-photo-backup.mp4".to_string(),
+            ]]
+        );
+        assert_eq!(
+            video.image_url_candidates.as_ref().expect("image candidates"),
+            &vec![vec![
+                "https://example.com/image-large.jpeg".to_string(),
+                "https://example.com/image-small.webp".to_string(),
+            ]]
         );
         assert_eq!(video.media_type, MediaType::Mixed);
     }

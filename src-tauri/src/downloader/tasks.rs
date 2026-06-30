@@ -6,7 +6,7 @@ use crate::downloader::filename::{
     build_output_dir, generate_filename_with_config, media_type_name,
 };
 use crate::downloader::quality::{ordered_video_urls, DownloadQuality};
-use crate::media_utils::filter_live_photo_media_items;
+use crate::media_utils::{filter_live_photo_media_items, push_image_like_items};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use std::path::PathBuf;
@@ -102,27 +102,21 @@ impl Downloader {
         let mut items = Vec::new();
 
         if let Some(urls) = &video.live_photo_urls {
-            for url in urls {
-                if !url.trim().is_empty() {
-                    items.push(DownloadMediaItem {
-                        r#type: "live_photo".to_string(),
-                        url: url.clone(),
-                        fallback_urls: Vec::new(),
-                    });
-                }
-            }
+            push_image_like_items(
+                &mut items,
+                urls,
+                video.live_photo_url_candidates.as_ref(),
+                "live_photo",
+            );
         }
 
         if let Some(urls) = &video.image_urls {
-            for url in urls {
-                if !url.trim().is_empty() {
-                    items.push(DownloadMediaItem {
-                        r#type: "image".to_string(),
-                        url: url.clone(),
-                        fallback_urls: Vec::new(),
-                    });
-                }
-            }
+            push_image_like_items(
+                &mut items,
+                urls,
+                video.image_url_candidates.as_ref(),
+                "image",
+            );
         }
 
         if items.is_empty() {

@@ -233,32 +233,50 @@ fn push_download_item(
     });
 }
 
+/// 从主地址列表与对应的镜像候选构建图片/Live Photo 下载项。
+/// `candidates[i]` 是以主地址开头的完整镜像列表，主地址失败(403/限流)时轮询其余。
+pub fn push_image_like_items(
+    items: &mut Vec<DownloadMediaItem>,
+    primary_urls: &[String],
+    candidates: Option<&Vec<Vec<String>>>,
+    media_type: &str,
+) {
+    for (idx, url) in primary_urls.iter().enumerate() {
+        if url.trim().is_empty() {
+            continue;
+        }
+        let fallback_urls = candidates
+            .and_then(|list| list.get(idx))
+            .map(|mirrors| mirrors.iter().skip(1).cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        items.push(DownloadMediaItem {
+            r#type: media_type.to_string(),
+            url: url.clone(),
+            fallback_urls,
+        });
+    }
+}
+
 pub fn download_media_items_from_video(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
     use crate::api::DouyinClient;
     let mut items = Vec::new();
 
     if let Some(urls) = &video.live_photo_urls {
-        for url in urls {
-            if !url.trim().is_empty() {
-                items.push(DownloadMediaItem {
-                    r#type: MEDIA_TYPE_LIVE_PHOTO.to_string(),
-                    url: url.clone(),
-                    fallback_urls: Vec::new(),
-                });
-            }
-        }
+        push_image_like_items(
+            &mut items,
+            urls,
+            video.live_photo_url_candidates.as_ref(),
+            MEDIA_TYPE_LIVE_PHOTO,
+        );
     }
 
     if let Some(urls) = &video.image_urls {
-        for url in urls {
-            if !url.trim().is_empty() {
-                items.push(DownloadMediaItem {
-                    r#type: MEDIA_TYPE_IMAGE.to_string(),
-                    url: url.clone(),
-                    fallback_urls: Vec::new(),
-                });
-            }
-        }
+        push_image_like_items(
+            &mut items,
+            urls,
+            video.image_url_candidates.as_ref(),
+            MEDIA_TYPE_IMAGE,
+        );
     }
 
     if items.is_empty() {

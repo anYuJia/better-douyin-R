@@ -11,7 +11,7 @@ pub use crate::media_utils_normalize::{
 
 pub use crate::media_utils_download_items::{
     download_media_items_from_video, download_media_type_from_payload, filter_live_photo_media_items,
-    infer_download_item_type, parse_download_media_items,
+    infer_download_item_type, parse_download_media_items, push_image_like_items,
 };
 
 pub use crate::media_utils_python::{
