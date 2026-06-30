@@ -166,9 +166,8 @@ impl DouyinClient {
     async fn get_single_video_detail(&self, aweme_id: &str) -> Result<VideoInfo> {
         let mut params = HashMap::new();
         params.insert("aweme_id", aweme_id.to_string());
-        params.insert("aid", "1128".to_string());
-        params.insert("version_name", "23.5.0".to_string());
-        params.insert("device_platform", "webapp".to_string());
+        // aid/version_name/device_platform/os 由 common_params 提供（与 Python 版一致，
+        // 实测 detail 接口需 aid=6383/version_name=19.6.0，aid=1128 会返回空）。
         params.insert("os", "windows".to_string());
 
         // detail 接口必须带 a_bogus 签名（skip_sign=true 实测返回空/失败）。
