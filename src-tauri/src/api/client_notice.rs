@@ -305,8 +305,10 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
     } else if let Some(at) = at.and_then(|v| v.as_object()) {
         let at_val = serde_json::Value::Object(at.clone());
         // @我 通知（type 45）：用户在 user_info（单个对象），文案在 content。
+        let mut at_user: Option<serde_json::Value> = None;
         if let Some(user_info) = at_val.get("user_info") {
             if let Some(formatted) = format_user(user_info) {
+                at_user = Some(formatted.clone());
                 users.push(formatted);
             }
         }
@@ -321,6 +323,28 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
             .get("aweme")
             .and_then(|v| if v.is_null() { None } else { Some(v) })
             .and_then(format_aweme_brief);
+        // @评论的 cid 在 schema_url 里：aweme://aweme/detail/{aweme_id}?cid={cid}
+        if let Some(user) = at_user {
+            let schema_url = at_val
+                .get("schema_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let at_cid = schema_url
+                .split('?')
+                .find_map(|seg| seg.strip_prefix("cid=").map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty());
+            if let Some(cid) = at_cid {
+                comment_brief = Some(serde_json::json!({
+                    "cid": cid,
+                    "root_cid": cid,
+                    "is_sub": false,
+                    "text": "",
+                    "digg_count": 0,
+                    "create_time": item.get("create_time").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "user": user,
+                }));
+            }
+        }
     } else if let Some(follow) = follow.and_then(|v| v.as_object()) {
         let follow_val = serde_json::Value::Object(follow.clone());
         // 关注类通知：from_user 是单个对象。

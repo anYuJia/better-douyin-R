@@ -387,42 +387,93 @@ export function usePlayerComments({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // 通知跳转：把目标评论置顶插入评论列表并高光。
-  // 不靠翻页找——抖音评论列表按热度排序，目标评论可能很靠后甚至不在前几页。
-  // 直接用通知 payload 已有的评论数据构造 CommentInfo 插到第一条。
+  // 通知跳转：用 insert_ids=cid 拉评论列表，目标评论会被插入返回。
+  // cid 在根列表 → 置顶高光根评论；cid 在某根评论的 sub_comments → 展开该根评论高光子评论。
   useEffect(() => {
     if (!initialComment || locateDoneRef.current) return;
-    // 评论尚未加载完成时（视频切换会先清空 comments），等加载完再插。
     if (commentsLoadedAwemeId !== currentVideo?.aweme_id) return;
+    if (locatePageRef.current > 0) return; // 仅拉一次
+    locatePageRef.current = 1;
     const { cid, text, digg_count, create_time, user } = initialComment;
+    const awemeId = currentVideo?.aweme_id;
+    if (!awemeId) return;
 
-    const exists = comments.some((c) => c.cid === cid);
-    if (!exists) {
-      const pinned: CommentInfo = {
-        cid,
-        text,
-        create_time,
-        digg_count,
-        user_digged: 0,
-        reply_comment_total: 0,
-        sub_comments: null,
-        user: {
-          uid: user.uid,
-          nickname: user.nickname,
-          sec_uid: user.sec_uid,
-          avatar_thumb: user.avatar,
-        },
-      };
-      setComments((prev) => [pinned, ...prev]);
-    }
-    locateDoneRef.current = true;
-    setHighlightCid(cid);
-    window.setTimeout(() => setHighlightCid((cur) => (cur === cid ? "" : cur)), 2400);
-    window.requestAnimationFrame(() => {
-      const node = commentItemRefs.current.get(cid);
-      if (node) node.scrollIntoView({ block: "center" });
-    });
-  }, [initialComment, comments, commentsLoadedAwemeId, currentVideo?.aweme_id]);
+    const highlight = (targetCid: string) => {
+      setHighlightCid(targetCid);
+      window.setTimeout(() => setHighlightCid((cur) => (cur === targetCid ? "" : cur)), 2400);
+      window.requestAnimationFrame(() => {
+        const node = commentItemRefs.current.get(targetCid) || replyItemRefs.current.get(targetCid);
+        if (node) node.scrollIntoView({ block: "center" });
+      });
+    };
+
+    void (async () => {
+      try {
+        const result = await getComments(awemeId, 20, 0, cid);
+        if (!result.success || !result.comments) {
+          locateDoneRef.current = true;
+          setLocatePrompt("deleted");
+          return;
+        }
+        // cid 在根列表 → 置顶高光。
+        const asRoot = result.comments.find((c) => c.cid === cid);
+        if (asRoot) {
+          const ordered = [asRoot, ...result.comments.filter((c) => c.cid !== cid)];
+          setComments(ordered);
+          setCommentsLoadedAwemeId(awemeId);
+          locateDoneRef.current = true;
+          highlight(cid);
+          return;
+        }
+        // cid 在某根评论的 sub_comments → 展开该根评论高光子评论。
+        const host = result.comments.find((c) => (c.sub_comments || []).some((s) => s.cid === cid));
+        if (host) {
+          const subReplies = (host.sub_comments || []) as CommentInfo[];
+          const ordered = [
+            ...subReplies.filter((r) => r.cid === cid),
+            ...subReplies.filter((r) => r.cid !== cid),
+          ];
+          const hostOrdered = [host, ...result.comments.filter((c) => c.cid !== host.cid)];
+          setComments(hostOrdered);
+          setCommentsLoadedAwemeId(awemeId);
+          setCommentReplies((prev) => ({
+            ...prev,
+            [host.cid]: {
+              items: ordered,
+              cursor: 0,
+              hasMore: false,
+              loading: false,
+              error: "",
+              total: subReplies.length,
+              loaded: true,
+            },
+          }));
+          setExpandedCommentReplyIds((prev) => new Set(prev).add(host.cid));
+          locateDoneRef.current = true;
+          highlight(cid);
+          return;
+        }
+        // 兜底：评论已删或接口未返回，用通知数据构造置顶。
+        const pinned: CommentInfo = {
+          cid,
+          text,
+          create_time,
+          digg_count,
+          user_digged: 0,
+          reply_comment_total: 0,
+          sub_comments: null,
+          user: { uid: user.uid, nickname: user.nickname, sec_uid: user.sec_uid, avatar_thumb: user.avatar },
+        };
+        setComments((prev) => [pinned, ...prev]);
+        locateDoneRef.current = true;
+        setLocatePrompt("deleted");
+        highlight(cid);
+      } catch {
+        locateDoneRef.current = true;
+        setLocatePrompt("deleted");
+      }
+    })();
+  }, [initialComment, commentsLoadedAwemeId, currentVideo?.aweme_id]);
 
   // 评论项 ref 回调工厂：el 为 null 时清理 stale 条目。
   const registerCommentRef = useCallback((cid: string) => (el: HTMLDivElement | null) => {

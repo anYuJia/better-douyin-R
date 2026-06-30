@@ -171,23 +171,30 @@ impl DouyinClient {
         params.insert("device_platform", "webapp".to_string());
         params.insert("os", "windows".to_string());
 
-        let response = match self
+        // detail 接口必须带 a_bogus 签名（skip_sign=true 实测返回空/失败）。
+        let response = self
             .request_raw_json_with_options(
                 "https://www.douyin.com/aweme/v1/web/aweme/detail/",
                 Some(params.clone()),
                 "GET",
                 None,
-                true,
+                false,
             )
-            .await
-        {
-            Ok(response) => response,
-            Err(error) => {
+            .await;
+        // 对抗偶发空响应/限流：退避后重试一次。
+        let response = match response {
+            Ok(resp)
+                if resp["status_code"].as_i64().unwrap_or(-1) == 0
+                    && resp["aweme_detail"].is_object() =>
+            {
+                resp
+            }
+            _ => {
                 log::warn!(
-                    "video detail unsigned request failed, retrying with signature: aweme_id={} error={}",
-                    aweme_id,
-                    error
+                    "video detail first attempt failed, retrying after backoff: aweme_id={}",
+                    aweme_id
                 );
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
                 self.request_raw_json_with_options(
                     "https://www.douyin.com/aweme/v1/web/aweme/detail/",
                     Some(params),

@@ -9,6 +9,7 @@ pub(crate) async fn get_comments(
     aweme_id: String,
     cursor: i64,
     count: u32,
+    insert_ids: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let client = match get_client(&state).await {
         Ok(client) => client,
@@ -17,8 +18,9 @@ pub(crate) async fn get_comments(
         }
     };
 
+    let insert_ids = insert_ids.unwrap_or_default();
     let (comments, next_cursor, has_more, total) =
-        match client.get_comments(&aweme_id, cursor, count).await {
+        match client.get_comments(&aweme_id, cursor, count, &insert_ids).await {
             Ok(result) => result,
             Err(e) => {
                 return Ok(api_login_or_verify_error_response(

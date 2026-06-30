@@ -15,6 +15,7 @@ impl DouyinClient {
         aweme_id: &str,
         cursor: i64,
         count: u32,
+        insert_ids: &str,
     ) -> Result<(Vec<CommentInfo>, i64, bool, i64)> {
         let mut params = HashMap::new();
         params.insert("aweme_id", aweme_id.to_string());
@@ -22,7 +23,7 @@ impl DouyinClient {
         params.insert("count", count.to_string());
         params.insert("pc_img_format", "webp".to_string());
         params.insert("item_type", "0".to_string());
-        params.insert("insert_ids", String::new());
+        params.insert("insert_ids", insert_ids.to_string());
         params.insert("whale_cut_token", String::new());
         params.insert("cut_version", "1".to_string());
         params.insert("rcFT", String::new());
@@ -154,7 +155,17 @@ impl DouyinClient {
             digg_count: data["digg_count"].as_i64().unwrap_or(0),
             user_digged: data["user_digged"].as_i64().unwrap_or(0) as i32,
             reply_comment_total: data["reply_comment_total"].as_i64().unwrap_or(0),
-            sub_comments: None,
+            sub_comments: data["reply_comment"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|c| self.parse_comment(c))
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v| !v.is_empty())
+                .or_else(|| data["sub_comments"].as_array().map(|arr| {
+                    arr.iter().filter_map(|c| self.parse_comment(c)).collect::<Vec<_>>()
+                }).filter(|v| !v.is_empty())),
             status: data["status"].as_i64().unwrap_or(0) as i32,
             ip_label: data["ip_label"].as_str().unwrap_or_default().to_string(),
             sticker_url,
