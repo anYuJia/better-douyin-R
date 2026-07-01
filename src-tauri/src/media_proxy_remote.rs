@@ -139,8 +139,8 @@ pub(crate) async fn media_proxy(
             }
         };
 
-        let mut upstream = state
-            .media_http_client
+        let media_http_client = state.media_http_client.lock().await.clone();
+        let mut upstream = media_http_client
             .get(&upstream_url)
             .timeout(if requested_media_type == "image" {
                 tokio::time::Duration::from_secs(8)

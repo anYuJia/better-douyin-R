@@ -1,6 +1,7 @@
 //! API 客户端
 
 use crate::config::{get_user_agent, AppConfig};
+use crate::http_client::apply_tls_config;
 use crate::sign;
 use anyhow::{anyhow, Result};
 use base64::Engine;
@@ -49,10 +50,12 @@ pub struct DouyinClient {
 
 impl DouyinClient {
     pub fn new(config: AppConfig) -> Result<Self> {
-        let mut builder = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .redirect(Policy::limited(5))
-            .danger_accept_invalid_certs(false);
+        let mut builder = apply_tls_config(
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .redirect(Policy::limited(5)),
+            &config,
+        );
 
         if let Some(proxy) = &config.proxy {
             if !proxy.is_empty() {

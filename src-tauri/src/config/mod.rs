@@ -27,6 +27,9 @@ pub struct AppConfig {
     pub im_friend_refresh_interval_seconds: u64,
     /// 代理设置
     pub proxy: Option<String>,
+    /// 是否校验 HTTPS 证书
+    #[serde(default = "default_true")]
+    pub ssl_verify: bool,
     /// 最大并发下载数
     pub max_concurrent: usize,
     /// 下载质量
@@ -98,6 +101,7 @@ impl Default for AppConfig {
             im_friend_include_all_users: false,
             im_friend_refresh_interval_seconds: default_im_friend_refresh_interval_seconds(),
             proxy: None,
+            ssl_verify: true,
             max_concurrent: 3,
             download_quality: default_download_quality(),
             download_live_photo_video: true,

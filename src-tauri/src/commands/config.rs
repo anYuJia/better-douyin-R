@@ -3,6 +3,7 @@
 use crate::api::{CookieStatus, DouyinClient, UserInfo};
 use crate::config::AppConfig;
 use crate::downloader::{Downloader, DownloaderEvent};
+use crate::http_client::build_media_http_client;
 use crate::login_window::{
     clear_douyin_login_cookies, close_stale_cookie_login_windows, schedule_remove_login_data_dir,
 };
@@ -62,8 +63,10 @@ pub(crate) async fn save_config(
     if next_config.cookie.trim().is_empty() && !current_config.cookie.trim().is_empty() {
         next_config.cookie = current_config.cookie.clone();
     }
+    let network_client_needs_rebuild =
+        next_config.proxy != current_config.proxy || next_config.ssl_verify != current_config.ssl_verify;
     let client_needs_rebuild =
-        next_config.cookie != current_config.cookie || next_config.proxy != current_config.proxy;
+        next_config.cookie != current_config.cookie || network_client_needs_rebuild;
 
     match next_config.save() {
         Ok(_) => {
@@ -82,6 +85,17 @@ pub(crate) async fn save_config(
                                 error
                             );
                         }
+                    }
+                }
+            }
+            if network_client_needs_rebuild {
+                match build_media_http_client(&next_config) {
+                    Ok(client) => *state.media_http_client.lock().await = client,
+                    Err(error) => {
+                        log::warn!(
+                            "Failed to rebuild media HTTP client after config update: {}",
+                            error
+                        );
                     }
                 }
             }

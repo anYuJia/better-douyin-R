@@ -14,6 +14,7 @@ import {
   FolderTree,
   Gauge,
   Loader2,
+  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ interface SettingsDownloadTabProps {
   folderNameTemplate: string;
   setFolderNameTemplate: (value: string) => void;
   autoCreateFolder: boolean;
+  sslVerify: boolean;
   choosingDirectory: boolean;
   savingFields: SavingFields;
   fieldStatus: (field: SettingsField) => SettingStatus | undefined;
@@ -45,6 +47,7 @@ interface SettingsDownloadTabProps {
   handleLivePhotoContentChange: (kind: "video" | "image", value: boolean) => void;
   handleMaxConcurrentChange: (value: string) => void;
   handleAutoCreateFolderChange: (value: boolean) => void;
+  handleSslVerifyChange: (value: boolean) => void;
   saveFilenameTemplate: (value: string) => void;
   saveFolderNameTemplate: (value: string) => void;
   appendFilenameToken: (token: string) => void;
@@ -63,6 +66,7 @@ export function SettingsDownloadTab({
   folderNameTemplate,
   setFolderNameTemplate,
   autoCreateFolder,
+  sslVerify,
   choosingDirectory,
   savingFields,
   fieldStatus,
@@ -71,6 +75,7 @@ export function SettingsDownloadTab({
   handleLivePhotoContentChange,
   handleMaxConcurrentChange,
   handleAutoCreateFolderChange,
+  handleSslVerifyChange,
   saveFilenameTemplate,
   saveFolderNameTemplate,
   appendFilenameToken,
@@ -268,6 +273,36 @@ export function SettingsDownloadTab({
           {renderLivePhotoToggle("video", "视频", downloadLivePhotoVideo)}
           {renderLivePhotoToggle("image", "图片", downloadLivePhotoImage)}
         </div>
+      </SettingGroup>
+
+      <SettingGroup icon={ShieldCheck} label="SSL 证书校验" status={fieldStatus("ssl_verify")}>
+        <button
+          type="button"
+          onClick={() => void handleSslVerifyChange(!sslVerify)}
+          disabled={savingFields.ssl_verify}
+          className={cn(
+            "flex min-h-9 w-full items-center justify-between rounded-[8px] border px-2.5 py-2 transition-[background-color,border-color,opacity]",
+            sslVerify ? "border-accent/25 bg-accent/5" : "border-amber-400/35 bg-amber-400/10",
+            savingFields.ssl_verify && "opacity-70"
+          )}
+        >
+          <span className="min-w-0 pr-3 text-left text-[0.76rem] font-semibold text-text">
+            {sslVerify ? "使用系统证书校验" : "忽略证书错误"}
+          </span>
+          <span
+            className={cn(
+              "relative h-4.5 w-8.5 shrink-0 rounded-full transition-colors",
+              sslVerify ? "bg-accent" : "bg-amber-400"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                sslVerify ? "translate-x-4.5" : "translate-x-0.5"
+              )}
+            />
+          </span>
+        </button>
       </SettingGroup>
     </div>
   );

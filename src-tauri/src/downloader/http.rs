@@ -1,6 +1,7 @@
 //! HTTP 下载辅助
 
 use crate::config::AppConfig;
+use crate::http_client::apply_tls_config;
 use anyhow::Result;
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_ENCODING, COOKIE, RANGE, REFERER, USER_AGENT,
@@ -8,9 +9,10 @@ use reqwest::header::{
 use std::time::Duration;
 
 pub(crate) fn build_download_client(config: &AppConfig) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .danger_accept_invalid_certs(false);
+    let mut builder = apply_tls_config(
+        reqwest::Client::builder().timeout(Duration::from_secs(300)),
+        config,
+    );
 
     if let Some(proxy) = &config.proxy {
         let proxy = proxy.trim();

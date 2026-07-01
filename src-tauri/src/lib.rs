@@ -5,6 +5,7 @@ pub mod config;
 pub mod cookie;
 pub mod downloader;
 pub mod history;
+mod http_client;
 pub mod media_proxy;
 mod media_proxy_security;
 mod media_proxy_headers;

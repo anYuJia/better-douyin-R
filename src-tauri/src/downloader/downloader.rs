@@ -71,7 +71,7 @@ impl Downloader {
 
     pub fn update_config(&mut self, config: AppConfig) -> Result<()> {
         let download_path_changed = self.config.download_path != config.download_path;
-        if self.config.proxy != config.proxy {
+        if self.config.proxy != config.proxy || self.config.ssl_verify != config.ssl_verify {
             self.client = build_download_client(&config)?;
         }
         self.config = config;
