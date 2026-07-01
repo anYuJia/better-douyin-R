@@ -1,6 +1,6 @@
 [package]
 name = "better-douyin-r"
-version = "1.0.33"
+version = "1.0.34"
 description = "better-douyin-R desktop application"
 authors = ["anYuJia"]
 license = "LicenseRef-Better-Douyin-Non-Commercial"
