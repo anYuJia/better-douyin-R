@@ -163,10 +163,22 @@ impl Downloader {
         tokens.insert(task_id.to_string(), true);
 
         let mut progress = 0.0;
+        let mut completed_files = 0;
+        let mut total_files = 0;
+        let mut downloaded_size = 0;
+        let mut total_size = 0;
+        let mut title = String::new();
+        let mut save_path = String::new();
         let mut tasks = self.tasks.lock().await;
         if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
             task.status = DownloadStatus::Paused;
             progress = task.progress;
+            completed_files = task.completed_files;
+            total_files = task.total_files;
+            downloaded_size = task.downloaded_size;
+            total_size = task.total_size;
+            title = task.title.clone();
+            save_path = task.save_path.clone();
         }
         drop(tasks);
 
@@ -176,8 +188,17 @@ impl Downloader {
             serde_json::json!({
                 "task_id": task_id,
                 "progress": progress,
+                "completed": completed_files,
+                "total": total_files,
+                "file_index": completed_files,
+                "file_total": total_files,
+                "bytes_downloaded": downloaded_size,
+                "bytes_total": total_size,
                 "status": "paused",
-                "speed_bps": 0
+                "speed_bps": 0,
+                "desc": title,
+                "display_name": title,
+                "save_path": save_path
             }),
         )
         .await;
