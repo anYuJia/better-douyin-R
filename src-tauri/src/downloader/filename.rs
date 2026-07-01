@@ -315,10 +315,39 @@ pub(crate) fn sanitize_extension(extension: &str) -> String {
     }
 }
 
+fn is_filesystem_unsafe_char(ch: char) -> bool {
+    let code = ch as u32;
+    ch.is_control()
+        || (0xE000..=0xF8FF).contains(&code)
+        || (0xF0000..=0xFFFFD).contains(&code)
+        || (0x100000..=0x10FFFD).contains(&code)
+        || (0xFDD0..=0xFDEF).contains(&code)
+        || matches!(code & 0xFFFF, 0xFFFE | 0xFFFF)
+        // Some macOS/Python builds reject currently-unassigned emoji code points in this block.
+        || (0x1FAE8..=0x1FAEF).contains(&code)
+}
+
+fn replace_filesystem_unsafe_unicode(value: &str) -> String {
+    let mut output = String::new();
+    let mut previous_was_placeholder = false;
+    for ch in value.chars() {
+        if is_filesystem_unsafe_char(ch) {
+            if !previous_was_placeholder {
+                output.push('_');
+                previous_was_placeholder = true;
+            }
+            continue;
+        }
+        output.push(ch);
+        previous_was_placeholder = false;
+    }
+    output
+}
+
 /// 清理文件名
 pub(crate) fn sanitize_filename(name: &str) -> String {
     let invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
-    let mut result = name.to_string();
+    let mut result = replace_filesystem_unsafe_unicode(name);
     for c in invalid_chars {
         result = result.replace(c, "_");
     }

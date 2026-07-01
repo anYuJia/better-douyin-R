@@ -202,7 +202,7 @@ mod tests {
     };
     use super::super::filename::{
         build_output_dir, create_unique_output_file, generate_filename_with_config,
-        media_extension, MAX_FILENAME_BYTES,
+        media_extension, sanitize_filename, MAX_FILENAME_BYTES,
     };
     use super::super::quality::{select_video_url, DownloadQuality};
     use super::*;
@@ -777,6 +777,31 @@ mod tests {
         );
 
         assert_eq!(filename, "无发布时间作品_7380011223344556677");
+    }
+
+    #[test]
+    fn filename_template_replaces_filesystem_rejected_unicode() {
+        let config = AppConfig {
+            filename_template: "{title}".to_string(),
+            ..Default::default()
+        };
+
+        let filename = generate_filename_with_config(
+            &config,
+            "云南公主的下午茶\u{1faef}\u{1faef}#蓬莱",
+            "7380011223344556677",
+            "作者",
+            "image",
+            0,
+        );
+
+        assert!(!filename.contains('\u{1faef}'));
+        assert_eq!(filename, "云南公主的下午茶_#蓬莱");
+    }
+
+    #[test]
+    fn sanitize_filename_replaces_private_use_characters() {
+        assert_eq!(sanitize_filename("作者\u{e000}名字"), "作者_名字");
     }
 
     #[test]
