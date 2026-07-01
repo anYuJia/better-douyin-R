@@ -57,6 +57,7 @@ pub(crate) async fn open_verify_browser(
     .title("抖音验证")
     .inner_size(1100.0, 750.0)
     .resizable(true)
+    .decorations(true)
     .focused(true)
     .build()
     .map_err(|error| format!("无法打开验证窗口: {}", error))?;
@@ -119,6 +120,7 @@ pub(crate) async fn cookie_browser_login(
     .title("登录抖音账号")
     .inner_size(1100.0, 820.0)
     .resizable(true)
+    .decorations(true)
     .focused(true)
     .incognito(true)
     .data_directory(login_data_dir.clone())

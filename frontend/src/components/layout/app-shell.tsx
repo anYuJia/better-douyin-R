@@ -3,7 +3,7 @@ import { useAppStore } from "@/stores/app-store";
 import { Sidebar } from "./sidebar";
 import { BottomBar } from "./bottom-bar";
 import { CommandPopover } from "./command-popover";
-import { WindowControls } from "./window-controls";
+import { WindowControls, toggleWindowMaximize } from "./window-controls";
 import { Hero } from "@/components/home/hero";
 import { SearchView } from "@/components/search/search-view";
 import { VideoGrid } from "@/components/search/video-grid";
@@ -52,8 +52,14 @@ export function AppShell() {
   }, [currentView]);
 
   const handleWindowDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.detail > 1) return;
     if (event.button !== 0 || event.clientY > TAURI_DRAG_HEIGHT || isInteractiveElement(event.target)) return;
     void startWindowDrag();
+  };
+
+  const handleTitlebarDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.clientY > TAURI_DRAG_HEIGHT || isInteractiveElement(event.target)) return;
+    toggleWindowMaximize();
   };
 
   return (
@@ -63,6 +69,7 @@ export function AppShell() {
         needsTopInset && "shadow-[inset_0_0_0_1px_var(--color-border)]"
       )}
       onPointerDownCapture={handleWindowDrag}
+      onDoubleClickCapture={handleTitlebarDoubleClick}
     >
       <WindowControls />
       {/* Sidebar */}

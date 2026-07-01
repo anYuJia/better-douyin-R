@@ -174,6 +174,53 @@ export type AccountsResponse = {
   message?: string;
 };
 
+const NON_AVATAR_URL_MARKERS = [
+  "emblem",
+  "logo",
+  "badge",
+  "icon",
+  "sprite",
+  "placeholder",
+  "default-avatar",
+  "default_avatar",
+];
+const AVATAR_URL_MARKERS = [
+  "avatar",
+  "aweme-avatar",
+  "user-avatar",
+  "avatar_",
+  "avatar-",
+  "300x300",
+  "168x168",
+  "100x100",
+];
+
+function sanitizeAvatarUrl(value: string | null | undefined): string {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+
+  const lowered = url.toLowerCase();
+  if (NON_AVATAR_URL_MARKERS.some((marker) => lowered.includes(marker))) return "";
+  if (AVATAR_URL_MARKERS.some((marker) => lowered.includes(marker))) return url;
+
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname.toLowerCase();
+  if (
+    ["douyinpic.com", "byteimg.com", "bytedance.com"].some((token) => host.includes(token)) &&
+    [".jpg", ".jpeg", ".png", ".webp"].some((ext) => path.endsWith(ext))
+  ) {
+    return url;
+  }
+  return "";
+}
+
 export async function getAccounts(): Promise<AccountsResponse> {
   const config = await getConfig();
   if (!config.cookie_set) {
@@ -193,7 +240,7 @@ export async function getAccounts(): Promise<AccountsResponse> {
         {
           sec_uid: secUid,
           nickname: status.user_name || "当前账号",
-          avatar_thumb: status.avatar_thumb || "",
+          avatar_thumb: sanitizeAvatarUrl(status.avatar_thumb),
         },
       ],
     };
@@ -246,7 +293,7 @@ export async function addAccount(
     message: `成功添加并切换账号: ${status.user_name || "当前账号"}`,
     nickname: status.user_name || "当前账号",
     sec_uid: status.sec_uid || status.user_id || "current",
-    avatar_thumb: status.avatar_thumb || "",
+    avatar_thumb: sanitizeAvatarUrl(status.avatar_thumb),
   };
 }
 

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { toggleWindowMaximize } from "./window-controls";
 
 interface NavItem {
   id: ViewType;
@@ -163,8 +164,10 @@ export function Sidebar() {
         )}
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties & { WebkitAppRegion: string }}
         onPointerDown={(event) => {
+          if (event.detail > 1) return;
           if (event.button === 0) void startWindowDrag();
         }}
+        onDoubleClick={toggleWindowMaximize}
       >
         {collapsed ? (
           <button

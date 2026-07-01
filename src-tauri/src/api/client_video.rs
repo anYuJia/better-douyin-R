@@ -25,6 +25,57 @@ static AWEME_ID_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         .filter_map(|p| Regex::new(p).ok())
         .collect()
 });
+const NON_AVATAR_URL_MARKERS: &[&str] = &[
+    "emblem",
+    "logo",
+    "badge",
+    "icon",
+    "sprite",
+    "placeholder",
+    "default-avatar",
+    "default_avatar",
+];
+const AVATAR_URL_MARKERS: &[&str] = &[
+    "avatar",
+    "aweme-avatar",
+    "user-avatar",
+    "avatar_",
+    "avatar-",
+    "300x300",
+    "168x168",
+    "100x100",
+];
+
+fn sanitize_avatar_url(url: &str) -> Option<String> {
+    let value = url.trim();
+    if value.is_empty() || !(value.starts_with("http://") || value.starts_with("https://")) {
+        return None;
+    }
+    let lower = value.to_ascii_lowercase();
+    if NON_AVATAR_URL_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        return None;
+    }
+    if AVATAR_URL_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        return Some(value.to_string());
+    }
+    let cdn_host = lower.contains("douyinpic.com")
+        || lower.contains("byteimg.com")
+        || lower.contains("bytedance.com");
+    let image_path = lower.contains(".jpg")
+        || lower.contains(".jpeg")
+        || lower.contains(".png")
+        || lower.contains(".webp");
+    if cdn_host && image_path {
+        return Some(value.to_string());
+    }
+    None
+}
 
 fn looks_watermarked_media_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
@@ -726,6 +777,7 @@ impl DouyinClient {
         keys.iter()
             .filter_map(|key| data.get(*key))
             .find_map(|value| self.get_first_url_opt(value))
+            .and_then(|url| sanitize_avatar_url(&url))
             .unwrap_or_default()
     }
 

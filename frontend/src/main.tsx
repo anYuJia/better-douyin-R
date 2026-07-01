@@ -22,6 +22,10 @@ function reportBootError(title: string, error: unknown) {
 function BootReady() {
   useEffect(() => {
     window.__DY_BOOT__?.markReady();
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("frontend_ready"))
+      .catch(() => undefined);
   }, []);
 
   return null;

@@ -35,6 +35,18 @@ pub mod download_payload;
 use state::AppState;
 use tauri::Manager;
 
+#[tauri::command]
+fn frontend_ready(_app: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(window) = _app.get_webview_window("main") {
+            if let Err(error) = window.set_decorations(false) {
+                log::warn!("failed to disable Windows window decorations: {}", error);
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -53,16 +65,6 @@ pub fn run() {
                     .level_for("better_douyin_r", log_level)
                     .build(),
             )?;
-
-            #[cfg(target_os = "windows")]
-            {
-                use tauri::Manager;
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Err(error) = window.set_decorations(false) {
-                        log::warn!("failed to disable Windows window decorations: {}", error);
-                    }
-                }
-            }
 
             let state = AppState::new();
             *state.app_handle.blocking_lock() = Some(app.handle().clone());
@@ -130,6 +132,7 @@ pub fn run() {
             commands::login::open_verify_browser,
             commands::login::cookie_browser_login,
             commands::login::cancel_cookie_browser_login,
+            frontend_ready,
             commands::downloads::download_video,
             commands::downloads::download_videos,
             commands::downloads::download_user_videos,
