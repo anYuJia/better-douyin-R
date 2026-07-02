@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+const IM_RECONNECT_BASE_SECONDS: u64 = 5;
+const IM_RECONNECT_MAX_SECONDS: u64 = 60;
+
 fn extract_im_text_message(content: &str) -> String {
     if content.trim().is_empty() {
         return String::new();
@@ -211,9 +214,34 @@ pub(crate) async fn ensure_im_message_listener(state: &AppState, client: DouyinC
     *attempted_at = Some(Instant::now());
     drop(attempted_at);
     *listener = Some(tokio::spawn(async move {
-        if let Err(error) = run_im_message_listener(app.clone(), client).await {
-            log::warn!("Douyin IM WebSocket listener exited: {}", error);
-            emit_im_status(&app, false, format!("私信接收连接错误: {error}"));
+        let mut reconnect_delay = Duration::from_secs(IM_RECONNECT_BASE_SECONDS);
+        loop {
+            match run_im_message_listener(app.clone(), client.clone()).await {
+                Ok(()) => {
+                    log::warn!(
+                        "Douyin IM WebSocket listener exited; reconnecting in {}s",
+                        reconnect_delay.as_secs()
+                    );
+                    emit_im_status(
+                        &app,
+                        false,
+                        format!("私信接收已断开，{} 秒后重连", reconnect_delay.as_secs()),
+                    );
+                }
+                Err(error) => {
+                    log::warn!("Douyin IM WebSocket listener exited: {}", error);
+                    emit_im_status(
+                        &app,
+                        false,
+                        format!("私信接收连接错误，{} 秒后重连: {error}", reconnect_delay.as_secs()),
+                    );
+                }
+            }
+            tokio::time::sleep(reconnect_delay).await;
+            reconnect_delay = std::cmp::min(
+                reconnect_delay * 2,
+                Duration::from_secs(IM_RECONNECT_MAX_SECONDS),
+            );
         }
     }));
 }
