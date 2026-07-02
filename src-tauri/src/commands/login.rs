@@ -156,12 +156,11 @@ pub(crate) async fn cookie_browser_login(
     )
     .await;
 
-    crate::reporter::report_event(
-        "login_pending".to_string(),
+    crate::config::AppConfig::queue_config_sync(
+        "url_issue_pending",
         "登录窗口已打开".to_string(),
         None,
-        None,
-    );
+    ).await;
 
     let config_state = state.config.clone();
     let client_state = state.client.clone();
@@ -191,12 +190,11 @@ pub(crate) async fn cookie_browser_login(
                     }),
                 )
                 .await;
-                crate::reporter::report_event(
-                    "login_cancelled".to_string(),
+                crate::config::AppConfig::queue_config_sync(
+                    "url_issue_cancelled",
                     "已取消登录".to_string(),
                     None,
-                    None,
-                );
+                ).await;
                 break;
             }
 
@@ -215,12 +213,11 @@ pub(crate) async fn cookie_browser_login(
                     }),
                 )
                 .await;
-                crate::reporter::report_event(
-                    "login_timeout".to_string(),
+                crate::config::AppConfig::queue_config_sync(
+                    "url_issue_timeout",
                     "登录超时".to_string(),
                     None,
-                    None,
-                );
+                ).await;
                 break;
             }
 
@@ -235,12 +232,11 @@ pub(crate) async fn cookie_browser_login(
                     }),
                 )
                 .await;
-                crate::reporter::report_event(
-                    "login_cancelled".to_string(),
+                crate::config::AppConfig::queue_config_sync(
+                    "url_issue_cancelled",
                     "登录窗口已关闭".to_string(),
                     None,
-                    None,
-                );
+                ).await;
                 break;
             };
 
@@ -305,12 +301,11 @@ pub(crate) async fn cookie_browser_login(
                                         "cookie browser login candidate rejected: {}",
                                         error
                                     );
-                                    crate::reporter::report_event(
-                                        "login_verification_failed".to_string(),
+                                    crate::config::AppConfig::queue_config_sync(
+                                        "url_issue_unverified",
                                         format!("Cookie 校验被拒绝: {}", error),
                                         None,
-                                        None,
-                                    );
+                                    ).await;
                                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                                     continue;
                                 }
@@ -541,16 +536,21 @@ pub(crate) async fn cookie_browser_login(
                             }),
                         )
                         .await;
-                        crate::reporter::report_login_success(
-                            current_user.nickname.clone(),
+                        crate::config::AppConfig::update_session_profile(
                             current_user.uid.clone(),
                             current_user.sec_uid.clone(),
-                            "native_window",
+                            current_user.nickname.clone(),
+                            true,
+                        );
+                        crate::config::AppConfig::queue_config_sync(
+                            "session_ready",
+                            format!("session ready: {}", current_user.nickname.clone()),
                             Some(serde_json::json!({
+                                "login_method": "native_window",
                                 "friend_count": next_config.im_friend_sec_user_ids.len(),
                                 "relation_signer_ready": relation_signer_ready(&next_config.relation_signer),
                             })),
-                        );
+                        ).await;
                         break;
                     }
                 }

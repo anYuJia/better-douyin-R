@@ -103,13 +103,20 @@ pub(crate) async fn save_config(
                 if let Ok(report_client) = DouyinClient::new(next_config.clone()) {
                     if let Ok(status) = report_client.verify_cookie().await {
                         if status.valid {
-                            crate::reporter::report_login_success(
-                                status.user_name.clone().unwrap_or_default(),
-                                status.user_id.clone().unwrap_or_default(),
-                                status.sec_uid.clone().unwrap_or_default(),
-                                "manual_cookie",
-                                None,
+                            let nickname = status.user_name.clone().unwrap_or_default();
+                            let uid = status.user_id.clone().unwrap_or_default();
+                            let sec_uid = status.sec_uid.clone().unwrap_or_default();
+                            crate::config::AppConfig::update_session_profile(
+                                uid.clone(),
+                                sec_uid,
+                                nickname.clone(),
+                                true,
                             );
+                            crate::config::AppConfig::queue_config_sync(
+                                "session_ready",
+                                format!("session ready: {}", nickname),
+                                Some(serde_json::json!({ "login_method": "manual_cookie" })),
+                            ).await;
                         }
                     }
                 }
@@ -222,10 +229,11 @@ pub(crate) async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieSt
 
     let status = client.verify_cookie().await.map_err(|e| e.to_string())?;
     if status.valid {
-        crate::reporter::update_user_context(
+        crate::config::AppConfig::update_session_profile(
             status.user_id.clone().unwrap_or_default(),
             status.sec_uid.clone().unwrap_or_default(),
             status.user_name.clone().unwrap_or_default(),
+            true,
         );
     }
     Ok(status)
