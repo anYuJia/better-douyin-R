@@ -61,12 +61,27 @@ pub(crate) async fn get_friend_online_status(
 
     let mut auto_fetch_failed = None;
     let mut auto_fetch_succeeded = false;
+    let mut recent_interactions = serde_json::Value::Array(Vec::new());
     let include_all_users = state.config.lock().await.im_friend_include_all_users;
     match client
-        .get_im_spotlight_relation_sec_user_ids(500, include_all_users)
+        .get_im_spotlight_relation_summary(500, include_all_users)
         .await
     {
-        Ok(fetched_ids) => {
+        Ok(summary) => {
+            let fetched_ids = summary
+                .get("sec_user_ids")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            recent_interactions = summary
+                .get("recent_interactions")
+                .cloned()
+                .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
             log::debug!(
                 "friend online auto IM spotlight ids fetched: include_all_users={} raw_count={}",
                 include_all_users,
@@ -282,6 +297,7 @@ pub(crate) async fn get_friend_online_status(
         "success": true,
         "sec_user_ids": visible_sec_user_ids,
         "all_sec_user_ids": all_sec_user_ids,
+        "recent_interactions": recent_interactions,
         "offset": page_offset,
         "limit": page_limit,
         "next_offset": next_offset,

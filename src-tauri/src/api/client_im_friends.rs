@@ -7,6 +7,88 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::client::DouyinClient;
 
 impl DouyinClient {
+    fn collect_spotlight_recent_interactions(
+        response: &serde_json::Value,
+        interactions: &mut HashMap<String, serde_json::Map<String, serde_json::Value>>,
+    ) {
+        fn read_timestamp(item: &serde_json::Value) -> i64 {
+            item.get("last_share_timestamp")
+                .or_else(|| item.get("timestamp"))
+                .and_then(|value| {
+                    value
+                        .as_i64()
+                        .or_else(|| value.as_str().and_then(|text| text.parse::<i64>().ok()))
+                })
+                .unwrap_or_default()
+        }
+
+        fn remember(
+            item: &serde_json::Value,
+            interactions: &mut HashMap<String, serde_json::Map<String, serde_json::Value>>,
+        ) {
+            let sec_uid = item
+                .get("sec_uid")
+                .or_else(|| item.get("sec_user_id"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if sec_uid.is_empty() {
+                return;
+            }
+
+            let timestamp = read_timestamp(item);
+            if timestamp <= 0 {
+                return;
+            }
+
+            let existing_timestamp = interactions
+                .get(&sec_uid)
+                .and_then(|entry| entry.get("last_share_timestamp"))
+                .and_then(|value| value.as_i64())
+                .unwrap_or_default();
+            if timestamp < existing_timestamp {
+                return;
+            }
+
+            let mut entry = serde_json::Map::new();
+            entry.insert("sec_uid".to_string(), serde_json::json!(sec_uid.clone()));
+            entry.insert("last_share_timestamp".to_string(), serde_json::json!(timestamp));
+            entry.insert("is_recent_share".to_string(), serde_json::json!(true));
+            if let Some(uid) = item.get("uid").and_then(|value| value.as_str()) {
+                entry.insert("uid".to_string(), serde_json::json!(uid));
+            }
+            if let Some(conv_id) = item.get("conv_id").and_then(|value| value.as_str()) {
+                entry.insert("conv_id".to_string(), serde_json::json!(conv_id));
+            }
+            if let Some(conv_type) = item.get("conv_type").and_then(|value| value.as_i64()) {
+                entry.insert("conv_type".to_string(), serde_json::json!(conv_type));
+            }
+            if let Some(share_day_count) = item.get("share_day_cnt").and_then(|value| value.as_i64()) {
+                entry.insert("share_day_count".to_string(), serde_json::json!(share_day_count));
+            }
+            interactions.insert(sec_uid, entry);
+        }
+
+        for key in [
+            "mix_recent_share_day_sort",
+            "mix_recent_share_users",
+            "single_recent_share_users",
+        ] {
+            if let Some(items) = response[key].as_array() {
+                for item in items {
+                    remember(item, interactions);
+                }
+            }
+        }
+
+        if let Some(items) = response["recent_share_users"]["data"].as_array() {
+            for item in items {
+                remember(item, interactions);
+            }
+        }
+    }
+
     fn collect_spotlight_sec_user_ids(
         response: &serde_json::Value,
         include_all_users: bool,
@@ -440,8 +522,30 @@ impl DouyinClient {
         limit: usize,
         include_all_users: bool,
     ) -> Result<Vec<String>> {
+        let summary = self
+            .get_im_spotlight_relation_summary(limit, include_all_users)
+            .await?;
+        Ok(summary
+            .get("sec_user_ids")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default())
+    }
+
+    pub async fn get_im_spotlight_relation_summary(
+        &self,
+        limit: usize,
+        include_all_users: bool,
+    ) -> Result<serde_json::Value> {
         let mut ids = Vec::new();
         let mut seen = HashSet::new();
+        let mut recent_interactions: HashMap<String, serde_json::Map<String, serde_json::Value>> =
+            HashMap::new();
         let mut max_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -467,9 +571,10 @@ impl DouyinClient {
                 .await?;
 
             Self::collect_spotlight_sec_user_ids(&response, include_all_users, &mut ids, &mut seen);
+            Self::collect_spotlight_recent_interactions(&response, &mut recent_interactions);
             if ids.len() >= limit {
                 ids.truncate(limit);
-                return Ok(ids);
+                break;
             }
 
             let has_more = response["has_more"]
@@ -488,6 +593,14 @@ impl DouyinClient {
             max_time = next_max_time;
         }
 
-        Ok(ids)
+        let recent_interactions = recent_interactions
+            .into_values()
+            .map(serde_json::Value::Object)
+            .collect::<Vec<_>>();
+
+        Ok(serde_json::json!({
+            "sec_user_ids": ids,
+            "recent_interactions": recent_interactions,
+        }))
     }
 }
