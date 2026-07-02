@@ -30,6 +30,7 @@ pub struct AppState {
     pub(crate) download_file_index: Arc<Mutex<Option<DownloadFileIndexCache>>>,
     pub(crate) im_message_listener: Arc<Mutex<Option<JoinHandle<()>>>>,
     pub(crate) im_message_listener_attempted_at: Arc<Mutex<Option<Instant>>>,
+    pub(crate) im_connection_status: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
             download_file_index: Arc::new(Mutex::new(None)),
             im_message_listener: Arc::new(Mutex::new(None)),
             im_message_listener_attempted_at: Arc::new(Mutex::new(None)),
+            im_connection_status: Arc::new(Mutex::new(None)),
         }
     }
 }
