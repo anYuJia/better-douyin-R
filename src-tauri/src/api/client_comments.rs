@@ -134,6 +134,30 @@ impl DouyinClient {
 
     fn parse_comment(&self, data: &serde_json::Value) -> Option<CommentInfo> {
         let user = &data["user"];
+        let reply_to_user = data
+            .get("reply_to_user")
+            .or_else(|| data.get("reply_user"))
+            .or_else(|| data.get("reply_to_user_info"))
+            .or_else(|| data.get("to_user"));
+        let reply_to_user_id = data
+            .get("reply_to_userid")
+            .or_else(|| data.get("reply_to_uid"))
+            .or_else(|| data.get("reply_to_user_id"))
+            .and_then(|v| v.as_str())
+            .or_else(|| reply_to_user.and_then(|u| u.get("uid")).and_then(|v| v.as_str()))
+            .unwrap_or_default()
+            .to_string();
+        let reply_to_user_name = data
+            .get("reply_to_user_name")
+            .or_else(|| data.get("reply_to_nickname"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                reply_to_user
+                    .and_then(|u| u.get("nickname"))
+                    .and_then(|v| v.as_str())
+            })
+            .unwrap_or_default()
+            .to_string();
         let sticker_url = {
             let static_url = self.get_first_url(&data["sticker"]["static_url"]["url_list"]);
             if static_url.is_empty() {
@@ -173,6 +197,20 @@ impl DouyinClient {
                         })
                         .filter(|v| !v.is_empty())
                 }),
+            reply_id: data["reply_id"]
+                .as_str()
+                .or_else(|| data["comment_id"].as_str())
+                .or_else(|| data["parent_id"].as_str())
+                .unwrap_or_default()
+                .to_string(),
+            reply_to_reply_id: data["reply_to_reply_id"]
+                .as_str()
+                .or_else(|| data["reply_to_cid"].as_str())
+                .or_else(|| data["reply_to_comment_id"].as_str())
+                .unwrap_or_default()
+                .to_string(),
+            reply_to_user_id,
+            reply_to_user_name,
             status: data["status"].as_i64().unwrap_or(0) as i32,
             ip_label: data["ip_label"].as_str().unwrap_or_default().to_string(),
             sticker_url,

@@ -231,6 +231,20 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
         let wrap_val = serde_json::Value::Object(comment_wrap.clone());
         // 评论/回复类通知（type 31）：顶层 comment 是包装层，真实评论在
         // comment.comment（含 text + user），被回复评论在 comment.reply_comment。
+        let mut reply_to_user: Option<serde_json::Value> = None;
+        let mut reply_to_text = String::new();
+        if let Some(reply) = wrap_val.get("reply_comment").and_then(|v| v.as_object()) {
+            let reply_val = serde_json::Value::Object(reply.clone());
+            reply_to_text = reply_val
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if let Some(user) = reply_val.get("user") {
+                reply_to_user = format_user(user);
+            }
+        }
         if let Some(inner) = wrap_val.get("comment").and_then(|v| v.as_object()) {
             let inner_val = serde_json::Value::Object(inner.clone());
             let inner_cid = inner_val
@@ -268,6 +282,8 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
                     "digg_count": inner_val.get("digg_count").and_then(|v| v.as_i64()).unwrap_or(0),
                     "create_time": item.get("create_time").and_then(|v| v.as_i64()).unwrap_or(0),
                     "user": inner_user.unwrap_or(serde_json::json!({})),
+                    "reply_to_user": reply_to_user.clone(),
+                    "reply_to_text": reply_to_text,
                 }));
             }
         }

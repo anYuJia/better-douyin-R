@@ -12,10 +12,14 @@ interface UsePlayerCommentsProps {
   openComments?: boolean;
   initialComment?: {
     cid: string;
+    root_cid?: string;
+    is_sub?: boolean;
     text: string;
     digg_count: number;
     create_time: number;
     user: { uid: string; nickname: string; sec_uid: string; avatar: string };
+    reply_to_user?: { uid: string; nickname: string; sec_uid: string; avatar: string } | null;
+    reply_to_text?: string;
   } | null;
 }
 
@@ -395,7 +399,7 @@ export function usePlayerComments({
     if (!initialComment || locateDoneRef.current) return;
     if (locatePageRef.current > 0) return; // 仅拉一次
     locatePageRef.current = 1;
-    const { cid, text, digg_count, create_time, user } = initialComment;
+    const { cid, root_cid, is_sub, text, digg_count, create_time, user, reply_to_user } = initialComment;
     const awemeId = currentVideo?.aweme_id;
     if (!awemeId) return;
     // 立即占位标记已加载，阻止自动拉取 effect 并发跑普通请求。
@@ -413,7 +417,8 @@ export function usePlayerComments({
 
     void (async () => {
       try {
-        const result = await getComments(awemeId, 20, 0, cid);
+        const targetRootCid = root_cid || cid;
+        const result = await getComments(awemeId, 20, 0, targetRootCid);
         if (!result.success || !result.comments) {
           locateDoneRef.current = true;
           setLocatePrompt("deleted");
@@ -424,9 +429,47 @@ export function usePlayerComments({
         if (asRoot) {
           const ordered = [asRoot, ...result.comments.filter((c) => c.cid !== cid)];
           setComments(ordered);
+          setCommentsCursor(Number(result.cursor || 0));
+          setCommentsHasMore(Boolean(result.has_more));
+          setCommentsTotal(Number(result.total || 0));
           setCommentsLoadedAwemeId(awemeId);
           locateDoneRef.current = true;
           highlight(cid);
+          return;
+        }
+        const rootComment = result.comments.find((c) => c.cid === targetRootCid);
+        if (rootComment && is_sub) {
+          const repliesResult = await getCommentReplies(awemeId, rootComment.cid, 20, 0);
+          const replies = Array.isArray(repliesResult.comments) ? repliesResult.comments : [];
+          const targetReply = replies.find((reply) => reply.cid === cid);
+          const visibleReplies = targetReply
+            ? [targetReply, ...replies.filter((reply) => reply.cid !== cid)]
+            : replies;
+          setComments([rootComment, ...result.comments.filter((c) => c.cid !== rootComment.cid)]);
+          setCommentsCursor(Number(result.cursor || 0));
+          setCommentsHasMore(Boolean(result.has_more));
+          setCommentsTotal(Number(result.total || 0));
+          setCommentsLoadedAwemeId(awemeId);
+          setCommentReplies((prev) => ({
+            ...prev,
+            [rootComment.cid]: {
+              items: visibleReplies,
+              cursor: Number(repliesResult.cursor || 0),
+              hasMore: Boolean(repliesResult.has_more),
+              loading: false,
+              error: "",
+              total: Number(repliesResult.total || rootComment.reply_comment_total || visibleReplies.length || 0),
+              loaded: true,
+            },
+          }));
+          setExpandedCommentReplyIds((prev) => new Set(prev).add(rootComment.cid));
+          locateDoneRef.current = true;
+          if (targetReply) {
+            highlight(cid);
+          } else {
+            setLocatePrompt("not_in_first_pages");
+            highlight(rootComment.cid);
+          }
           return;
         }
         // cid 在某根评论的 sub_comments → 展开该根评论高光子评论。
@@ -439,6 +482,9 @@ export function usePlayerComments({
           ];
           const hostOrdered = [host, ...result.comments.filter((c) => c.cid !== host.cid)];
           setComments(hostOrdered);
+          setCommentsCursor(Number(result.cursor || 0));
+          setCommentsHasMore(Boolean(result.has_more));
+          setCommentsTotal(Number(result.total || 0));
           setCommentsLoadedAwemeId(awemeId);
           setCommentReplies((prev) => ({
             ...prev,
@@ -466,6 +512,10 @@ export function usePlayerComments({
           user_digged: 0,
           reply_comment_total: 0,
           sub_comments: null,
+          reply_id: is_sub ? targetRootCid : "",
+          reply_to_reply_id: is_sub ? cid : "",
+          reply_to_user_id: reply_to_user?.uid || "",
+          reply_to_user_name: reply_to_user?.nickname || "",
           user: { uid: user.uid, nickname: user.nickname, sec_uid: user.sec_uid, avatar_thumb: user.avatar },
         };
         setComments((prev) => [pinned, ...prev]);

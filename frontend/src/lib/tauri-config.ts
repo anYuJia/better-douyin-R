@@ -161,7 +161,7 @@ export async function logoutCookie(): Promise<{ success: boolean; message: strin
   return invoke("logout_cookie");
 }
 
-export type AccountInfo = {
+type AccountInfo = {
   sec_uid: string;
   nickname: string;
   avatar_thumb?: string;

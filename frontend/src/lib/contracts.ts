@@ -1,6 +1,14 @@
 // Shared frontend/backend response contracts for the Python and Rust frontends.
 // Keep this file byte-for-byte aligned in both apps until it moves into a real shared package.
 
+export interface AccountInfo {
+  sec_uid: string;
+  nickname: string;
+  avatar_thumb?: string;
+  cookie?: string;
+  is_valid?: boolean;
+}
+
 export interface AppConfig {
   download_path: string;
   download_dir?: string;
@@ -241,6 +249,10 @@ export interface CommentInfo {
   user_digged?: number;
   reply_comment_total: number;
   sub_comments?: CommentInfo[] | null;
+  reply_id?: string;
+  reply_to_reply_id?: string;
+  reply_to_user_id?: string;
+  reply_to_user_name?: string;
   status?: number;
   ip_label?: string;
   sticker_url?: string;
@@ -376,6 +388,8 @@ export interface NoticeComment {
   digg_count: number;
   create_time: number;
   user: NoticeUser;
+  reply_to_user?: NoticeUser | null;
+  reply_to_text?: string;
 }
 
 export interface NoticesResponse extends ApiResponse {

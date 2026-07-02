@@ -99,10 +99,14 @@ export interface FullscreenPlayerProps {
   openComments?: boolean;
   initialComment?: {
     cid: string;
+    root_cid?: string;
+    is_sub?: boolean;
     text: string;
     digg_count: number;
     create_time: number;
     user: { uid: string; nickname: string; sec_uid: string; avatar: string };
+    reply_to_user?: { uid: string; nickname: string; sec_uid: string; avatar: string } | null;
+    reply_to_text?: string;
   } | null;
 }
 

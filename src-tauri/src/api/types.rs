@@ -160,6 +160,13 @@ pub struct CommentInfo {
     pub user_digged: i32,
     pub reply_comment_total: i64,
     pub sub_comments: Option<Vec<CommentInfo>>,
+    /// Root comment id for a reply thread. Empty for normal top-level comments.
+    pub reply_id: String,
+    /// Target reply id when this second-level comment replies to another reply.
+    pub reply_to_reply_id: String,
+    /// Target user's id/nickname when Douyin exposes reply ownership metadata.
+    pub reply_to_user_id: String,
+    pub reply_to_user_name: String,
     pub status: i32,
     pub ip_label: String,
     pub sticker_url: String,

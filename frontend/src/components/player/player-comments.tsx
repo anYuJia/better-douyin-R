@@ -136,6 +136,12 @@ function CommentItem({
               const replyAvatar = reply.user?.avatar_thumb || "";
               const replyLiked = Number(reply.user_digged || 0) > 0;
               const replyDigging = commentDiggingIds.has(reply.cid);
+              const replyToName =
+                reply.reply_to_user_name &&
+                reply.reply_to_user_name !== comment.user?.nickname &&
+                reply.reply_to_user_name !== reply.user?.nickname
+                  ? reply.reply_to_user_name
+                  : "";
               return (
                 <div
                   key={reply.cid}
@@ -164,6 +170,14 @@ function CommentItem({
                       <span className="truncate text-[0.68rem] font-semibold text-white/58">
                         {reply.user?.nickname || "抖音用户"}
                       </span>
+                      {replyToName && (
+                        <>
+                          <span className="shrink-0 text-[0.58rem] text-white/26">回复</span>
+                          <span className="truncate text-[0.66rem] font-semibold text-accent/80">
+                            @{replyToName}
+                          </span>
+                        </>
+                      )}
                       <span className="shrink-0 text-[0.58rem] text-white/28">
                         {formatCommentTime(reply.create_time)}
                       </span>
