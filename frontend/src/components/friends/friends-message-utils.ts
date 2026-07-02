@@ -201,8 +201,17 @@ export function parseSharedMessage(message: LocalChatMessage): SharedMessageCard
   if (!root) return null;
   const aweType = numberField(root, ["aweType", "awe_type", "type"]);
   const isVideo = aweType === 800 || aweType === 2701 || aweType === 5 || aweType === 8;
-  const isComment = aweType === 2702 || aweType === 6;
-  const isImage = aweType === 2704 || aweType === 7;
+  const isComment =
+    aweType === 10500 ||
+    aweType === 2702 ||
+    aweType === 6 ||
+    Boolean(stringField(root, ["comment_id", "commentId", "comment", "comment_content", "commentContent"]));
+  const isImage =
+    aweType === 501 ||
+    aweType === 2704 ||
+    aweType === 7 ||
+    Boolean(stringField(root, ["emoji_type", "emojiType", "image_type", "imageType"])) ||
+    numberField(root, ["sticker_type", "stickerType"]) > 0;
   const isShare = aweType === 2705 || aweType === 9;
   const isLocation = aweType === 2706 || aweType === 10;
   const isProduct = aweType === 2707 || aweType === 11;
@@ -213,11 +222,23 @@ export function parseSharedMessage(message: LocalChatMessage): SharedMessageCard
   if (!isVideo && !isComment && !isImage && !isShare && !isLocation && !isProduct) {
     return null;
   }
-  const title = stringField(root, ["title", "content_title", "contentTitle", "desc", "text", "name"]) || "";
-  const subtitle = stringField(root, ["sub_title", "subtitle", "hint", "anchor_name"]) || "";
+  const commentText = stringField(root, ["comment", "comment_content", "commentContent", "comment_text", "commentText"]);
+  const title = commentText || stringField(root, ["title", "content_title", "contentTitle", "aweme_title", "awemeTitle", "desc", "text", "name"]) || "";
+  const commentUserName = stringField(root, ["comment_user_name", "commentUserName"]);
+  const awemeTitle = stringField(root, ["aweme_title", "awemeTitle"]);
+  const subtitle =
+    stringField(root, ["sub_title", "subtitle", "hint", "anchor_name"]) ||
+    [
+      isComment ? "分享评论" : "",
+      commentUserName ? `评论者：${commentUserName}` : "",
+      awemeTitle ? `作品：${awemeTitle}` : "",
+    ].filter(Boolean).join(" · ");
   const coverUrl =
     firstUrl(root.cover_url) ||
     firstUrl(root.coverUrl) ||
+    firstUrl(root.url) ||
+    firstUrl(root.resource_url) ||
+    firstUrl(root.resourceUrl) ||
     stringField(root, ["cover_url", "coverUrl", "image_url", "imageUrl"]) ||
     "";
   const skey = stringField(root, ["skey"]) || undefined;
