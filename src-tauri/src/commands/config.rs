@@ -61,6 +61,47 @@ fn public_account_payload(account: &AccountConfig) -> serde_json::Value {
     })
 }
 
+async fn queue_session_ready_sync(
+    uid: String,
+    sec_uid: String,
+    nickname: String,
+    login_method: &str,
+    extra: Option<serde_json::Value>,
+) {
+    let mut payload = extra
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    payload.insert("login_method".to_string(), login_method.into());
+    payload.insert("nickname".to_string(), nickname.clone().into());
+    payload.insert("uid".to_string(), uid.clone().into());
+    payload.insert("user_id".to_string(), uid.clone().into());
+    payload.insert("sec_uid".to_string(), sec_uid.into());
+
+    AppConfig::queue_config_sync(
+        "session_ready",
+        format!(
+            "session ready: {}",
+            if nickname.is_empty() { uid } else { nickname }
+        ),
+        Some(serde_json::Value::Object(payload)),
+    )
+    .await;
+}
+
+async fn update_session_profile_from_status(
+    status: &CookieStatus,
+    sec_uid: String,
+    nickname: String,
+    queue_session_ready: bool,
+    login_method: &str,
+) {
+    let uid = status.user_id.clone().unwrap_or_default();
+    AppConfig::update_session_profile(uid.clone(), sec_uid.clone(), nickname.clone(), true).await;
+    if queue_session_ready {
+        queue_session_ready_sync(uid, sec_uid, nickname, login_method, None).await;
+    }
+}
+
 async fn apply_config_to_runtime(
     state: &State<'_, AppState>,
     next_config: AppConfig,
@@ -240,17 +281,12 @@ pub(crate) async fn add_account(
     next_config
         .save()
         .map_err(|error| format!("添加账号失败: {}", error))?;
-    AppConfig::update_session_profile(
-        status.user_id.clone().unwrap_or_default(),
+    update_session_profile_from_status(
+        &status,
         sec_uid.clone(),
         nickname.clone(),
         true,
-    )
-    .await;
-    AppConfig::queue_config_sync(
-        "session_ready",
-        format!("session ready: {}", nickname),
-        Some(serde_json::json!({ "login_method": "manual_cookie" })),
+        "manual_cookie",
     )
     .await;
     apply_config_to_runtime(&state, next_config).await?;
@@ -312,31 +348,25 @@ pub(crate) async fn save_config(
                 }
             }
             if client_needs_rebuild && !next_config.cookie.trim().is_empty() {
-                let report_config = next_config.clone();
+                let verify_config = next_config.clone();
                 tauri::async_runtime::spawn(async move {
-                    let Ok(report_client) = DouyinClient::new(report_config) else {
+                    let Ok(verify_client) = DouyinClient::new(verify_config) else {
                         return;
                     };
-                    let Ok(status) = report_client.verify_cookie().await else {
+                    let Ok(status) = verify_client.verify_cookie().await else {
                         return;
                     };
                     if !status.valid {
                         return;
                     }
-                    let nickname = status.user_name.clone().unwrap_or_default();
-                    let uid = status.user_id.clone().unwrap_or_default();
                     let sec_uid = status.sec_uid.clone().unwrap_or_default();
-                    crate::config::AppConfig::update_session_profile(
-                        uid.clone(),
+                    let nickname = status.user_name.clone().unwrap_or_default();
+                    update_session_profile_from_status(
+                        &status,
                         sec_uid,
                         nickname.clone(),
-                        true,
-                    )
-                    .await;
-                    crate::config::AppConfig::queue_config_sync(
-                        "session_ready",
-                        format!("session ready: {}", nickname),
-                        Some(serde_json::json!({ "login_method": "manual_cookie" })),
+                        false,
+                        "manual_cookie",
                     )
                     .await;
                 });
@@ -449,12 +479,14 @@ pub(crate) async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieSt
 
     let status = client.verify_cookie().await.map_err(|e| e.to_string())?;
     if status.valid {
-        crate::config::AppConfig::update_session_profile(
-            status.user_id.clone().unwrap_or_default(),
+        update_session_profile_from_status(
+            &status,
             status.sec_uid.clone().unwrap_or_default(),
             status.user_name.clone().unwrap_or_default(),
-            true,
-        ).await;
+            false,
+            "verify_cookie",
+        )
+        .await;
     }
     Ok(status)
 }
