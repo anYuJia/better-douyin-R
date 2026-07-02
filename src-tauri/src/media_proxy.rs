@@ -6,6 +6,7 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
 pub(crate) use crate::media_proxy_cache::CachedMediaRange;
+pub(crate) use crate::media_proxy_cache::RemoteImageCache;
 use crate::media_proxy_local::{frontend_dist_dir, local_media};
 use crate::media_proxy_remote::{media_proxy, media_proxy_options, seek_debug};
 

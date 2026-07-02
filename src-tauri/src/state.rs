@@ -7,7 +7,7 @@ use crate::download_files::DownloadFileIndexCache;
 use crate::downloader::Downloader;
 use crate::history::HistoryManager;
 use crate::http_client::build_media_http_client;
-use crate::media_proxy;
+use crate::media_proxy::{self, RemoteImageCache};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -26,6 +26,7 @@ pub struct AppState {
     pub(crate) media_http_client: Arc<Mutex<reqwest::Client>>,
     pub(crate) media_redirect_cache: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) media_range_cache: Arc<Mutex<HashMap<String, media_proxy::CachedMediaRange>>>,
+    pub(crate) media_image_cache: Arc<Mutex<RemoteImageCache>>,
     pub(crate) download_file_index: Arc<Mutex<Option<DownloadFileIndexCache>>>,
     pub(crate) im_message_listener: Arc<Mutex<Option<JoinHandle<()>>>>,
     pub(crate) im_message_listener_attempted_at: Arc<Mutex<Option<Instant>>>,
@@ -47,6 +48,7 @@ impl AppState {
             media_http_client: Arc::new(Mutex::new(media_http_client)),
             media_redirect_cache: Arc::new(Mutex::new(HashMap::new())),
             media_range_cache: Arc::new(Mutex::new(HashMap::new())),
+            media_image_cache: Arc::new(Mutex::new(RemoteImageCache::default())),
             download_file_index: Arc::new(Mutex::new(None)),
             im_message_listener: Arc::new(Mutex::new(None)),
             im_message_listener_attempted_at: Arc::new(Mutex::new(None)),

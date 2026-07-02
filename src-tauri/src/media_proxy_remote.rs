@@ -1,4 +1,4 @@
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 use futures::StreamExt;
@@ -7,8 +7,10 @@ use url::Url;
 
 use crate::config::get_user_agent;
 use crate::media_proxy_cache::{
-    cached_media_response, cap_remote_media_range, remote_media_range_cache_keys, CachedMediaRange,
-    REMOTE_MEDIA_MAX_RANGE_BYTES, REMOTE_MEDIA_RANGE_CACHE_ENTRIES,
+    cached_media_response, cached_remote_image_response, cap_remote_media_range,
+    remote_image_cache_key, remote_media_range_cache_keys, CachedMediaRange, CachedRemoteImage,
+    REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES, REMOTE_MEDIA_MAX_RANGE_BYTES,
+    REMOTE_MEDIA_RANGE_CACHE_ENTRIES,
 };
 use crate::media_proxy_crypto::{decrypt_im_image_bytes, guess_image_content_type_from_bytes};
 use crate::media_proxy_headers::{apply_cors_headers, build_error_response};
@@ -83,6 +85,18 @@ pub(crate) async fn media_proxy(
 
     if query.url.is_empty() || !is_allowed_media_url(&parsed_url) {
         return build_error_response(StatusCode::BAD_REQUEST, "Invalid URL");
+    }
+
+    let image_cache_key = if requested_media_type == "image" {
+        Some(remote_image_cache_key(&query.url, query.skey.as_deref()))
+    } else {
+        None
+    };
+    if let Some(key) = &image_cache_key {
+        if let Some(cached) = state.media_image_cache.lock().await.get(key) {
+            log::debug!("media proxy image cache hit: url={}", query_url_label);
+            return cached_remote_image_response(cached, allow_origin);
+        }
     }
 
     let config = state.config.lock().await.clone();
@@ -361,6 +375,23 @@ pub(crate) async fn media_proxy(
             match upstream_response.bytes().await {
                 Ok(encrypted) => {
                     if let Some(decrypted) = decrypt_im_image_bytes(&encrypted, skey) {
+                        let content_type = guess_image_content_type_from_bytes(&decrypted);
+                        let body = Bytes::from(decrypted);
+                        if status == StatusCode::OK
+                            && body.len() <= REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES
+                        {
+                            if let Some(key) = &image_cache_key {
+                                state.media_image_cache.lock().await.insert(
+                                    key.clone(),
+                                    CachedRemoteImage {
+                                        status,
+                                        content_type: Some(content_type.to_string()),
+                                        cache_control: Some("public, max-age=3600".to_string()),
+                                        body: body.clone(),
+                                    },
+                                );
+                            }
+                        }
                         let mut builder = Response::builder().status(status);
                         let headers = match builder.headers_mut() {
                             Some(headers) => headers,
@@ -371,13 +402,9 @@ pub(crate) async fn media_proxy(
                                 )
                             }
                         };
-                        headers.insert(
-                            header::CONTENT_TYPE,
-                            HeaderValue::from_static(guess_image_content_type_from_bytes(
-                                &decrypted,
-                            )),
-                        );
-                        if let Ok(value) = HeaderValue::from_str(&decrypted.len().to_string()) {
+                        headers
+                            .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+                        if let Ok(value) = HeaderValue::from_str(&body.len().to_string()) {
                             headers.insert(header::CONTENT_LENGTH, value);
                         }
                         headers.insert(
@@ -385,7 +412,7 @@ pub(crate) async fn media_proxy(
                             HeaderValue::from_static("public, max-age=3600"),
                         );
                         apply_cors_headers(headers, allow_origin);
-                        return builder.body(Body::from(decrypted)).unwrap_or_else(|_| {
+                        return builder.body(Body::from(body)).unwrap_or_else(|_| {
                             build_error_response(StatusCode::BAD_GATEWAY, "Proxy error")
                         });
                     }
@@ -403,6 +430,51 @@ pub(crate) async fn media_proxy(
                     log::warn!("media proxy failed to read encrypted image body: {}", error);
                     return build_error_response(StatusCode::BAD_GATEWAY, "Proxy error");
                 }
+            }
+        }
+    }
+
+    let declared_length = upstream_content_length.parse::<usize>().ok();
+    let should_cache_image = requested_media_type == "image"
+        && status == StatusCode::OK
+        && image_cache_key.is_some()
+        && declared_length
+            .map(|length| length <= REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES)
+            .unwrap_or(false);
+    if should_cache_image {
+        match upstream_response.bytes().await {
+            Ok(bytes) => {
+                if bytes.len() <= REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES {
+                    let cached = CachedRemoteImage {
+                        status,
+                        content_type: response_headers
+                            .get(header::CONTENT_TYPE)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        cache_control: response_headers
+                            .get(header::CACHE_CONTROL)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: bytes.clone(),
+                    };
+                    if let Some(key) = &image_cache_key {
+                        state
+                            .media_image_cache
+                            .lock()
+                            .await
+                            .insert(key.clone(), cached);
+                    }
+                }
+
+                return response_builder
+                    .body(Body::from(bytes))
+                    .unwrap_or_else(|_| {
+                        build_error_response(StatusCode::BAD_GATEWAY, "Proxy error")
+                    });
+            }
+            Err(error) => {
+                log::warn!("media proxy failed to read cacheable image body: {}", error);
+                return build_error_response(StatusCode::BAD_GATEWAY, "Proxy error");
             }
         }
     }
