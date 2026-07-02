@@ -20,6 +20,10 @@ use super::filename::{
     media_type_display, media_type_name, truncate_chars,
 };
 use super::http::build_download_headers;
+use super::image_media::{
+    download_image_media_files_concurrently, should_download_image_media_concurrently,
+    ImageMediaDownloadOptions, ImageMediaProgress,
+};
 use super::media_request::request_media_with_fallback;
 use super::quality::{ordered_video_urls, DownloadQuality};
 use crate::media_utils::{filter_live_photo_media_items, push_image_like_items};
@@ -124,6 +128,79 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
         }),
     )
     .await;
+
+    if should_download_image_media_concurrently(&task.media_urls) {
+        let (downloaded_files, total_downloaded_size) =
+            download_image_media_files_concurrently(ImageMediaDownloadOptions {
+                client: runtime.client.clone(),
+                config: runtime.config.clone(),
+                aweme_id: task.aweme_id.clone(),
+                media_urls: task.media_urls.clone(),
+                headers,
+                save_dir: save_dir.clone(),
+                filename: task.filename.clone(),
+                control,
+                progress_tx: runtime.progress_tx.clone(),
+                progress: ImageMediaProgress::SingleTask {
+                    tasks: runtime.tasks.clone(),
+                    task_id: task_id.clone(),
+                    title: task.title.clone(),
+                    display_name: display_name.clone(),
+                    save_path: task.save_path.clone(),
+                    media_type: task.media_type.clone(),
+                    emit_logs: true,
+                },
+                pair_live_photo_stems: true,
+            })
+            .await?;
+
+        {
+            let mut tasks_lock = runtime.tasks.lock().await;
+            if let Some(current_task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
+                current_task.status = DownloadStatus::Completed;
+                current_task.progress = 100.0;
+                current_task.complete_time = Some(Local::now().timestamp());
+                current_task.completed_files = current_task.total_files;
+                current_task.downloaded_size = total_downloaded_size;
+                current_task.total_size = total_downloaded_size;
+            }
+        }
+
+        record_completed_download(
+            &task.aweme_id,
+            &task.title,
+            &task.author,
+            &task.author_id,
+            &task.cover,
+            &task.media_type,
+            &save_dir,
+            &downloaded_files,
+            total_downloaded_size,
+            &runtime.history,
+            &runtime.downloaded_cache,
+            &runtime.record_write_lock,
+        )
+        .await?;
+
+        emit_event(
+            &runtime.progress_tx,
+            "download-completed",
+            serde_json::json!({
+                "task_id": task.id,
+                "message": format!("下载成功: {}", task.title),
+                "aweme_id": task.aweme_id,
+                "media_type": media_type_name(&task.media_type),
+                "file_count": media_count,
+                "display_name": display_name,
+                "save_path": task.save_path,
+                "file_path": downloaded_files.first().map(|p| p.to_string_lossy().to_string()),
+                "total_size": total_downloaded_size
+            }),
+        )
+        .await;
+
+        return Ok(());
+    }
 
     let mut downloaded_files = Vec::new();
     let mut total_downloaded_size = 0u64;

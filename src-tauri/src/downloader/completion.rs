@@ -12,6 +12,10 @@ use crate::downloader::filename::{
     truncate_chars,
 };
 use crate::downloader::http::build_download_headers;
+use crate::downloader::image_media::{
+    download_image_media_files_concurrently, should_download_image_media_concurrently,
+    ImageMediaDownloadOptions, ImageMediaProgress,
+};
 use crate::downloader::media_request::request_media_with_fallback;
 use crate::history::HistoryManager;
 use anyhow::{anyhow, Result};
@@ -150,6 +154,77 @@ impl Downloader {
             }),
         )
         .await;
+
+        if should_download_image_media_concurrently(&task.media_urls) {
+            let (downloaded_files, total_downloaded_size) =
+                download_image_media_files_concurrently(ImageMediaDownloadOptions {
+                    client: client.clone(),
+                    config: config.clone(),
+                    aweme_id: task.aweme_id.clone(),
+                    media_urls: task.media_urls.clone(),
+                    headers,
+                    save_dir: save_dir.clone(),
+                    filename: task.filename.clone(),
+                    control,
+                    progress_tx: progress_tx.clone(),
+                    progress: ImageMediaProgress::SingleTask {
+                        tasks: tasks.clone(),
+                        task_id: task_id.clone(),
+                        title: task.title.clone(),
+                        display_name: display_name.clone(),
+                        save_path: task.save_path.clone(),
+                        media_type: task.media_type.clone(),
+                        emit_logs: false,
+                    },
+                    pair_live_photo_stems: false,
+                })
+                .await?;
+
+            {
+                let mut tasks_lock = tasks.lock().await;
+                if let Some(current_task) = tasks_lock.iter_mut().find(|t| t.id == task_id) {
+                    current_task.status = DownloadStatus::Completed;
+                    current_task.progress = 100.0;
+                    current_task.complete_time = Some(Local::now().timestamp());
+                    current_task.completed_files = current_task.total_files;
+                    current_task.downloaded_size = total_downloaded_size;
+                    current_task.total_size = total_downloaded_size;
+                }
+            }
+
+            record_completed_download(
+                &task.aweme_id,
+                &task.title,
+                &task.author,
+                &task.author_id,
+                &task.cover,
+                &task.media_type,
+                &save_dir,
+                &downloaded_files,
+                total_downloaded_size,
+                &history,
+                &downloaded_cache,
+                &record_write_lock,
+            )
+            .await?;
+
+            let elapsed = start_time.elapsed().as_secs_f64().max(0.001);
+            let speed_bps = (total_downloaded_size as f64 / elapsed) as u64;
+            emit_event(
+                &progress_tx,
+                "current-video-progress",
+                serde_json::json!({
+                    "task_id": batch_task_id,
+                    "aweme_id": task.aweme_id,
+                    "name": display_name,
+                    "progress": 100,
+                    "speed_bps": speed_bps
+                }),
+            )
+            .await;
+
+            return Ok(());
+        }
 
         for (index, media) in task.media_urls.iter().enumerate() {
             // 检查取消

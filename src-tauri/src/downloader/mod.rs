@@ -9,6 +9,7 @@ pub mod downloader;
 mod events;
 mod filename;
 mod http;
+mod image_media;
 mod media_group;
 mod media_request;
 mod quality;

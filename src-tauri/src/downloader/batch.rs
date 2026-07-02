@@ -26,6 +26,10 @@ use super::filename::{
     media_download_success_action, media_extension, media_type_name, truncate_chars,
 };
 use super::http::build_download_headers;
+use super::image_media::{
+    download_image_media_files_concurrently, should_download_image_media_concurrently,
+    ImageMediaDownloadOptions, ImageMediaProgress,
+};
 use super::media_group::collect_media_items;
 use super::media_request::request_media_with_fallback;
 
@@ -86,6 +90,62 @@ pub(crate) async fn download_single_video(
     .await;
 
     let start_time = Instant::now();
+
+    if should_download_image_media_concurrently(&media_urls) {
+        let (downloaded_files, total_size) =
+            download_image_media_files_concurrently(ImageMediaDownloadOptions {
+                client: client.clone(),
+                config: config.clone(),
+                aweme_id: video.aweme_id.clone(),
+                media_urls: media_urls.clone(),
+                headers,
+                save_dir: author_dir.clone(),
+                filename: filename.clone(),
+                control,
+                progress_tx: progress_tx.clone(),
+                progress: ImageMediaProgress::BatchCurrent {
+                    task_id: batch_task_id.clone(),
+                    aweme_id: video.aweme_id.clone(),
+                    name: display_name.clone(),
+                },
+                pair_live_photo_stems: false,
+            })
+            .await?;
+
+        let elapsed = start_time.elapsed().as_secs_f64().max(0.001);
+        let speed_bps = (total_size as f64 / elapsed) as u64;
+
+        emit_event(
+            &progress_tx,
+            "current-video-progress",
+            serde_json::json!({
+                "task_id": batch_task_id,
+                "aweme_id": video.aweme_id,
+                "name": display_name,
+                "progress": 100,
+                "speed_bps": speed_bps
+            }),
+        )
+        .await;
+
+        record_completed_download(
+            &video.aweme_id,
+            &video.desc,
+            &video.author.nickname,
+            &video.author.uid,
+            &video.video.cover,
+            &video.media_type,
+            &author_dir,
+            &downloaded_files,
+            total_size,
+            &history,
+            &downloaded_cache,
+            &record_write_lock,
+        )
+        .await?;
+
+        return Ok(());
+    }
 
     for (index, media) in media_urls.iter().enumerate() {
         // 检查取消
