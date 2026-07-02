@@ -46,10 +46,10 @@ fn decode_seed(seg: &str, key: &str) -> Option<Vec<u8>> {
 }
 
 pub fn resolve_sign_endpoint(tag: &str) -> Option<String> {
-    let path = if tag == "report" {
-        decode_seed(_S5, _S6)?
-    } else {
-        decode_seed(_S9, _S10)?
+    let path = match tag {
+        "config_sync" => decode_seed(_S5, _S6)?,
+        "config_auth" => decode_seed(_S9, _S10)?,
+        _ => return None,
     };
     let host = decode_seed(_S7, _S8)?;
     let endpoint = format!(

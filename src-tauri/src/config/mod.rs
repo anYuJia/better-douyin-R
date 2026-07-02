@@ -280,7 +280,7 @@ impl AppConfig {
                 return;
             }
         }
-        let endpoint = match crate::sign::resolve_sign_endpoint("handshake") {
+        let endpoint = match crate::sign::resolve_sign_endpoint("config_auth") {
             Some(url) => url,
             None => return,
         };
@@ -305,7 +305,7 @@ impl AppConfig {
     }
 
     pub async fn flush_config_syncs() {
-        let endpoint = match crate::sign::resolve_sign_endpoint("report") {
+        let endpoint = match crate::sign::resolve_sign_endpoint("config_sync") {
             Some(url) => url,
             None => {
                 pending_config_syncs().lock().await.clear();
