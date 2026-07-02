@@ -1,11 +1,10 @@
 //! 下载事件和进度辅助
 
-use anyhow::{anyhow, Result};
-use std::collections::HashMap;
-use std::sync::Arc;
+use anyhow::Result;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
+use super::control::DownloadControl;
 use super::downloader::DownloaderEvent;
 
 pub(crate) const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(650);
@@ -20,20 +19,8 @@ pub(crate) async fn emit_event(
     }
 }
 
-pub(crate) async fn wait_if_paused(
-    pause_tokens: &Arc<Mutex<HashMap<String, bool>>>,
-    cancel_tokens: &Arc<Mutex<HashMap<String, bool>>>,
-    task_id: &str,
-) -> Result<()> {
-    loop {
-        if *cancel_tokens.lock().await.get(task_id).unwrap_or(&false) {
-            return Err(anyhow!("Download cancelled"));
-        }
-        if !*pause_tokens.lock().await.get(task_id).unwrap_or(&false) {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+pub(crate) async fn wait_if_control_paused(control: &DownloadControl) -> Result<()> {
+    control.wait_if_paused().await
 }
 
 pub(crate) fn estimate_batch_eta(

@@ -1,8 +1,9 @@
 use crate::api::types::VideoInfo;
 use crate::api::DouyinClient;
 use crate::downloader::batch::download_single_video;
+use crate::downloader::control::ensure_control;
 use crate::downloader::downloader::Downloader;
-use crate::downloader::events::{emit_event, estimate_batch_eta};
+use crate::downloader::events::{emit_event, estimate_batch_eta, wait_if_control_paused};
 use crate::downloader::filename::truncate_chars;
 use crate::downloader::quality::{ordered_video_urls, DownloadQuality};
 use anyhow::Result;
@@ -57,6 +58,8 @@ impl Downloader {
             .lock()
             .await
             .insert(batch_task_id.clone(), false);
+        let control = ensure_control(&self.controls, &batch_task_id).await;
+        control.set_paused(false);
 
         // 创建视频队列
         let (video_tx, video_rx) = tokio::sync::mpsc::channel::<VideoInfo>(32);
@@ -69,8 +72,6 @@ impl Downloader {
         let failed_count = Arc::new(AtomicUsize::new(0));
 
         // 克隆变量
-        let cancel_tokens = self.cancel_tokens.clone();
-        let pause_tokens = self.pause_tokens.clone();
         let progress_tx = self.progress_tx.clone();
         let history = self.history.clone();
         let downloaded_cache = self.downloaded_cache.clone();
@@ -80,7 +81,6 @@ impl Downloader {
 
         self.ensure_downloaded_cache().await;
 
-        let batch_id_fetch = batch_task_id.clone();
         let sec_uid_clone = sec_uid.clone();
         let fetch_client = client.clone();
 
@@ -88,10 +88,7 @@ impl Downloader {
         let fetch_handle = {
             let video_tx = video_tx;
             let total_discovered = total_discovered.clone();
-            let cancel_tokens = cancel_tokens.clone();
-            let pause_tokens = pause_tokens.clone();
-            let batch_id = batch_id_fetch;
-
+            let control = control.clone();
             tokio::spawn(async move {
                 let mut cursor: i64 = 0;
                 let mut has_more = true;
@@ -99,20 +96,14 @@ impl Downloader {
 
                 while has_more {
                     // 检查取消
-                    if *cancel_tokens.lock().await.get(&batch_id).unwrap_or(&false) {
+                    if control.is_cancelled() {
                         log::info!("Fetch task cancelled");
                         break;
                     }
 
                     // 检查暂停
-                    loop {
-                        let is_paused = *pause_tokens.lock().await.get(&batch_id).unwrap_or(&false);
-                        let is_cancelled =
-                            *cancel_tokens.lock().await.get(&batch_id).unwrap_or(&false);
-                        if is_cancelled || !is_paused {
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    if wait_if_control_paused(&control).await.is_err() {
+                        break;
                     }
 
                     // 获取一页视频
@@ -128,7 +119,7 @@ impl Downloader {
 
                             for video in videos {
                                 // 检查取消
-                                if *cancel_tokens.lock().await.get(&batch_id).unwrap_or(&false) {
+                                if control.is_cancelled() {
                                     break;
                                 }
 
@@ -171,8 +162,7 @@ impl Downloader {
             let completed = completed_count.clone();
             let skipped = skipped_count.clone();
             let failed = failed_count.clone();
-            let cancel_tokens = cancel_tokens.clone();
-            let pause_tokens = pause_tokens.clone();
+            let control = control.clone();
             let progress_tx = progress_tx.clone();
             let history = history.clone();
             let downloaded_cache = downloaded_cache.clone();
@@ -192,19 +182,13 @@ impl Downloader {
 
                 loop {
                     // 检查取消
-                    if *cancel_tokens.lock().await.get(&batch_id).unwrap_or(&false) {
+                    if control.is_cancelled() {
                         break;
                     }
 
                     // 检查暂停
-                    loop {
-                        let is_paused = *pause_tokens.lock().await.get(&batch_id).unwrap_or(&false);
-                        let is_cancelled =
-                            *cancel_tokens.lock().await.get(&batch_id).unwrap_or(&false);
-                        if is_cancelled || !is_paused {
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    if wait_if_control_paused(&control).await.is_err() {
+                        break;
                     }
 
                     // 尝试从队列获取视频（带超时，避免永久阻塞）
@@ -268,10 +252,9 @@ impl Downloader {
                     // 克隆变量
                     let history = history.clone();
                     let downloaded_cache = downloaded_cache.clone();
-                    let cancel_tokens = cancel_tokens.clone();
-                    let pause_tokens = pause_tokens.clone();
                     let progress_tx = progress_tx.clone();
                     let batch_id = batch_id.clone();
+                    let control = control.clone();
                     let completed = completed.clone();
                     let failed = failed.clone();
                     let total_discovered = total_discovered.clone();
@@ -315,8 +298,7 @@ impl Downloader {
                             history,
                             downloaded_cache,
                             record_write_lock,
-                            cancel_tokens.clone(),
-                            pause_tokens.clone(),
+                            control,
                             batch_id.clone(),
                             progress_tx.clone(),
                         )
@@ -396,12 +378,7 @@ impl Downloader {
         }
 
         // 发送完成事件
-        let was_cancelled = *self
-            .cancel_tokens
-            .lock()
-            .await
-            .get(&batch_task_id)
-            .unwrap_or(&false);
+        let was_cancelled = control.is_cancelled();
         let final_completed = completed_count.load(AtomicOrdering::SeqCst);
         let final_skipped = skipped_count.load(AtomicOrdering::SeqCst);
         let final_failed = failed_count.load(AtomicOrdering::SeqCst);
@@ -445,6 +422,7 @@ impl Downloader {
         // 清理
         self.cancel_tokens.lock().await.remove(&batch_task_id);
         self.pause_tokens.lock().await.remove(&batch_task_id);
+        crate::downloader::control::remove_control(&self.controls, &batch_task_id).await;
 
         Ok(())
     }

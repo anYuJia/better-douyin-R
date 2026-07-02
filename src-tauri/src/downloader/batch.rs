@@ -7,17 +7,20 @@ use anyhow::{anyhow, Result};
 use chrono::Local;
 use futures::StreamExt;
 use reqwest::header::CONTENT_TYPE;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 
 use super::completion::record_completed_download;
+use super::control::DownloadControl;
 use super::downloader::{Downloader, DownloaderEvent};
-use super::events::{emit_event, estimate_batch_eta, PROGRESS_EMIT_INTERVAL};
+use super::events::{
+    emit_event, estimate_batch_eta, wait_if_control_paused, PROGRESS_EMIT_INTERVAL,
+};
 use super::filename::{
     build_output_dir, create_unique_output_file, generate_filename_with_config,
     media_download_success_action, media_extension, media_type_name, truncate_chars,
@@ -33,8 +36,7 @@ pub(crate) async fn download_single_video(
     history: Arc<Mutex<HistoryManager>>,
     downloaded_cache: Arc<RwLock<HashSet<String>>>,
     record_write_lock: Arc<Mutex<()>>,
-    cancel_tokens: Arc<Mutex<HashMap<String, bool>>>,
-    pause_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    control: DownloadControl,
     batch_task_id: String,
     progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
 ) -> Result<()> {
@@ -87,12 +89,7 @@ pub(crate) async fn download_single_video(
 
     for (index, media) in media_urls.iter().enumerate() {
         // 检查取消
-        if *cancel_tokens
-            .lock()
-            .await
-            .get(&batch_task_id)
-            .unwrap_or(&false)
-        {
+        if control.is_cancelled() {
             for f in &downloaded_files {
                 let _ = tokio::fs::remove_file(f).await;
             }
@@ -100,22 +97,7 @@ pub(crate) async fn download_single_video(
         }
 
         // 检查暂停
-        loop {
-            let is_paused = *pause_tokens
-                .lock()
-                .await
-                .get(&batch_task_id)
-                .unwrap_or(&false);
-            let is_cancelled = *cancel_tokens
-                .lock()
-                .await
-                .get(&batch_task_id)
-                .unwrap_or(&false);
-            if is_cancelled || !is_paused {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
+        wait_if_control_paused(&control).await?;
 
         let (response, response_url) =
             request_media_with_fallback(&client, &config, &video.aweme_id, media, &headers).await?;
@@ -135,12 +117,7 @@ pub(crate) async fn download_single_video(
 
         while let Some(chunk_result) = stream.next().await {
             // 检查取消
-            if *cancel_tokens
-                .lock()
-                .await
-                .get(&batch_task_id)
-                .unwrap_or(&false)
-            {
+            if control.is_cancelled() {
                 let _ = tokio::fs::remove_file(&file_path).await;
                 for f in &downloaded_files {
                     let _ = tokio::fs::remove_file(f).await;
@@ -149,22 +126,7 @@ pub(crate) async fn download_single_video(
             }
 
             // 检查暂停
-            loop {
-                let is_paused = *pause_tokens
-                    .lock()
-                    .await
-                    .get(&batch_task_id)
-                    .unwrap_or(&false);
-                let is_cancelled = *cancel_tokens
-                    .lock()
-                    .await
-                    .get(&batch_task_id)
-                    .unwrap_or(&false);
-                if is_cancelled || !is_paused {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
+            wait_if_control_paused(&control).await?;
 
             let chunk = chunk_result?;
             file.write_all(&chunk).await?;
@@ -267,6 +229,8 @@ pub(crate) async fn start_batch_download_impl(
         .lock()
         .await
         .insert(batch_task_id.clone(), false);
+    let batch_control = super::control::ensure_control(&downloader.controls, &batch_task_id).await;
+    batch_control.set_paused(false);
 
     // 发送批量下载开始事件
     emit_event(
@@ -294,13 +258,7 @@ pub(crate) async fn start_batch_download_impl(
 
     for video in videos {
         // 检查取消
-        if *downloader
-            .cancel_tokens
-            .lock()
-            .await
-            .get(&batch_task_id)
-            .unwrap_or(&false)
-        {
+        if batch_control.is_cancelled() {
             break;
         }
 
@@ -341,10 +299,9 @@ pub(crate) async fn start_batch_download_impl(
         let history = downloader.history.clone();
         let downloaded_cache = downloader.downloaded_cache.clone();
         let record_write_lock = downloader.record_write_lock.clone();
-        let cancel_tokens = downloader.cancel_tokens.clone();
-        let pause_tokens = downloader.pause_tokens.clone();
         let progress_tx = downloader.progress_tx.clone();
         let batch_id = batch_task_id.clone();
+        let control = batch_control.clone();
         let completed = completed_count.clone();
         let failed = failed_count.clone();
         let aweme_id = video.aweme_id.clone();
@@ -435,8 +392,7 @@ pub(crate) async fn start_batch_download_impl(
                 history,
                 downloaded_cache,
                 record_write_lock,
-                cancel_tokens.clone(),
-                pause_tokens.clone(),
+                control,
                 batch_id.clone(),
                 total_videos,
                 completed.clone(),
@@ -506,12 +462,7 @@ pub(crate) async fn start_batch_download_impl(
     futures::future::join_all(download_handles).await;
 
     // 检查是否被取消
-    let was_cancelled = *downloader
-        .cancel_tokens
-        .lock()
-        .await
-        .get(&batch_task_id)
-        .unwrap_or(&false);
+    let was_cancelled = batch_control.is_cancelled();
 
     let final_completed = completed_count.load(AtomicOrdering::SeqCst);
     let final_skipped = skipped_count.load(AtomicOrdering::SeqCst);
@@ -554,6 +505,7 @@ pub(crate) async fn start_batch_download_impl(
     // 清理
     downloader.cancel_tokens.lock().await.remove(&batch_task_id);
     downloader.pause_tokens.lock().await.remove(&batch_task_id);
+    super::control::remove_control(&downloader.controls, &batch_task_id).await;
 
     Ok(())
 }

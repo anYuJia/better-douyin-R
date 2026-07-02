@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::{mpsc, Mutex};
 
 use super::batch::start_batch_download_impl;
+use super::control::{ensure_control, DownloadControls};
 use super::events::emit_event;
 use super::http::build_download_client;
 use super::media_group::download_media_group;
@@ -28,6 +29,7 @@ pub(crate) struct DownloadRuntime {
     pub(crate) progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
     pub(crate) cancel_tokens: Arc<Mutex<HashMap<String, bool>>>,
     pub(crate) pause_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    pub(crate) controls: DownloadControls,
     pub(crate) history: Arc<Mutex<HistoryManager>>,
     pub(crate) downloaded_cache: Arc<RwLock<HashSet<String>>>,
     pub(crate) record_write_lock: Arc<Mutex<()>>,
@@ -42,6 +44,7 @@ pub struct Downloader {
     pub(crate) progress_tx: Option<mpsc::Sender<DownloaderEvent>>,
     pub(crate) cancel_tokens: Arc<Mutex<HashMap<String, bool>>>,
     pub(crate) pause_tokens: Arc<Mutex<HashMap<String, bool>>>,
+    pub(crate) controls: DownloadControls,
     pub(crate) history: Arc<Mutex<HistoryManager>>,
     pub(crate) downloaded_cache: Arc<RwLock<HashSet<String>>>,
     pub(crate) downloaded_cache_loaded: Arc<AtomicBool>,
@@ -62,6 +65,7 @@ impl Downloader {
             progress_tx,
             cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             pause_tokens: Arc::new(Mutex::new(HashMap::new())),
+            controls: Arc::new(Mutex::new(HashMap::new())),
             history: Arc::new(Mutex::new(HistoryManager::load())),
             downloaded_cache: Arc::new(RwLock::new(HashSet::new())),
             downloaded_cache_loaded: Arc::new(AtomicBool::new(false)),
@@ -94,6 +98,7 @@ impl Downloader {
             progress_tx: self.progress_tx.clone(),
             cancel_tokens: self.cancel_tokens.clone(),
             pause_tokens: self.pause_tokens.clone(),
+            controls: self.controls.clone(),
             history: self.history.clone(),
             downloaded_cache: self.downloaded_cache.clone(),
             record_write_lock: self.record_write_lock.clone(),
@@ -109,6 +114,8 @@ impl Downloader {
             .lock()
             .await
             .insert(task_id_owned.clone(), false);
+        let control = ensure_control(&runtime.controls, &task_id_owned).await;
+        control.set_paused(false);
 
         {
             let mut tasks_lock = runtime.tasks.lock().await;
@@ -121,12 +128,7 @@ impl Downloader {
             if let Err(error) = download_media_group(runtime.clone(), task_id_owned.clone()).await {
                 let is_cancelled = error.to_string().to_lowercase().contains("cancelled")
                     || error.to_string().to_lowercase().contains("canceled")
-                    || *runtime
-                        .cancel_tokens
-                        .lock()
-                        .await
-                        .get(&task_id_owned)
-                        .unwrap_or(&false);
+                    || control.is_cancelled();
                 if !is_cancelled {
                     log::error!("Download error: {}", error);
                 }

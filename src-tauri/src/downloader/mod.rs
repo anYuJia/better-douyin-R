@@ -2,6 +2,7 @@
 
 mod batch;
 mod completion;
+mod control;
 mod downloaded_cache;
 #[allow(clippy::module_inception)]
 pub mod downloader;

@@ -1,11 +1,12 @@
 use crate::api::types::{DownloadStatus, DownloadTask, MediaType};
 use crate::api::DownloadHistory;
 use crate::config::AppConfig;
+use crate::downloader::control::DownloadControl;
 use crate::downloader::downloaded_cache::{
     add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded,
 };
 use crate::downloader::downloader::{Downloader, DownloaderEvent};
-use crate::downloader::events::{emit_event, PROGRESS_EMIT_INTERVAL};
+use crate::downloader::events::{emit_event, wait_if_control_paused, PROGRESS_EMIT_INTERVAL};
 use crate::downloader::filename::{
     create_unique_output_file, media_download_success_action, media_extension, media_type_name,
     truncate_chars,
@@ -20,7 +21,7 @@ use reqwest::header::CONTENT_TYPE;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex};
 
@@ -106,8 +107,7 @@ impl Downloader {
         history: Arc<Mutex<HistoryManager>>,
         downloaded_cache: Arc<RwLock<HashSet<String>>>,
         record_write_lock: Arc<Mutex<()>>,
-        cancel_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
-        pause_tokens: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+        control: DownloadControl,
         batch_task_id: String,
         _total_videos: usize,
         _completed_count: Arc<std::sync::atomic::AtomicUsize>,
@@ -153,12 +153,7 @@ impl Downloader {
 
         for (index, media) in task.media_urls.iter().enumerate() {
             // 检查取消
-            if *cancel_tokens
-                .lock()
-                .await
-                .get(&batch_task_id)
-                .unwrap_or(&false)
-            {
+            if control.is_cancelled() {
                 for f in &downloaded_files {
                     let _ = tokio::fs::remove_file(f).await;
                 }
@@ -166,22 +161,7 @@ impl Downloader {
             }
 
             // 检查暂停
-            loop {
-                let is_paused = *pause_tokens
-                    .lock()
-                    .await
-                    .get(&batch_task_id)
-                    .unwrap_or(&false);
-                let is_cancelled = *cancel_tokens
-                    .lock()
-                    .await
-                    .get(&batch_task_id)
-                    .unwrap_or(&false);
-                if is_cancelled || !is_paused {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
+            wait_if_control_paused(&control).await?;
 
             let (response, response_url) =
                 request_media_with_fallback(&client, &config, &task.aweme_id, media, &headers)
@@ -209,12 +189,7 @@ impl Downloader {
 
             while let Some(chunk_result) = stream.next().await {
                 // 检查取消
-                if *cancel_tokens
-                    .lock()
-                    .await
-                    .get(&batch_task_id)
-                    .unwrap_or(&false)
-                {
+                if control.is_cancelled() {
                     let _ = tokio::fs::remove_file(&file_path).await;
                     for f in &downloaded_files {
                         let _ = tokio::fs::remove_file(f).await;
@@ -223,22 +198,7 @@ impl Downloader {
                 }
 
                 // 检查暂停
-                loop {
-                    let is_paused = *pause_tokens
-                        .lock()
-                        .await
-                        .get(&batch_task_id)
-                        .unwrap_or(&false);
-                    let is_cancelled = *cancel_tokens
-                        .lock()
-                        .await
-                        .get(&batch_task_id)
-                        .unwrap_or(&false);
-                    if is_cancelled || !is_paused {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
+                wait_if_control_paused(&control).await?;
 
                 let chunk = chunk_result?;
                 file.write_all(&chunk).await?;

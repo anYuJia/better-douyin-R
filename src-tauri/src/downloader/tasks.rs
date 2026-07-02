@@ -1,5 +1,6 @@
 use crate::api::types::{DownloadMediaItem, DownloadStatus, DownloadTask, MediaType, VideoInfo};
 use crate::api::DouyinClient;
+use crate::downloader::control::{ensure_control, get_control, remove_control};
 use crate::downloader::downloader::Downloader;
 use crate::downloader::events::emit_event;
 use crate::downloader::filename::{
@@ -149,6 +150,7 @@ impl Downloader {
     pub async fn cancel_task(&self, task_id: &str) -> Result<()> {
         let mut tokens = self.cancel_tokens.lock().await;
         tokens.insert(task_id.to_string(), true);
+        ensure_control(&self.controls, task_id).await.cancel();
 
         let mut tasks = self.tasks.lock().await;
         if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
@@ -161,6 +163,9 @@ impl Downloader {
     pub async fn pause_task(&self, task_id: &str) -> Result<()> {
         let mut tokens = self.pause_tokens.lock().await;
         tokens.insert(task_id.to_string(), true);
+        ensure_control(&self.controls, task_id)
+            .await
+            .set_paused(true);
 
         let mut progress = 0.0;
         let mut completed_files = 0;
@@ -209,6 +214,9 @@ impl Downloader {
     pub async fn resume_task(&self, task_id: &str) -> Result<()> {
         let mut tokens = self.pause_tokens.lock().await;
         tokens.insert(task_id.to_string(), false);
+        if let Some(control) = get_control(&self.controls, task_id).await {
+            control.set_paused(false);
+        }
 
         let mut progress = 0.0;
         let mut tasks = self.tasks.lock().await;
@@ -243,6 +251,9 @@ impl Downloader {
 
         let mut pause_tokens = self.pause_tokens.lock().await;
         pause_tokens.remove(task_id);
+        drop(pause_tokens);
+
+        remove_control(&self.controls, task_id).await;
 
         Ok(())
     }

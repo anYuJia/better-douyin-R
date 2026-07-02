@@ -14,7 +14,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::completion::record_completed_download;
 use super::downloader::DownloadRuntime;
-use super::events::{emit_event, wait_if_paused, PROGRESS_EMIT_INTERVAL};
+use super::events::{emit_event, wait_if_control_paused, PROGRESS_EMIT_INTERVAL};
 use super::filename::{
     create_unique_output_file_with_same_stem, media_download_success_action, media_extension,
     media_type_display, media_type_name, truncate_chars,
@@ -88,6 +88,7 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
     let display_name = truncate_chars(&task.title, 8);
     let save_dir = PathBuf::from(&task.save_path);
     let headers = build_download_headers(&runtime.config);
+    let control = super::control::ensure_control(&runtime.controls, &task_id).await;
 
     tokio::fs::create_dir_all(&save_dir).await?;
 
@@ -168,17 +169,11 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
             task.media_urls.len()
         };
         let filename_index = pair_index.unwrap_or(index);
-        if *runtime
-            .cancel_tokens
-            .lock()
-            .await
-            .get(&task_id)
-            .unwrap_or(&false)
-        {
+        if control.is_cancelled() {
             return Err(anyhow!("Download cancelled"));
         }
 
-        wait_if_paused(&runtime.pause_tokens, &runtime.cancel_tokens, &task_id).await?;
+        wait_if_control_paused(&control).await?;
 
         let file_type_display = media_type_display(media.r#type.as_str());
         emit_event(
@@ -229,13 +224,7 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
         downloaded_files.push(file_path.clone());
 
         while let Some(chunk_result) = stream.next().await {
-            if *runtime
-                .cancel_tokens
-                .lock()
-                .await
-                .get(&task_id)
-                .unwrap_or(&false)
-            {
+            if control.is_cancelled() {
                 let _ = tokio::fs::remove_file(&file_path).await;
                 for downloaded_file in &downloaded_files {
                     let _ = tokio::fs::remove_file(downloaded_file).await;
@@ -243,7 +232,7 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
                 return Err(anyhow!("Download cancelled"));
             }
 
-            wait_if_paused(&runtime.pause_tokens, &runtime.cancel_tokens, &task_id).await?;
+            wait_if_control_paused(&control).await?;
 
             let chunk = chunk_result?;
             file.write_all(&chunk).await?;
