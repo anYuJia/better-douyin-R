@@ -30,6 +30,7 @@ struct SessionProfile {
 static PENDING_CONFIG_SYNCS: OnceLock<TokioMutex<Vec<ConfigSyncItem>>> = OnceLock::new();
 static REMOTE_CONFIG_CREDS: OnceLock<TokioMutex<RemoteConfigCreds>> = OnceLock::new();
 static SESSION_PROFILE: OnceLock<TokioMutex<SessionProfile>> = OnceLock::new();
+static APP_VERSION: OnceLock<String> = OnceLock::new();
 static CONFIG_SYNC_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Default)]
@@ -183,6 +184,20 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn set_app_version(version: String) {
+        let version = version.trim().trim_start_matches('v').to_string();
+        if !version.is_empty() {
+            let _ = APP_VERSION.set(version);
+        }
+    }
+
+    pub fn current_app_version() -> String {
+        APP_VERSION
+            .get()
+            .cloned()
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
+    }
+
     pub async fn update_session_profile(
         uid: String,
         sec_uid: String,
@@ -205,7 +220,7 @@ impl AppConfig {
             "sec_uid": guard.sec_uid,
             "nickname": guard.nickname,
             "session_active": guard.session_active,
-            "app_version": env!("CARGO_PKG_VERSION"),
+            "app_version": Self::current_app_version(),
         })
     }
 
@@ -307,7 +322,7 @@ impl AppConfig {
             return;
         }
         for item in items {
-            let app_version = env!("CARGO_PKG_VERSION");
+            let app_version = Self::current_app_version();
             let body = json!({
                 "app_type": "better-douyin-rust",
                 "app_version": app_version,

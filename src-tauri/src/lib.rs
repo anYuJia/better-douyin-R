@@ -52,6 +52,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            config::AppConfig::set_app_version(app.package_info().version.to_string());
+
             let log_level = if cfg!(debug_assertions) {
                 log::LevelFilter::Info
             } else {
