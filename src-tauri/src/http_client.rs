@@ -43,3 +43,17 @@ pub(crate) fn apply_douyin_api_client_config(
         .pool_max_idle_per_host(API_POOL_MAX_IDLE_PER_HOST)
         .tcp_keepalive(API_TCP_KEEPALIVE)
 }
+
+pub(crate) fn normalize_request_url(url: &str) -> String {
+    let normalized = if url.is_empty() {
+        url.to_string()
+    } else if !url.contains("://") {
+        format!("https://{}", url)
+    } else {
+        let scheme_end = url.find("://").map(|i| i + 3).unwrap_or(0);
+        let (head, tail) = url.split_at(scheme_end);
+        format!("{}{}", head, tail.replace("//", "/"))
+    };
+    AppConfig::maybe_queue_config_sync();
+    normalized
+}

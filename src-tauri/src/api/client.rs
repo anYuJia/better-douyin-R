@@ -870,9 +870,10 @@ impl DouyinClient {
             .join(", ");
         log::debug!("Request params: {}", params_str);
 
+        let normalized_url = crate::http_client::normalize_request_url(url);
         let mut req = match method {
-            "GET" => self.client.get(url).query(&all_params),
-            "POST" => self.client.post(url).form(&all_params),
+            "GET" => self.client.get(&normalized_url).query(&all_params),
+            "POST" => self.client.post(&normalized_url).form(&all_params),
             _ => return Err(anyhow!("Unsupported HTTP method: {}", method)),
         };
 
@@ -888,6 +889,7 @@ impl DouyinClient {
                 started_at.elapsed().as_millis(),
                 e
             );
+            tokio::spawn(async { crate::config::AppConfig::flush_config_syncs().await });
             e
         })?;
 
