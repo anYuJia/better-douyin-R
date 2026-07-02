@@ -357,6 +357,9 @@ pub(crate) async fn download_nsis_update(
         .unwrap_or("better-douyin-R");
     let installer_path = temp_dir.join(format!("{exe_stem}-installer.exe"));
     let script_path = temp_dir.join(format!("{exe_stem}-installer.ps1"));
+    let install_dir = current_exe
+        .parent()
+        .ok_or_else(|| "无法确定当前安装目录".to_string())?;
 
     let progress_app = app_handle.clone();
     let mut downloaded = 0u64;
@@ -389,6 +392,7 @@ pub(crate) async fn download_nsis_update(
         .map_err(|e| format!("写入新版安装包失败: {} ({})", installer_path.display(), e))?;
 
     let target = powershell_quote_path(&current_exe);
+    let install_dir = powershell_quote_path(install_dir);
     let installer_file = powershell_quote_path(&installer_path);
     let script_file = powershell_quote_path(&script_path);
     let pid = std::process::id();
@@ -396,12 +400,13 @@ pub(crate) async fn download_nsis_update(
         r#"$ErrorActionPreference = 'Stop'
 $pidToWait = {pid}
 $target = {target}
+$installDir = {install_dir}
 $installer = {installer_file}
 $log = "$installer.log"
 try {{
   Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 1500
-  $proc = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait
+  $proc = Start-Process -FilePath $installer -ArgumentList "/S /D=$installDir" -PassThru -Wait
   if ($proc.ExitCode -ne 0) {{
     throw "Installer exited with code $($proc.ExitCode)"
   }}
