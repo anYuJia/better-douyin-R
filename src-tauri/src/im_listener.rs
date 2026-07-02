@@ -17,20 +17,36 @@ fn extract_im_text_message(content: &str) -> String {
         .ok()
         .and_then(|parsed| {
             if let Some(parsed_obj) = parsed.as_object() {
-                if parsed_obj.contains_key("command_type") || parsed_obj.get("command_type").and_then(|v| v.as_i64()) == Some(6) {
+                if parsed_obj.contains_key("command_type")
+                    || parsed_obj.get("command_type").and_then(|v| v.as_i64()) == Some(6)
+                {
                     let mut found_spark = false;
                     let mut text = String::new();
                     if let Some(ext_data) = parsed_obj.get("ext_data").and_then(|v| v.as_array()) {
                         for ext_item in ext_data {
                             if let Some(ext_obj) = ext_item.as_object() {
-                                if ext_obj.get("key").and_then(|v| v.as_str()) == Some("a:consecutive_chat_data") {
+                                if ext_obj.get("key").and_then(|v| v.as_str())
+                                    == Some("a:consecutive_chat_data")
+                                {
                                     text = "🔥 连续聊天火花已亮起".to_string();
                                     found_spark = true;
-                                    if let Some(val_str) = ext_obj.get("value").and_then(|v| v.as_str()) {
-                                        if let Ok(val_json) = serde_json::from_str::<serde_json::Value>(val_str) {
-                                            if let Some(count_info) = val_json.get("consecutive_count_info") {
-                                                let count = count_info.get("consecutive_count").and_then(|v| v.as_i64()).unwrap_or(1);
-                                                text = format!("🔥 连续聊天火花已亮起（第 {} 天）", count);
+                                    if let Some(val_str) =
+                                        ext_obj.get("value").and_then(|v| v.as_str())
+                                    {
+                                        if let Ok(val_json) =
+                                            serde_json::from_str::<serde_json::Value>(val_str)
+                                        {
+                                            if let Some(count_info) =
+                                                val_json.get("consecutive_count_info")
+                                            {
+                                                let count = count_info
+                                                    .get("consecutive_count")
+                                                    .and_then(|v| v.as_i64())
+                                                    .unwrap_or(1);
+                                                text = format!(
+                                                    "🔥 连续聊天火花已亮起（第 {} 天）",
+                                                    count
+                                                );
                                             }
                                         }
                                     }

@@ -287,7 +287,8 @@ impl DouyinClient {
                 }
             }
         }
-        let response = response.ok_or_else(|| anyhow!("video detail empty response: aweme_id={}", aweme_id))?;
+        let response = response
+            .ok_or_else(|| anyhow!("video detail empty response: aweme_id={}", aweme_id))?;
 
         let status_code = response["status_code"].as_i64().unwrap_or(-1);
         if status_code != 0 {
@@ -577,11 +578,17 @@ impl DouyinClient {
                     live_photo_url_candidates.push(live_list);
                 }
                 // 图片: url_list 去重保序，主地址取末项(最高清)，候选=其余
-                let img_list = dedup_url_list(image.get("url_list").and_then(|value| value.as_array()));
+                let img_list =
+                    dedup_url_list(image.get("url_list").and_then(|value| value.as_array()));
                 if let Some(primary) = img_list.last() {
                     image_urls_list.push(primary.clone());
                     let mut ordered = vec![primary.clone()];
-                    ordered.extend(img_list.iter().filter(|u| u.as_str() != primary.as_str()).cloned());
+                    ordered.extend(
+                        img_list
+                            .iter()
+                            .filter(|u| u.as_str() != primary.as_str())
+                            .cloned(),
+                    );
                     image_url_candidates.push(ordered);
                 }
             }
@@ -1226,14 +1233,20 @@ mod tests {
         );
         // 主地址失败时轮询的镜像候选：主地址在首位
         assert_eq!(
-            video.live_photo_url_candidates.as_ref().expect("live photo candidates"),
+            video
+                .live_photo_url_candidates
+                .as_ref()
+                .expect("live photo candidates"),
             &vec![vec![
                 "https://example.com/live-photo.mp4".to_string(),
                 "https://example.com/live-photo-backup.mp4".to_string(),
             ]]
         );
         assert_eq!(
-            video.image_url_candidates.as_ref().expect("image candidates"),
+            video
+                .image_url_candidates
+                .as_ref()
+                .expect("image candidates"),
             &vec![vec![
                 "https://example.com/image-large.jpeg".to_string(),
                 "https://example.com/image-small.webp".to_string(),

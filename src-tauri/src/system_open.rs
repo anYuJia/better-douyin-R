@@ -149,7 +149,10 @@ pub(crate) fn open_external_url_with_system(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn write_text_to_command(mut command: std::process::Command, text: &str) -> Result<(), String> {
+pub(crate) fn write_text_to_command(
+    mut command: std::process::Command,
+    text: &str,
+) -> Result<(), String> {
     use std::io::Write;
     use std::process::Stdio;
 

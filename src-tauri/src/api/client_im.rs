@@ -13,8 +13,6 @@ use super::im_proto;
 use crate::config::get_user_agent;
 use crate::sign;
 
-
-
 impl DouyinClient {
     pub(super) fn im_proto_signer(&self) -> Result<&crate::config::RelationSignerConfig> {
         let signer =
@@ -390,11 +388,6 @@ impl DouyinClient {
         Ok(response)
     }
 
-
-
-
-
-
     pub async fn create_im_conversation(&self, to_user_id: &str) -> Result<serde_json::Value> {
         let signer = self.im_proto_signer()?;
         let current_user = self.get_current_user().await?;
@@ -439,10 +432,6 @@ impl DouyinClient {
             "raw": response,
         }))
     }
-
-
-
-
 
     pub async fn get_im_device_id(&self) -> Result<String> {
         let mut params = HashMap::new();

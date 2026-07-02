@@ -1,13 +1,13 @@
 //! 媒体下载请求辅助
 
-use crate::api::DouyinClient;
 use crate::api::types::{DownloadMediaItem, VideoInfo};
+use crate::api::DouyinClient;
 use crate::config::AppConfig;
 use crate::media_utils::is_dash_video_only_url;
-use anyhow::{Result, anyhow};
-use reqwest::header::{CONTENT_TYPE, HeaderMap};
+use anyhow::{anyhow, Result};
+use reqwest::header::{HeaderMap, CONTENT_TYPE};
 
-use super::quality::{DownloadQuality, ordered_video_urls};
+use super::quality::{ordered_video_urls, DownloadQuality};
 
 pub(crate) async fn request_media_with_fallback(
     client: &reqwest::Client,

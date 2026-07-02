@@ -90,4 +90,3 @@ pub(crate) fn check_files_exist(paths: Vec<String>) -> Result<Vec<bool>, String>
         .collect();
     Ok(result)
 }
-

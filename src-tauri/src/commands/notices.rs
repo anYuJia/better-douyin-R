@@ -45,12 +45,9 @@ pub(crate) async fn get_notices(
                 return Ok(login_required_response(&message));
             }
             if looks_like_verify_error(&message) {
-                return Ok(login_or_verify_response(
-                    &client,
-                    &message,
-                    "https://www.douyin.com/",
-                )
-                .await);
+                return Ok(
+                    login_or_verify_response(&client, &message, "https://www.douyin.com/").await,
+                );
             }
             log::error!(
                 "get_notices failed: count={} max_time={} error={}",

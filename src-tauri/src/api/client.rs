@@ -289,7 +289,10 @@ impl DouyinClient {
         ])
     }
 
-    pub(super) fn spider_ticket_guard_headers(&self, path: &str) -> Result<HashMap<String, String>> {
+    pub(super) fn spider_ticket_guard_headers(
+        &self,
+        path: &str,
+    ) -> Result<HashMap<String, String>> {
         let signer = self
             .config
             .relation_signer
@@ -354,7 +357,6 @@ impl DouyinClient {
             Some(value.to_string())
         }
     }
-
 
     pub(super) fn generate_ms_token() -> String {
         rand::thread_rng()
@@ -718,7 +720,11 @@ impl DouyinClient {
         params.insert("webid".to_string(), webid);
     }
 
-    pub(super) fn set_param_part(params: &mut Vec<(String, String)>, key: &str, value: impl Into<String>) {
+    pub(super) fn set_param_part(
+        params: &mut Vec<(String, String)>,
+        key: &str,
+        value: impl Into<String>,
+    ) {
         let value = value.into();
         if let Some((_, existing)) = params.iter_mut().find(|(name, _)| name == key) {
             *existing = value;
@@ -949,5 +955,4 @@ impl DouyinClient {
         self.request_with_options(url, params, method, extra_headers, skip_sign)
             .await
     }
-
 }

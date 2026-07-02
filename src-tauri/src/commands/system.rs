@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use tauri::State;
 
-use crate::AppState;
 use crate::system_open::{
     canonical_existing_directory, canonical_existing_file, open_directory_with_system,
     open_external_url_with_system, open_file_with_system, reveal_file_with_system,
     write_text_to_clipboard,
 };
+use crate::AppState;
 
 pub(crate) async fn allowed_existing_file_path(
     state: &State<'_, AppState>,

@@ -63,8 +63,8 @@ pub(crate) async fn save_config(
     if next_config.cookie.trim().is_empty() && !current_config.cookie.trim().is_empty() {
         next_config.cookie = current_config.cookie.clone();
     }
-    let network_client_needs_rebuild =
-        next_config.proxy != current_config.proxy || next_config.ssl_verify != current_config.ssl_verify;
+    let network_client_needs_rebuild = next_config.proxy != current_config.proxy
+        || next_config.ssl_verify != current_config.ssl_verify;
     let client_needs_rebuild =
         next_config.cookie != current_config.cookie || network_client_needs_rebuild;
 

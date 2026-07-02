@@ -130,7 +130,9 @@ pub(crate) fn verify_required_response(message: &str, verify_url: &str) -> serde
     })
 }
 
-pub(crate) async fn login_required_if_cookie_invalid(client: &DouyinClient) -> Option<serde_json::Value> {
+pub(crate) async fn login_required_if_cookie_invalid(
+    client: &DouyinClient,
+) -> Option<serde_json::Value> {
     match client.verify_cookie().await {
         Ok(status) if status.valid => None,
         Ok(status) => Some(login_required_response(&status.message)),
@@ -220,7 +222,10 @@ pub(crate) fn relation_signer_ready(signer: &Option<RelationSignerConfig>) -> bo
         .unwrap_or(false)
 }
 
-pub(crate) fn relation_signer_ready_for_uid(signer: &Option<RelationSignerConfig>, uid: &str) -> bool {
+pub(crate) fn relation_signer_ready_for_uid(
+    signer: &Option<RelationSignerConfig>,
+    uid: &str,
+) -> bool {
     let uid = uid.trim();
     signer
         .as_ref()
@@ -272,7 +277,9 @@ pub(crate) async fn emit_cookie_login_status(app: &tauri::AppHandle, payload: se
 }
 
 pub(crate) async fn clear_cookie_login_session_if_current(
-    cookie_login_state: &std::sync::Arc<tokio::sync::Mutex<Option<crate::cookie::CookieLoginSession>>>,
+    cookie_login_state: &std::sync::Arc<
+        tokio::sync::Mutex<Option<crate::cookie::CookieLoginSession>>,
+    >,
     label: &str,
 ) {
     let mut guard = cookie_login_state.lock().await;

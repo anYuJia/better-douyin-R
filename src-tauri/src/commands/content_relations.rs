@@ -110,7 +110,8 @@ pub(crate) async fn set_user_followed(
 
     match client.set_user_followed(&user_id, follow).await {
         Ok(resp) => {
-            let follow_status = resp.get("follow_status")
+            let follow_status = resp
+                .get("follow_status")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(if follow { 1 } else { 0 });
             Ok(serde_json::json!({

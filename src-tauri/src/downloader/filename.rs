@@ -261,7 +261,8 @@ pub(crate) async fn create_unique_output_file(
     total: usize,
     extension: &str,
 ) -> Result<(PathBuf, File)> {
-    create_unique_output_file_with_same_stem(save_dir, base_name, index, total, extension, false).await
+    create_unique_output_file_with_same_stem(save_dir, base_name, index, total, extension, false)
+        .await
 }
 
 pub(crate) async fn create_unique_output_file_with_same_stem(
@@ -275,7 +276,9 @@ pub(crate) async fn create_unique_output_file_with_same_stem(
     let extension = sanitize_extension(extension);
     for attempt in 0..1000 {
         let candidate = if attempt == 0 {
-            unique_output_path_with_same_stem(save_dir, base_name, index, total, &extension, same_stem)
+            unique_output_path_with_same_stem(
+                save_dir, base_name, index, total, &extension, same_stem,
+            )
         } else {
             let stem = if total <= 1 || same_stem {
                 sanitize_filename(base_name)

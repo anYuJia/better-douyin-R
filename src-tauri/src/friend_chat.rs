@@ -46,7 +46,9 @@ pub(crate) fn coerce_i64(value: Option<&serde_json::Value>, default: i64) -> i64
         .unwrap_or(default)
 }
 
-pub(crate) fn sanitize_friend_chat_message(value: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+pub(crate) fn sanitize_friend_chat_message(
+    value: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
     let object = value?.as_object()?;
     let mut text = object
         .get("text")
@@ -59,17 +61,33 @@ pub(crate) fn sanitize_friend_chat_message(value: Option<&serde_json::Value>) ->
     if text.starts_with('{') && text.contains("command_type") {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
             if let Some(parsed_obj) = parsed.as_object() {
-                if parsed_obj.contains_key("command_type") || parsed_obj.get("command_type").and_then(|v| v.as_i64()) == Some(6) {
+                if parsed_obj.contains_key("command_type")
+                    || parsed_obj.get("command_type").and_then(|v| v.as_i64()) == Some(6)
+                {
                     let mut found_spark = false;
                     if let Some(ext_data) = parsed_obj.get("ext_data").and_then(|v| v.as_array()) {
                         for ext_item in ext_data {
                             if let Some(ext_obj) = ext_item.as_object() {
-                                if ext_obj.get("key").and_then(|v| v.as_str()) == Some("a:consecutive_chat_data") {
-                                    if let Some(val_str) = ext_obj.get("value").and_then(|v| v.as_str()) {
-                                        if let Ok(val_json) = serde_json::from_str::<serde_json::Value>(val_str) {
-                                            if let Some(count_info) = val_json.get("consecutive_count_info") {
-                                                let count = count_info.get("consecutive_count").and_then(|v| v.as_i64()).unwrap_or(1);
-                                                text = format!("🔥 连续聊天火花已亮起（第 {} 天）", count);
+                                if ext_obj.get("key").and_then(|v| v.as_str())
+                                    == Some("a:consecutive_chat_data")
+                                {
+                                    if let Some(val_str) =
+                                        ext_obj.get("value").and_then(|v| v.as_str())
+                                    {
+                                        if let Ok(val_json) =
+                                            serde_json::from_str::<serde_json::Value>(val_str)
+                                        {
+                                            if let Some(count_info) =
+                                                val_json.get("consecutive_count_info")
+                                            {
+                                                let count = count_info
+                                                    .get("consecutive_count")
+                                                    .and_then(|v| v.as_i64())
+                                                    .unwrap_or(1);
+                                                text = format!(
+                                                    "🔥 连续聊天火花已亮起（第 {} 天）",
+                                                    count
+                                                );
                                                 found_spark = true;
                                             }
                                         }

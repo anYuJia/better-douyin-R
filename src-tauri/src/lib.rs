@@ -1,36 +1,36 @@
 //! 抖音视频下载器 - Tauri 应用
 
 pub mod api;
+pub mod api_helpers;
+pub mod commands;
 pub mod config;
 pub mod cookie;
+pub mod download_files;
+pub mod download_payload;
 pub mod downloader;
+pub mod friend_chat;
 pub mod history;
 mod http_client;
+pub mod im_listener;
+pub mod login_window;
 pub mod media_proxy;
-mod media_proxy_security;
-mod media_proxy_headers;
 mod media_proxy_cache;
 mod media_proxy_crypto;
+mod media_proxy_headers;
 mod media_proxy_local;
 mod media_proxy_remote;
+mod media_proxy_security;
 pub mod media_utils;
-mod media_utils_types;
+mod media_utils_download_items;
 mod media_utils_extract;
 mod media_utils_normalize;
-mod media_utils_download_items;
 mod media_utils_python;
+mod media_utils_types;
 pub mod reporter;
 pub mod sign;
-pub mod download_files;
-pub mod friend_chat;
-pub mod login_window;
+pub mod state;
 pub mod system_open;
 pub mod update;
-pub mod commands;
-pub mod state;
-pub mod api_helpers;
-pub mod im_listener;
-pub mod download_payload;
 
 use state::AppState;
 use tauri::Manager;

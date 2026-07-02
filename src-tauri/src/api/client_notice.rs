@@ -92,7 +92,11 @@ fn format_aweme_brief(aweme: &serde_json::Value) -> Option<serde_json::Value> {
     if let Some(video) = aweme.get("video") {
         cover = first_url(video.get("cover").unwrap_or(&serde_json::Value::Null));
         if cover.is_empty() {
-            cover = first_url(video.get("origin_cover").unwrap_or(&serde_json::Value::Null));
+            cover = first_url(
+                video
+                    .get("origin_cover")
+                    .unwrap_or(&serde_json::Value::Null),
+            );
         }
     }
     if cover.is_empty() {
@@ -131,10 +135,7 @@ fn label_text_from(label_text: &str, digg: &serde_json::Value) -> String {
 /// 把单条 notice_list_v2 元素整形为前端可用的结构。
 fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
     let obj = item.as_object()?;
-    let notice_type = obj
-        .get("type")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let notice_type = obj.get("type").and_then(|v| v.as_i64()).unwrap_or(0);
     let type_label = notice_type_label(notice_type);
 
     let mut users: Vec<serde_json::Value> = Vec::new();
@@ -384,7 +385,11 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
                 }
             }
             1 | 41 => {
-                let target = if is_comment_like { "你的评论" } else { "你的作品" };
+                let target = if is_comment_like {
+                    "你的评论"
+                } else {
+                    "你的作品"
+                };
                 if merge_count > 1 {
                     if names.is_empty() {
                         format!("{} 人赞了{}", merge_count, target)
@@ -398,7 +403,11 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
                 }
             }
             31 => {
-                let action = if is_reply { "回复了你的评论" } else { "评论了你" };
+                let action = if is_reply {
+                    "回复了你的评论"
+                } else {
+                    "评论了你"
+                };
                 if names.is_empty() {
                     action.to_string()
                 } else {
@@ -423,7 +432,10 @@ fn format_notice(item: &serde_json::Value) -> Option<serde_json::Value> {
         .unwrap_or("")
         .to_string();
     let create_time = obj.get("create_time").and_then(|v| v.as_i64()).unwrap_or(0);
-    let has_read = obj.get("has_read").and_then(|v| v.as_bool()).unwrap_or(false);
+    let has_read = obj
+        .get("has_read")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     Some(serde_json::json!({
         "id": id,
@@ -481,10 +493,8 @@ impl DouyinClient {
         params.insert("min_time", min_time.to_string());
         params.insert("max_time", max_time.to_string());
 
-        let headers = HashMap::from([(
-            "Referer".to_string(),
-            "https://www.douyin.com/".to_string(),
-        )]);
+        let headers =
+            HashMap::from([("Referer".to_string(), "https://www.douyin.com/".to_string())]);
 
         let response = self
             .request_raw_json_with_options(
@@ -498,9 +508,7 @@ impl DouyinClient {
 
         let status_code = response["status_code"].as_i64().unwrap_or(-1);
         if status_code != 0 {
-            let status_msg = response["status_msg"]
-                .as_str()
-                .unwrap_or("unknown error");
+            let status_msg = response["status_msg"].as_str().unwrap_or("unknown error");
             return Err(anyhow!("API error: {}", status_msg));
         }
 

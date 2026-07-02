@@ -187,7 +187,10 @@ async fn cmd_quality(url: &str, format: &str, quality: Option<&str>) -> Result<(
         );
         println!(
             "candidate_count: {}",
-            diagnostic["candidates"].as_array().map(|items| items.len()).unwrap_or(0)
+            diagnostic["candidates"]
+                .as_array()
+                .map(|items| items.len())
+                .unwrap_or(0)
         );
     } else {
         println!("{}", serde_json::to_string_pretty(&diagnostic)?);

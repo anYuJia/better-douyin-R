@@ -42,7 +42,11 @@ impl DouyinClient {
         .await
     }
 
-    pub async fn set_user_followed(&self, user_id: &str, follow: bool) -> Result<serde_json::Value> {
+    pub async fn set_user_followed(
+        &self,
+        user_id: &str,
+        follow: bool,
+    ) -> Result<serde_json::Value> {
         let mut params = HashMap::new();
         params.insert("user_id", user_id.trim().to_string());
         params.insert("type", if follow { "1" } else { "0" }.to_string());
@@ -54,7 +58,6 @@ impl DouyinClient {
         )
         .await
     }
-
 
     pub async fn get_following_sec_user_ids(
         &self,
@@ -308,5 +311,4 @@ impl DouyinClient {
 
         Ok(response)
     }
-
 }

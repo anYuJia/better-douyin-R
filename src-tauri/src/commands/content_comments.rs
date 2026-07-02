@@ -19,19 +19,21 @@ pub(crate) async fn get_comments(
     };
 
     let insert_ids = insert_ids.unwrap_or_default();
-    let (comments, next_cursor, has_more, total) =
-        match client.get_comments(&aweme_id, cursor, count, &insert_ids).await {
-            Ok(result) => result,
-            Err(e) => {
-                return Ok(api_login_or_verify_error_response(
-                    &client,
-                    "获取评论失败",
-                    e,
-                    &format!("https://www.douyin.com/video/{}", aweme_id),
-                )
-                .await)
-            }
-        };
+    let (comments, next_cursor, has_more, total) = match client
+        .get_comments(&aweme_id, cursor, count, &insert_ids)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            return Ok(api_login_or_verify_error_response(
+                &client,
+                "获取评论失败",
+                e,
+                &format!("https://www.douyin.com/video/{}", aweme_id),
+            )
+            .await)
+        }
+    };
 
     Ok(serde_json::json!({
         "success": true,

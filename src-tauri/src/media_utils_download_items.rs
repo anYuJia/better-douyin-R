@@ -257,7 +257,10 @@ pub fn push_image_like_items(
     }
 }
 
-pub fn download_media_items_from_video(video: &VideoInfo, config: &AppConfig) -> Vec<DownloadMediaItem> {
+pub fn download_media_items_from_video(
+    video: &VideoInfo,
+    config: &AppConfig,
+) -> Vec<DownloadMediaItem> {
     use crate::api::DouyinClient;
     let mut items = Vec::new();
 

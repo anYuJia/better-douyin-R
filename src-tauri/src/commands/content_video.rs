@@ -6,7 +6,10 @@ use tauri::State;
 
 /// 解析视频链接
 #[tauri::command]
-pub(crate) async fn parse_url(state: State<'_, AppState>, url: String) -> Result<VideoInfo, String> {
+pub(crate) async fn parse_url(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<VideoInfo, String> {
     let client = get_client(&state).await?;
 
     let aweme_id = DouyinClient::extract_aweme_id(&url)
@@ -22,7 +25,10 @@ pub(crate) async fn parse_url(state: State<'_, AppState>, url: String) -> Result
 
 /// 解析分享链接 (处理重定向)
 #[tauri::command]
-pub(crate) async fn parse_link(state: State<'_, AppState>, link: String) -> Result<serde_json::Value, String> {
+pub(crate) async fn parse_link(
+    state: State<'_, AppState>,
+    link: String,
+) -> Result<serde_json::Value, String> {
     let trimmed_link = link.trim().to_string();
     if trimmed_link.is_empty() {
         return Ok(serde_json::json!({

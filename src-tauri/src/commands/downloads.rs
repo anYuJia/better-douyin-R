@@ -722,8 +722,10 @@ pub(crate) async fn download_videos(
     let config = state.config.lock().await.clone();
     for video_val in videos {
         let raw_media_type = download_media_type_from_payload(&video_val);
-        let media_items =
-            filter_live_photo_media_items(parse_download_media_items(&video_val, &raw_media_type), &config);
+        let media_items = filter_live_photo_media_items(
+            parse_download_media_items(&video_val, &raw_media_type),
+            &config,
+        );
         if let Some(mut video_info) = video_info_from_download_payload(&video_val) {
             merge_download_media_items_into_video_info(&mut video_info, &media_items);
             parsed_videos.push(video_info);

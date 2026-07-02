@@ -11,8 +11,8 @@ use crate::cookie::{
 };
 use crate::friend_chat::sanitize_sec_user_ids;
 use crate::login_window::{
-    close_stale_cookie_login_windows, extract_relation_signer_cookie,
-    inject_relation_signer_probe, is_login_cookie_candidate, reset_douyin_login_window_state,
+    close_stale_cookie_login_windows, extract_relation_signer_cookie, inject_relation_signer_probe,
+    is_login_cookie_candidate, reset_douyin_login_window_state,
     schedule_douyin_login_storage_cleanup, schedule_remove_login_data_dir,
     strip_internal_login_cookies,
 };
@@ -131,9 +131,14 @@ pub(crate) async fn cookie_browser_login(
     if let Some(ref cookie_str) = cookie {
         for item in cookie_str.split(';') {
             let item = item.trim();
-            if item.is_empty() { continue; }
+            if item.is_empty() {
+                continue;
+            }
             if let Some((name, value)) = item.split_once('=') {
-                if let Ok(parsed_cookie) = tauri::webview::Cookie::parse(format!("{}={}; Domain=.douyin.com; Path=/", name, value)) {
+                if let Ok(parsed_cookie) = tauri::webview::Cookie::parse(format!(
+                    "{}={}; Domain=.douyin.com; Path=/",
+                    name, value
+                )) {
                     let _ = window.set_cookie(parsed_cookie.into_owned());
                 }
             }

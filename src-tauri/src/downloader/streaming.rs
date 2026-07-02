@@ -1,15 +1,15 @@
-use crate::api::DouyinClient;
 use crate::api::types::VideoInfo;
+use crate::api::DouyinClient;
 use crate::downloader::batch::download_single_video;
 use crate::downloader::downloader::Downloader;
 use crate::downloader::events::{emit_event, estimate_batch_eta};
 use crate::downloader::filename::truncate_chars;
-use crate::downloader::quality::{DownloadQuality, ordered_video_urls};
+use crate::downloader::quality::{ordered_video_urls, DownloadQuality};
 use anyhow::Result;
 use futures::future;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::api::types::MediaType;

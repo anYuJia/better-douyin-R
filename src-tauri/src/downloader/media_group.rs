@@ -151,11 +151,13 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
 
     for (index, media) in task.media_urls.iter().enumerate() {
         let pair_index = if use_live_pair_stems {
-            live_pair_positions.get_mut(media.r#type.as_str()).map(|position| {
-                let current = *position;
-                *position += 1;
-                current
-            })
+            live_pair_positions
+                .get_mut(media.r#type.as_str())
+                .map(|position| {
+                    let current = *position;
+                    *position += 1;
+                    current
+                })
         } else {
             None
         };

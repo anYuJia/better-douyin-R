@@ -1,7 +1,7 @@
 use crate::api_helpers::*;
 use crate::friend_chat::{
-    coerce_i64, friend_chat_state_path, json_object_with_success,
-    sanitize_friend_chat_state, sanitize_sec_user_ids,
+    coerce_i64, friend_chat_state_path, json_object_with_success, sanitize_friend_chat_state,
+    sanitize_sec_user_ids,
 };
 use crate::im_listener::ensure_im_message_listener;
 use crate::state::AppState;
@@ -519,7 +519,9 @@ pub(crate) async fn get_friend_message_history(
 
 /// 读取好友聊天列表状态。
 #[tauri::command]
-pub(crate) async fn get_friend_chat_state(current_sec_uid: Option<String>) -> Result<serde_json::Value, String> {
+pub(crate) async fn get_friend_chat_state(
+    current_sec_uid: Option<String>,
+) -> Result<serde_json::Value, String> {
     let path = friend_chat_state_path(current_sec_uid.as_deref());
     if !path.exists() {
         return Ok(serde_json::json!({

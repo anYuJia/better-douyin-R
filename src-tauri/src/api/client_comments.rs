@@ -163,9 +163,16 @@ impl DouyinClient {
                         .collect::<Vec<_>>()
                 })
                 .filter(|v| !v.is_empty())
-                .or_else(|| data["sub_comments"].as_array().map(|arr| {
-                    arr.iter().filter_map(|c| self.parse_comment(c)).collect::<Vec<_>>()
-                }).filter(|v| !v.is_empty())),
+                .or_else(|| {
+                    data["sub_comments"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|c| self.parse_comment(c))
+                                .collect::<Vec<_>>()
+                        })
+                        .filter(|v| !v.is_empty())
+                }),
             status: data["status"].as_i64().unwrap_or(0) as i32,
             ip_label: data["ip_label"].as_str().unwrap_or_default().to_string(),
             sticker_url,

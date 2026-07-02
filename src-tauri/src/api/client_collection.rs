@@ -1,6 +1,6 @@
 //! 收藏合集客户端逻辑 - 喜欢/收藏/合集视频
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 
 use super::client::DouyinClient;
@@ -188,7 +188,11 @@ impl DouyinClient {
                     })
                 })
                 .collect::<Vec<_>>();
-            if items.is_empty() { None } else { Some(items) }
+            if items.is_empty() {
+                None
+            } else {
+                Some(items)
+            }
         });
         let selected_play_addr_value = if selected_play_addr.is_empty() {
             fallback_media_url.clone()
