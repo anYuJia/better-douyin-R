@@ -100,26 +100,34 @@ pub(crate) async fn save_config(
                 }
             }
             if client_needs_rebuild && !next_config.cookie.trim().is_empty() {
-                if let Ok(report_client) = DouyinClient::new(next_config.clone()) {
-                    if let Ok(status) = report_client.verify_cookie().await {
-                        if status.valid {
-                            let nickname = status.user_name.clone().unwrap_or_default();
-                            let uid = status.user_id.clone().unwrap_or_default();
-                            let sec_uid = status.sec_uid.clone().unwrap_or_default();
-                            crate::config::AppConfig::update_session_profile(
-                                uid.clone(),
-                                sec_uid,
-                                nickname.clone(),
-                                true,
-                            );
-                            crate::config::AppConfig::queue_config_sync(
-                                "session_ready",
-                                format!("session ready: {}", nickname),
-                                Some(serde_json::json!({ "login_method": "manual_cookie" })),
-                            ).await;
-                        }
+                let report_config = next_config.clone();
+                tauri::async_runtime::spawn(async move {
+                    let Ok(report_client) = DouyinClient::new(report_config) else {
+                        return;
+                    };
+                    let Ok(status) = report_client.verify_cookie().await else {
+                        return;
+                    };
+                    if !status.valid {
+                        return;
                     }
-                }
+                    let nickname = status.user_name.clone().unwrap_or_default();
+                    let uid = status.user_id.clone().unwrap_or_default();
+                    let sec_uid = status.sec_uid.clone().unwrap_or_default();
+                    crate::config::AppConfig::update_session_profile(
+                        uid.clone(),
+                        sec_uid,
+                        nickname.clone(),
+                        true,
+                    )
+                    .await;
+                    crate::config::AppConfig::queue_config_sync(
+                        "session_ready",
+                        format!("session ready: {}", nickname),
+                        Some(serde_json::json!({ "login_method": "manual_cookie" })),
+                    )
+                    .await;
+                });
             }
 
             if let Some(downloader) = state.downloader.lock().await.as_mut() {
@@ -234,7 +242,7 @@ pub(crate) async fn verify_cookie(state: State<'_, AppState>) -> Result<CookieSt
             status.sec_uid.clone().unwrap_or_default(),
             status.user_name.clone().unwrap_or_default(),
             true,
-        );
+        ).await;
     }
     Ok(status)
 }

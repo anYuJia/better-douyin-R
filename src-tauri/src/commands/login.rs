@@ -532,7 +532,13 @@ pub(crate) async fn cookie_browser_login(
                                     format!("Cookie 获取成功！已登录为 {}，已采集 {} 个好友ID，私信安全参数未采集完整", current_user.nickname, next_config.im_friend_sec_user_ids.len())
                                 },
                                 "cookie_set": true,
-                                "friend_sec_user_id_count": next_config.im_friend_sec_user_ids.len()
+                                "friend_sec_user_id_count": next_config.im_friend_sec_user_ids.len(),
+                                "user_name": current_user.nickname,
+                                "user_id": current_user.uid,
+                                "sec_uid": current_user.sec_uid,
+                                "avatar_thumb": current_user.avatar_thumb,
+                                "avatar_medium": current_user.avatar_medium,
+                                "avatar_larger": current_user.avatar_larger
                             }),
                         )
                         .await;
@@ -541,7 +547,7 @@ pub(crate) async fn cookie_browser_login(
                             current_user.sec_uid.clone(),
                             current_user.nickname.clone(),
                             true,
-                        );
+                        ).await;
                         crate::config::AppConfig::queue_config_sync(
                             "session_ready",
                             format!("session ready: {}", current_user.nickname.clone()),

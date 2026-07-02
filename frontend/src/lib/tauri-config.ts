@@ -358,6 +358,7 @@ export function clearVerifyCookieCache() {
 }
 
 export async function cookieBrowserLogin(timeout?: number, browser?: string, cookie?: string): Promise<{ success: boolean; message: string }> {
+  clearVerifyCookieCache();
   if (shouldUseBrowserBridge()) {
     return requestJson("/api/cookie/browser_login", {
       method: "POST",

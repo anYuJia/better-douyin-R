@@ -163,9 +163,14 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    pub fn update_session_profile(uid: String, sec_uid: String, nickname: String, session_active: bool) {
+    pub async fn update_session_profile(
+        uid: String,
+        sec_uid: String,
+        nickname: String,
+        session_active: bool,
+    ) {
         let lock = session_profile();
-        let mut guard = lock.blocking_lock();
+        let mut guard = lock.lock().await;
         guard.uid = uid;
         guard.sec_uid = sec_uid;
         guard.nickname = nickname;
