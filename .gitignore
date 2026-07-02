@@ -22,3 +22,6 @@ packaging/package-managers/generated/
 
 # Claude
 .claude/
+
+# Local docs
+docs/superpowers/
