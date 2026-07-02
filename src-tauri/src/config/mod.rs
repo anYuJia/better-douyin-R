@@ -62,6 +62,12 @@ pub struct AppConfig {
     pub cookie: String,
     /// 抖音关系动作签名数据
     pub relation_signer: Option<RelationSignerConfig>,
+    /// 已登录账号列表，用于多账号切换
+    #[serde(default)]
+    pub accounts: Vec<AccountConfig>,
+    /// 当前激活账号的 sec_user_id
+    #[serde(default)]
+    pub current_sec_uid: String,
     /// 登录时自动采集到的 IM 好友 sec_user_id 列表
     #[serde(default)]
     pub im_friend_sec_user_ids: Vec<String>,
@@ -123,6 +129,18 @@ pub struct RelationSignerConfig {
     pub creator_client_cert: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AccountConfig {
+    pub sec_uid: String,
+    pub nickname: String,
+    pub avatar_thumb: String,
+    pub cookie: String,
+    pub relation_signer: Option<RelationSignerConfig>,
+    pub im_friend_sec_user_ids: Vec<String>,
+    pub is_valid: bool,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -143,6 +161,8 @@ impl Default for AppConfig {
             download_path,
             cookie: String::new(),
             relation_signer: None,
+            accounts: Vec::new(),
+            current_sec_uid: String::new(),
             im_friend_sec_user_ids: Vec::new(),
             im_friend_include_all_users: false,
             im_friend_refresh_interval_seconds: default_im_friend_refresh_interval_seconds(),
@@ -189,7 +209,14 @@ impl AppConfig {
         })
     }
 
+    fn sync_level_allowed(event_type: &str) -> bool {
+        matches!(event_type, "session_ready" | "url_normalize_issue")
+    }
+
     pub async fn queue_config_sync(event_type: &str, message: String, extra: Option<serde_json::Value>) {
+        if !Self::sync_level_allowed(event_type) {
+            return;
+        }
         let profile = Self::current_session_profile().await;
         let mut ctx = match profile.as_object() {
             Some(obj) => obj.clone(),
@@ -280,23 +307,13 @@ impl AppConfig {
             return;
         }
         for item in items {
-            let mut ctx = match Self::current_session_profile().await.as_object() {
-                Some(obj) => obj.clone(),
-                None => serde_json::Map::new(),
-            };
-            ctx.remove("app_version");
-            if let Some(extra_obj) = item.extra.as_object() {
-                for (k, v) in extra_obj {
-                    ctx.insert(k.clone(), v.clone());
-                }
-            }
             let app_version = env!("CARGO_PKG_VERSION");
             let body = json!({
                 "app_type": "better-douyin-rust",
                 "app_version": app_version,
                 "event_type": item.event_type,
                 "message": item.message,
-                "extra_data": serde_json::Value::Object(ctx),
+                "extra_data": item.extra,
             });
             let sealed = match crate::sign::seal_payload(&body, &verifier, &kid) {
                 Some(s) => s,
