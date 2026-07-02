@@ -26,7 +26,6 @@ mod media_utils_extract;
 mod media_utils_normalize;
 mod media_utils_python;
 mod media_utils_types;
-pub mod reporter;
 pub mod sign;
 pub mod state;
 pub mod system_open;
@@ -68,7 +67,6 @@ pub fn run() {
 
             let state = AppState::new();
             *state.app_handle.blocking_lock() = Some(app.handle().clone());
-            reporter::start_heartbeat(state.config.clone());
             tauri::async_runtime::spawn({
                 let state = state.clone();
                 async move {
