@@ -87,7 +87,7 @@ export function VideoCard({
         selected && "border-accent shadow-[var(--shadow-glow)]"
       )}
     >
-      <VideoCover video={video} className={VIDEO_CARD_COVER_CLASS} showPlayOverlay={false} />
+      <VideoCover video={video} className={VIDEO_CARD_COVER_CLASS} priority={index < 8} showPlayOverlay={false} />
 
       {(video.is_liked || video.is_collected) && (
         <div className="pointer-events-none absolute left-2 top-2 z-10 flex gap-1">
