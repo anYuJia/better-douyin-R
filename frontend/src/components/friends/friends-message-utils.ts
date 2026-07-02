@@ -117,8 +117,15 @@ export function uniqueTextParts(parts: string[]) {
 }
 
 export function imDynamicText(value: unknown): string {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return /^https?:\/\//.test(value.trim()) ? "" : value;
+  if (Array.isArray(value)) return uniqueTextParts(value.map((item) => imDynamicText(item))).join(" · ");
   if (isRecord(value)) {
+    const type = stringField(value, ["type"]);
+    if (type === "im-image" || type === "im-icon") return "";
+    const content = value.content;
+    if (typeof content === "string" && !/^https?:\/\//.test(content.trim())) return content;
+    const nested = imDynamicText(content);
+    if (nested) return nested;
     const text = stringField(value, ["text"]);
     if (text) return text;
   }
@@ -126,14 +133,27 @@ export function imDynamicText(value: unknown): string {
 }
 
 export function parseDynamicPatchCard(root: JsonRecord): SharedMessageCard | null {
-  const patch = parseNestedJsonField(root, ["dynamic_patch", "dynamicPatch"]);
+  const directPatch = isRecord(root.im_dynamic_patch)
+    ? root.im_dynamic_patch
+    : isRecord(root.imDynamicPatch)
+      ? root.imDynamicPatch
+      : null;
+  const patch = directPatch || parseNestedJsonField(root, ["dynamic_patch", "dynamicPatch"]);
   if (!patch) return null;
-  const schema = stringField(patch, ["schema"]);
-  const isVideo = schema.includes("aweme/detail") || schema.includes("note/detail");
+  const rawData = parseNestedJsonField(patch, ["raw_data", "rawData"]);
+  const schema = stringField(root, ["schema"]) || stringField(patch, ["schema"]);
+  const cardKey = stringField(patch, ["card_key", "cardKey"]);
+  const aweType = numberField(root, ["aweType", "awe_type", "type"]);
+  const isVideo = aweType === 11054 || cardKey === "msg_video" || schema.includes("aweme/detail") || schema.includes("note/detail");
   const query = schema.split("?")[1] || "";
   const params = new URLSearchParams(query);
   const itemId = normalizeSharedItemId(
-    params.get("id") || params.get("aweme_id") || params.get("group_id") || "",
+    stringField(root, ["item_id", "itemId"]) ||
+      (isRecord(root.aweme_info) ? stringField(root.aweme_info, ["item_id", "itemId"]) : "") ||
+      params.get("id") ||
+      params.get("aweme_id") ||
+      params.get("group_id") ||
+      "",
   );
   const rawList = patch.raw_list || patch.rawList;
   const records: JsonRecord[] = [];
@@ -147,6 +167,16 @@ export function parseDynamicPatchCard(root: JsonRecord): SharedMessageCard | nul
   let coverUrl = "";
   let authorName = "";
   let avatarUrl = "";
+  if (rawData) {
+    title =
+      imDynamicText(rawData.top_bottom_top) ||
+      imDynamicText(rawData.content_top) ||
+      stringField(root, ["description"]).replace(/^\[?分享视频\]?\s*/, "");
+    subtitle = imDynamicText(rawData.content_right_top);
+    coverUrl = firstUrl(isRecord(rawData.top) ? rawData.top.content : rawData.top);
+    avatarUrl = firstUrl(rawData.top_bottom_content_left);
+    authorName = imDynamicText(rawData.top_bottom_content_right);
+  }
   records.forEach((record) => {
     const text = imDynamicText(record.text);
     if (!text) return;
@@ -181,7 +211,11 @@ export function parseDynamicPatchCard(root: JsonRecord): SharedMessageCard | nul
     }
   }
   if (!title) {
-    title = stringField(root, ["tips"]) || stringField(patch, ["tips"]) || "动态分享";
+    title =
+      stringField(root, ["description"]).replace(/^\[?分享视频\]?\s*/, "") ||
+      stringField(root, ["tips"]) ||
+      stringField(patch, ["tips"]) ||
+      "动态分享";
   }
   return {
     kind: isVideo ? "video" : "share",
@@ -215,7 +249,7 @@ export function parseSharedMessage(message: LocalChatMessage): SharedMessageCard
   const isShare = aweType === 2705 || aweType === 9;
   const isLocation = aweType === 2706 || aweType === 10;
   const isProduct = aweType === 2707 || aweType === 11;
-  const isDynamicPatch = aweType === 2708 || aweType === 12 || root.dynamic_patch || root.dynamicPatch;
+  const isDynamicPatch = aweType === 2708 || aweType === 12 || root.im_dynamic_patch || root.imDynamicPatch || root.dynamic_patch || root.dynamicPatch;
   if (isDynamicPatch) {
     return parseDynamicPatchCard(root);
   }
