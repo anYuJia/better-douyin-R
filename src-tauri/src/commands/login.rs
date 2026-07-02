@@ -9,6 +9,7 @@ use crate::cookie::{
     has_douyin_login_cookie, has_douyin_session_cookie, serialize_cookie_string,
     verify_douyin_login_cookie, CookieLoginSession,
 };
+use crate::config::AccountConfig;
 use crate::friend_chat::sanitize_sec_user_ids;
 use crate::login_window::{
     close_stale_cookie_login_windows, extract_relation_signer_cookie, inject_relation_signer_probe,
@@ -486,6 +487,41 @@ pub(crate) async fn cookie_browser_login(
                             "cookie browser IM friend ids cached: count={}",
                             next_config.im_friend_sec_user_ids.len()
                         );
+                        let account_avatar = if current_user.avatar_thumb.is_empty() {
+                            if current_user.avatar_medium.is_empty() {
+                                current_user.avatar_larger.clone()
+                            } else {
+                                current_user.avatar_medium.clone()
+                            }
+                        } else {
+                            current_user.avatar_thumb.clone()
+                        };
+                        let previous_account = next_config
+                            .accounts
+                            .iter()
+                            .find(|account| account.sec_uid == current_user.sec_uid)
+                            .cloned();
+                        let account = AccountConfig {
+                            sec_uid: current_user.sec_uid.clone(),
+                            nickname: current_user.nickname.clone(),
+                            avatar_thumb: if account_avatar.is_empty() {
+                                previous_account
+                                    .as_ref()
+                                    .map(|account| account.avatar_thumb.clone())
+                                    .unwrap_or_default()
+                            } else {
+                                account_avatar
+                            },
+                            cookie: cookie_string.clone(),
+                            relation_signer: next_config.relation_signer.clone(),
+                            im_friend_sec_user_ids: next_config.im_friend_sec_user_ids.clone(),
+                            is_valid: true,
+                        };
+                        next_config
+                            .accounts
+                            .retain(|account| account.sec_uid != current_user.sec_uid);
+                        next_config.accounts.push(account);
+                        next_config.current_sec_uid = current_user.sec_uid.clone();
                         if let Err(error) = next_config.save() {
                             schedule_remove_login_data_dir(login_data_dir_clone.clone());
                             clear_cookie_login_session_if_current(

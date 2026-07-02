@@ -15,6 +15,8 @@ export interface AppConfig {
   proxy: string | null;
   ssl_verify?: boolean;
   cookie: string;
+  accounts?: AccountInfo[];
+  current_sec_uid?: string;
   im_friend_sec_user_ids?: string[];
   im_friend_include_all_users?: boolean;
   im_friend_refresh_interval_seconds?: number;

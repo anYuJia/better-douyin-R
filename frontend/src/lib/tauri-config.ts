@@ -142,6 +142,8 @@ export async function saveConfig(config: Partial<AppConfig>): Promise<{ success:
     proxy: hasProxyPatch ? (config.proxy ?? null) : (current.proxy ?? null),
     cookie: config.cookie ?? "",
     im_friend_sec_user_ids: config.im_friend_sec_user_ids ?? current.im_friend_sec_user_ids ?? [],
+    accounts: config.accounts ?? current.accounts ?? [],
+    current_sec_uid: config.current_sec_uid ?? current.current_sec_uid ?? "",
     im_friend_include_all_users:
       config.im_friend_include_all_users ?? current.im_friend_include_all_users ?? false,
     im_friend_refresh_interval_seconds:
@@ -222,79 +224,45 @@ function sanitizeAvatarUrl(value: string | null | undefined): string {
 }
 
 export async function getAccounts(): Promise<AccountsResponse> {
-  const config = await getConfig();
-  if (!config.cookie_set) {
-    return { success: true, accounts: [], current_sec_uid: "" };
+  if (shouldUseBrowserBridge()) {
+    return requestJson("/api/accounts");
   }
-
-  try {
-    const status = await verifyCookie();
-    if (!status.valid) {
-      return { success: true, accounts: [], current_sec_uid: "" };
-    }
-    const secUid = status.sec_uid || status.user_id || "current";
-    return {
-      success: true,
-      current_sec_uid: secUid,
-      accounts: [
-        {
-          sec_uid: secUid,
-          nickname: status.user_name || "当前账号",
-          avatar_thumb: sanitizeAvatarUrl(status.avatar_thumb),
-        },
-      ],
-    };
-  } catch {
-    return { success: true, accounts: [], current_sec_uid: "" };
-  }
+  return invoke("get_accounts");
 }
 
 export async function switchAccount(secUid: string): Promise<{ success: boolean; message: string; nickname?: string }> {
   clearVerifyCookieCache();
-  const accounts = await getAccounts();
-  const account = accounts.accounts.find((item) => item.sec_uid === secUid);
-  if (!account) {
-    return { success: false, message: "账号不存在" };
+  if (shouldUseBrowserBridge()) {
+    return requestJson("/api/accounts/switch", {
+      method: "POST",
+      body: JSON.stringify({ sec_uid: secUid }),
+    });
   }
-  return { success: true, message: `已切换为 ${account.nickname}`, nickname: account.nickname };
+  return invoke("switch_account", { secUid, sec_uid: secUid });
 }
 
 export async function deleteAccount(secUid: string): Promise<{ success: boolean; message: string }> {
   clearVerifyCookieCache();
-  const accounts = await getAccounts();
-  const account = accounts.accounts.find((item) => item.sec_uid === secUid);
-  if (!account) {
-    return { success: false, message: "账号不存在" };
+  if (shouldUseBrowserBridge()) {
+    return requestJson("/api/accounts", {
+      method: "DELETE",
+      body: JSON.stringify({ sec_uid: secUid }),
+    });
   }
-  return logoutCookie();
+  return invoke("delete_account", { secUid, sec_uid: secUid });
 }
 
 export async function addAccount(
   cookie: string
 ): Promise<{ success: boolean; message: string; nickname?: string; sec_uid?: string; avatar_thumb?: string }> {
   clearVerifyCookieCache();
-  const trimmed = cookie.replace(/\n/g, "").replace(/\r/g, "").trim();
-  if (!trimmed) {
-    return { success: false, message: "Cookie 不能为空" };
+  if (shouldUseBrowserBridge()) {
+    return requestJson("/api/accounts/add", {
+      method: "POST",
+      body: JSON.stringify({ cookie }),
+    });
   }
-
-  const saved = await saveConfig({ cookie: trimmed });
-  if (!saved.success) {
-    return saved;
-  }
-
-  const status = await verifyCookie();
-  if (!status.valid) {
-    return { success: false, message: status.message || "Cookie 验证失败" };
-  }
-
-  return {
-    success: true,
-    message: `成功添加并切换账号: ${status.user_name || "当前账号"}`,
-    nickname: status.user_name || "当前账号",
-    sec_uid: status.sec_uid || status.user_id || "current",
-    avatar_thumb: sanitizeAvatarUrl(status.avatar_thumb),
-  };
+  return invoke("add_account", { cookie });
 }
 
 export async function selectDirectory(): Promise<string | null> {
