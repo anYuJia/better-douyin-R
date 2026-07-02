@@ -8,9 +8,20 @@ use reqwest::header::{
 };
 use std::time::Duration;
 
+const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const DOWNLOAD_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+const DOWNLOAD_TCP_KEEPALIVE: Duration = Duration::from_secs(60);
+const DOWNLOAD_POOL_MAX_IDLE_PER_HOST: usize = 16;
+
 pub(crate) fn build_download_client(config: &AppConfig) -> Result<reqwest::Client> {
     let mut builder = apply_tls_config(
-        reqwest::Client::builder().timeout(Duration::from_secs(300)),
+        reqwest::Client::builder()
+            .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
+            .timeout(DOWNLOAD_REQUEST_TIMEOUT)
+            .pool_idle_timeout(DOWNLOAD_POOL_IDLE_TIMEOUT)
+            .pool_max_idle_per_host(DOWNLOAD_POOL_MAX_IDLE_PER_HOST)
+            .tcp_keepalive(DOWNLOAD_TCP_KEEPALIVE),
         config,
     );
 
