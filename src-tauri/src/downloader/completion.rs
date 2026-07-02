@@ -5,7 +5,7 @@ use crate::downloader::downloaded_cache::{
     add_to_downloaded_cache, ensure_downloaded_cache, record_downloaded,
 };
 use crate::downloader::downloader::{Downloader, DownloaderEvent};
-use crate::downloader::events::emit_event;
+use crate::downloader::events::{emit_event, PROGRESS_EMIT_INTERVAL};
 use crate::downloader::filename::{
     create_unique_output_file, media_download_success_action, media_extension, media_type_name,
     truncate_chars,
@@ -245,8 +245,8 @@ impl Downloader {
                 file_downloaded_size += chunk.len() as u64;
                 total_downloaded_size += chunk.len() as u64;
 
-                // 每300ms发送一次进度
-                if last_emit.elapsed().as_millis() >= 300 {
+                // 按统一间隔发送进度
+                if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
                     let elapsed = start_time.elapsed().as_secs_f64().max(0.001);
                     let speed_bps = (total_downloaded_size as f64 / elapsed) as u64;
                     let progress = if response_size > 0 {

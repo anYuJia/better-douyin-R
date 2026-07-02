@@ -8,6 +8,8 @@ use tokio::sync::{mpsc, Mutex};
 
 use super::downloader::DownloaderEvent;
 
+pub(crate) const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(650);
+
 pub(crate) async fn emit_event(
     sender: &Option<mpsc::Sender<DownloaderEvent>>,
     name: &'static str,

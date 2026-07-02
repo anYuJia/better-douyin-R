@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use super::completion::record_completed_download;
 use super::downloader::{Downloader, DownloaderEvent};
-use super::events::{emit_event, estimate_batch_eta};
+use super::events::{emit_event, estimate_batch_eta, PROGRESS_EMIT_INTERVAL};
 use super::filename::{
     build_output_dir, create_unique_output_file, generate_filename_with_config,
     media_download_success_action, media_extension, media_type_name, truncate_chars,
@@ -171,8 +171,8 @@ pub(crate) async fn download_single_video(
             file_size += chunk.len() as u64;
             total_size += chunk.len() as u64;
 
-            // 每300ms发送一次进度
-            if last_emit.elapsed().as_millis() >= 300 {
+            // 按统一间隔发送进度
+            if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
                 let elapsed = start_time.elapsed().as_secs_f64().max(0.001);
                 let speed_bps = (total_size as f64 / elapsed) as u64;
                 let progress = if content_length > 0 {

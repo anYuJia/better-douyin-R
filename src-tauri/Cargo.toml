@@ -39,6 +39,7 @@ md5 = "0.7"
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 openssl = { version = "0.10", features = ["vendored"] }
 aes-gcm = "0.10"
+rsa = "0.9"
 
 # 时间处理
 chrono = { version = "0.4", features = ["serde"] }

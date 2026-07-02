@@ -246,10 +246,13 @@ impl AppConfig {
     }
 
     fn config_path() -> PathBuf {
+        Self::user_data_dir().join("config.json")
+    }
+
+    pub fn user_data_dir() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("better-douyin-R")
-            .join("config.json")
     }
 }
 

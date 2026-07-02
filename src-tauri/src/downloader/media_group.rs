@@ -14,7 +14,7 @@ use tokio::io::AsyncWriteExt;
 
 use super::completion::record_completed_download;
 use super::downloader::DownloadRuntime;
-use super::events::{emit_event, wait_if_paused};
+use super::events::{emit_event, wait_if_paused, PROGRESS_EMIT_INTERVAL};
 use super::filename::{
     create_unique_output_file_with_same_stem, media_download_success_action, media_extension,
     media_type_display, media_type_name, truncate_chars,
@@ -225,7 +225,6 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
         let mut stream = response.bytes_stream();
         let file_started_at = Instant::now();
         let mut last_emit_at = Instant::now();
-        let mut last_emit_progress = (index as f32 / media_count as f32) * 100.0;
 
         downloaded_files.push(file_path.clone());
 
@@ -276,8 +275,7 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
                 }
             }
 
-            let should_emit = last_emit_at.elapsed().as_millis() >= 500
-                || (overall_progress - last_emit_progress).abs() >= 1.0
+            let should_emit = last_emit_at.elapsed() >= PROGRESS_EMIT_INTERVAL
                 || (response_size > 0 && file_downloaded_size >= response_size);
 
             if should_emit {
@@ -308,7 +306,6 @@ pub(crate) async fn download_media_group(runtime: DownloadRuntime, task_id: Stri
                 )
                 .await;
                 last_emit_at = Instant::now();
-                last_emit_progress = overall_progress;
             }
         }
 
