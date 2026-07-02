@@ -323,7 +323,28 @@ impl DouyinClient {
             Err(e) => {
                 let cookies = crate::cookie::parse_cookie_string(&self.config.cookie);
                 if crate::cookie::has_douyin_session_cookie(&cookies) {
-                    if looks_like_logged_out_error(&e.to_string()) {
+                    let error_message = e.to_string();
+                    if looks_like_profile_transport_error(&error_message) {
+                        log::warn!(
+                            "Douyin profile cookie check is temporarily unavailable; keeping saved cookie usable: {}",
+                            e
+                        );
+                        return Ok(CookieStatus {
+                            valid: true,
+                            user_name: None,
+                            user_id: None,
+                            sec_uid: None,
+                            avatar_thumb: None,
+                            avatar_medium: None,
+                            avatar_larger: None,
+                            expires_at: None,
+                            message: format!(
+                                "Cookie 暂时无法通过个人资料接口确认，但检测到登录 Cookie，已保留登录态: {}",
+                                e
+                            ),
+                        });
+                    }
+                    if looks_like_logged_out_error(&error_message) {
                         log::warn!("Douyin profile cookie check reports logged out: {}", e);
                         return Ok(CookieStatus {
                             valid: false,
@@ -615,11 +636,26 @@ impl DouyinClient {
     }
 }
 
+fn looks_like_profile_transport_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("error sending request")
+        || lower.contains("request failed")
+        || lower.contains("connection")
+        || lower.contains("connect")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("dns")
+        || lower.contains("tls")
+        || lower.contains("unexpected eof")
+        || message.contains("网络")
+        || message.contains("连接")
+        || message.contains("超时")
+}
+
 fn looks_like_logged_out_error(message: &str) -> bool {
     let lower = message.to_lowercase();
     message.contains("用户未登录")
         || message.contains("未登录")
-        || message.contains("登录态")
         || message.contains("重新登录")
         || lower.contains("not login")
         || lower.contains("not logged in")
