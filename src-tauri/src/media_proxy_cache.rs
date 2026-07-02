@@ -6,7 +6,7 @@ use std::collections::{HashMap, VecDeque};
 pub(crate) const LOCAL_MEDIA_INITIAL_RANGE_BYTES: u64 = 1024 * 1024;
 pub(crate) const LOCAL_MEDIA_MAX_RANGE_BYTES: u64 = 4 * 1024 * 1024;
 pub(crate) const REMOTE_MEDIA_MAX_RANGE_BYTES: u64 = 4 * 1024 * 1024;
-pub(crate) const REMOTE_MEDIA_RANGE_CACHE_ENTRIES: usize = 24;
+pub(crate) const REMOTE_MEDIA_RANGE_CACHE_MAX_BYTES: usize = 96 * 1024 * 1024;
 pub(crate) const REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES: usize = 2 * 1024 * 1024;
 pub(crate) const REMOTE_IMAGE_CACHE_MAX_BYTES: usize = 96 * 1024 * 1024;
 
@@ -17,6 +17,92 @@ pub(crate) struct CachedMediaRange {
     pub(crate) content_range: Option<String>,
     pub(crate) accept_ranges: Option<String>,
     pub(crate) body: Bytes,
+}
+
+pub(crate) struct RemoteRangeCache {
+    max_bytes: usize,
+    max_entry_bytes: usize,
+    current_bytes: usize,
+    entries: HashMap<String, CachedMediaRange>,
+    lru: VecDeque<String>,
+}
+
+impl RemoteRangeCache {
+    pub(crate) fn new(max_bytes: usize, max_entry_bytes: usize) -> Self {
+        Self {
+            max_bytes,
+            max_entry_bytes,
+            current_bytes: 0,
+            entries: HashMap::new(),
+            lru: VecDeque::new(),
+        }
+    }
+
+    pub(crate) fn get(&mut self, key: &str) -> Option<CachedMediaRange> {
+        let cached = self.entries.get(key).cloned()?;
+        self.touch(key);
+        Some(cached)
+    }
+
+    pub(crate) fn insert(&mut self, key: String, cached: CachedMediaRange) -> bool {
+        if cached.status != StatusCode::PARTIAL_CONTENT
+            || cached.body.is_empty()
+            || cached.body.len() > self.max_entry_bytes
+            || cached.body.len() > self.max_bytes
+        {
+            return false;
+        }
+
+        if let Some(previous) = self.entries.remove(&key) {
+            self.current_bytes = self.current_bytes.saturating_sub(previous.body.len());
+            self.remove_from_lru(&key);
+        }
+
+        self.current_bytes += cached.body.len();
+        self.entries.insert(key.clone(), cached);
+        self.lru.push_back(key);
+        self.evict_to_budget();
+        true
+    }
+
+    #[cfg(test)]
+    fn contains_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    #[cfg(test)]
+    fn current_bytes(&self) -> usize {
+        self.current_bytes
+    }
+
+    fn touch(&mut self, key: &str) {
+        self.remove_from_lru(key);
+        self.lru.push_back(key.to_string());
+    }
+
+    fn remove_from_lru(&mut self, key: &str) {
+        self.lru.retain(|candidate| candidate != key);
+    }
+
+    fn evict_to_budget(&mut self) {
+        while self.current_bytes > self.max_bytes {
+            let Some(oldest_key) = self.lru.pop_front() else {
+                break;
+            };
+            if let Some(oldest) = self.entries.remove(&oldest_key) {
+                self.current_bytes = self.current_bytes.saturating_sub(oldest.body.len());
+            }
+        }
+    }
+}
+
+impl Default for RemoteRangeCache {
+    fn default() -> Self {
+        Self::new(
+            REMOTE_MEDIA_RANGE_CACHE_MAX_BYTES,
+            REMOTE_MEDIA_MAX_RANGE_BYTES as usize,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -312,6 +398,49 @@ mod tests {
         );
         assert_eq!(cap_remote_media_range("bytes=0-1", "video"), None);
         assert_eq!(cap_remote_media_range("bytes=0-90483921", "image"), None);
+    }
+
+    fn range_entry(body: &'static [u8]) -> CachedMediaRange {
+        CachedMediaRange {
+            status: StatusCode::PARTIAL_CONTENT,
+            content_type: Some("video/mp4".to_string()),
+            content_range: Some("bytes 0-1/10".to_string()),
+            accept_ranges: Some("bytes".to_string()),
+            body: Bytes::from_static(body),
+        }
+    }
+
+    #[test]
+    fn remote_range_cache_refreshes_lru_on_hit() {
+        let mut cache = RemoteRangeCache::new(6, 4);
+        assert!(cache.insert("a".to_string(), range_entry(b"aa")));
+        assert!(cache.insert("b".to_string(), range_entry(b"bb")));
+        assert!(cache.get("a").is_some());
+        assert!(cache.insert("c".to_string(), range_entry(b"ccc")));
+
+        assert!(cache.contains_key("a"));
+        assert!(!cache.contains_key("b"));
+        assert!(cache.contains_key("c"));
+        assert!(cache.current_bytes() <= 6);
+    }
+
+    #[test]
+    fn remote_range_cache_evicts_to_byte_budget() {
+        let mut cache = RemoteRangeCache::new(5, 4);
+        assert!(cache.insert("a".to_string(), range_entry(b"aaa")));
+        assert!(cache.insert("b".to_string(), range_entry(b"bbb")));
+
+        assert!(!cache.contains_key("a"));
+        assert!(cache.contains_key("b"));
+        assert_eq!(cache.current_bytes(), 3);
+    }
+
+    #[test]
+    fn remote_range_cache_rejects_oversized_entries() {
+        let mut cache = RemoteRangeCache::new(10, 4);
+        assert!(!cache.insert("too-large".to_string(), range_entry(b"12345")));
+        assert!(!cache.contains_key("too-large"));
+        assert_eq!(cache.current_bytes(), 0);
     }
 
     #[test]

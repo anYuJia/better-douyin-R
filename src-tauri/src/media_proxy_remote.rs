@@ -10,7 +10,6 @@ use crate::media_proxy_cache::{
     cached_media_response, cached_remote_image_response, cap_remote_media_range,
     remote_image_cache_key, remote_media_range_cache_keys, CachedMediaRange, CachedRemoteImage,
     REMOTE_IMAGE_CACHE_MAX_ENTRY_BYTES, REMOTE_MEDIA_MAX_RANGE_BYTES,
-    REMOTE_MEDIA_RANGE_CACHE_ENTRIES,
 };
 use crate::media_proxy_crypto::{decrypt_im_image_bytes, guess_image_content_type_from_bytes};
 use crate::media_proxy_headers::{apply_cors_headers, build_error_response};
@@ -129,7 +128,7 @@ pub(crate) async fn media_proxy(
         &requested_media_type,
     );
     for cache_key in &range_cache_keys {
-        if let Some(cached) = state.media_range_cache.lock().await.get(cache_key).cloned() {
+        if let Some(cached) = state.media_range_cache.lock().await.get(cache_key) {
             log::debug!(
                 "media proxy range cache hit: range=\"{}\" url={}",
                 request_range_str,
@@ -513,11 +512,6 @@ pub(crate) async fn media_proxy(
                         );
                         let mut cache = state.media_range_cache.lock().await;
                         for cache_key in final_cache_keys {
-                            if cache.len() >= REMOTE_MEDIA_RANGE_CACHE_ENTRIES {
-                                if let Some(oldest_key) = cache.keys().next().cloned() {
-                                    cache.remove(&oldest_key);
-                                }
-                            }
                             cache.insert(cache_key, cached.clone());
                         }
                     }
