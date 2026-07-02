@@ -16,8 +16,11 @@ import { invokeLocal, shouldUseBrowserBridge, requestJson } from "./tauri-core";
 
 export async function getFriendOnlineStatus(
   secUserIds: string[],
-  convIds: string[] = []
+  convIds: string[] = [],
+  options: { offset?: number; limit?: number } = {}
 ): Promise<FriendOnlineStatusResponse> {
+  const offset = Math.max(0, Math.floor(Number(options.offset) || 0));
+  const limit = Math.max(1, Math.min(100, Math.floor(Number(options.limit) || 20)));
   if (shouldUseBrowserBridge()) {
     return requestJson("/api/get_friend_online_status", {
       method: "POST",
@@ -26,6 +29,8 @@ export async function getFriendOnlineStatus(
         secUserIds,
         conv_ids: convIds,
         convIds,
+        offset,
+        limit,
       }),
       suppressCookieInvalidEvent: true,
     });
@@ -35,6 +40,8 @@ export async function getFriendOnlineStatus(
     sec_user_ids: secUserIds,
     convIds,
     conv_ids: convIds,
+    offset,
+    limit,
   });
 }
 

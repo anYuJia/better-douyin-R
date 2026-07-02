@@ -14,6 +14,8 @@ pub(crate) async fn get_friend_online_status(
     state: State<'_, AppState>,
     sec_user_ids: Vec<String>,
     conv_ids: Option<Vec<String>>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 ) -> Result<serde_json::Value, String> {
     let mut seen = HashSet::new();
     let mut sec_user_ids = sec_user_ids
@@ -156,6 +158,14 @@ pub(crate) async fn get_friend_online_status(
         }));
     }
 
+    let all_sec_user_ids = sec_user_ids.clone();
+    let total_count = all_sec_user_ids.len();
+    let page_offset = offset.unwrap_or(0).min(total_count);
+    let page_limit = limit.unwrap_or(20).clamp(1, 100);
+    let next_index = (page_offset + page_limit).min(total_count);
+    let page_sec_user_ids = all_sec_user_ids[page_offset..next_index].to_vec();
+    let next_offset = page_offset + page_sec_user_ids.len();
+
     let conv_ids = conv_ids.unwrap_or_default();
     let mut user_info_data = Vec::new();
     let mut active_status_data = Vec::new();
@@ -164,13 +174,13 @@ pub(crate) async fn get_friend_online_status(
     let mut user_info_extra = serde_json::Value::Null;
     let mut active_status_extra = serde_json::Value::Null;
 
-    for (index, chunk) in sec_user_ids.chunks(20).enumerate() {
+    for (index, chunk) in page_sec_user_ids.chunks(20).enumerate() {
         let chunk_ids = chunk.to_vec();
         log::debug!(
             "friend online IM batch request: batch={} size={} total={}",
             index + 1,
             chunk_ids.len(),
-            sec_user_ids.len()
+            page_sec_user_ids.len()
         );
 
         let user_info = match client.get_im_user_info(&chunk_ids).await {
@@ -258,7 +268,8 @@ pub(crate) async fn get_friend_online_status(
         }
     }
 
-    sec_user_ids.retain(|id| active_status_sec_user_ids.contains(id));
+    let mut visible_sec_user_ids = page_sec_user_ids;
+    visible_sec_user_ids.retain(|id| active_status_sec_user_ids.contains(id));
     user_info_data.retain(|item| {
         item.get("sec_uid")
             .and_then(|value| value.as_str())
@@ -269,7 +280,13 @@ pub(crate) async fn get_friend_online_status(
 
     Ok(serde_json::json!({
         "success": true,
-        "sec_user_ids": sec_user_ids,
+        "sec_user_ids": visible_sec_user_ids,
+        "all_sec_user_ids": all_sec_user_ids,
+        "offset": page_offset,
+        "limit": page_limit,
+        "next_offset": next_offset,
+        "total_count": total_count,
+        "has_more": next_offset < total_count,
         "user_info": {
             "status_code": 0,
             "data": user_info_data,
