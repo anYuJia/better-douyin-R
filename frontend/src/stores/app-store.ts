@@ -210,14 +210,22 @@ export const useUpdateStore = create<UpdateState>((set) => ({
   resetProgress: () => set((state) => ({ progress: 0, downloadedBytes: 0, totalBytes: finiteBytes(state.info?.asset_size), speedBps: 0 })),
   setProgress: (payload) =>
     set((state) => {
-      const downloadedBytes = finiteBytes(payload.downloaded) || state.downloadedBytes;
-      const totalBytes = finiteBytes(payload.total) || finiteBytes(state.info?.asset_size) || state.totalBytes;
+      const downloadedBytes = Math.max(finiteBytes(payload.downloaded), state.downloadedBytes);
+      const totalBytes = Math.max(
+        finiteBytes(payload.total),
+        finiteBytes(state.info?.asset_size),
+        state.totalBytes,
+      );
       const explicitProgress = typeof payload.progress === "number" ? payload.progress : null;
-      const derivedProgress =
-        explicitProgress === null && totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : explicitProgress;
+      const derivedProgress = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : null;
+      const nextProgress = Math.max(
+        state.progress,
+        explicitProgress === null ? 0 : clampProgress(explicitProgress),
+        derivedProgress === null ? 0 : clampProgress(derivedProgress),
+      );
 
       return {
-        progress: derivedProgress === null ? state.progress : clampProgress(derivedProgress),
+        progress: nextProgress,
         downloadedBytes,
         totalBytes,
         speedBps: finiteBytes(payload.speed_bps ?? payload.speedBps) || state.speedBps,
