@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { mediaProxyUrl } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { FriendListItem } from "./friends-status-types";
 import { formatMessageTime } from "./friends-status-utils";
@@ -45,7 +46,7 @@ export function FriendRow({
         className="relative h-8 w-8 overflow-hidden rounded-full bg-surface-raised outline-none ring-accent/35 transition hover:ring-2 focus-visible:ring-2"
       >
         {friend.avatar ? (
-          <img src={friend.avatar} alt="" className="h-full w-full object-cover" />
+          <img src={mediaProxyUrl(friend.avatar, "image")} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[0.75rem] font-bold text-text-muted">
             {(friend.remarkName || friend.nickname).slice(0, 1) || "友"}

@@ -206,6 +206,7 @@ export function FullscreenPlayer({
     selectedQualityKey === "auto" || selectedQualityOption?.isAuto
       ? null
       : selectedQualityOption || null;
+  const displayQualityOption = selectedQualityOption || qualityOptions[0] || null;
   const currentPlaybackUrl =
     currentMedia && currentMedia.type === "video" && activeQualityOption
       ? activeQualityOption.url
@@ -248,7 +249,6 @@ export function FullscreenPlayer({
   );
   const shouldAutoPlayCurrentMedia = open && (desiredPlayingRef.current || isOpeningRender);
   const showQualityControl = currentMedia?.type === "video";
-  const hasQualityChoices = currentMedia?.type === "video" && qualityOptions.length > 1;
 
   useEffect(() => {
     setLiked(Boolean(currentVideo?.is_liked));
@@ -1590,7 +1590,7 @@ export function FullscreenPlayer({
                 effectiveVolume={effectiveVolume}
                 playbackRate={playbackRate}
                 qualityOptions={qualityOptions}
-                activeQualityOption={activeQualityOption}
+                activeQualityOption={displayQualityOption}
                 showQualityControl={showQualityControl}
                 shareFriends={shareFriends}
                 shareFriendsLoading={shareFriendsLoading}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
 import { Loader2, UserRound } from "lucide-react";
+import { SectionSurface } from "@/components/common/surface";
 import { Badge } from "@/components/ui/badge";
 import { ThemeLogo } from "@/components/common/theme-logo";
-import { suggestAiInteraction } from "@/lib/tauri";
+import { mediaProxyUrl, suggestAiInteraction } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import {
   MAX_SEND_IMAGE_BYTES,
@@ -382,7 +383,7 @@ export function FriendsChatPanel({
   };
 
   return (
-    <section className="flex min-h-[420px] min-w-0 flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface-solid/70 shadow-[var(--shadow-sm)]">
+    <SectionSurface density="none" className="flex min-h-[420px] min-w-0 flex-col overflow-hidden">
       <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -392,7 +393,7 @@ export function FriendsChatPanel({
             className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-raised outline-none ring-accent/35 transition hover:ring-2 focus-visible:ring-2 disabled:pointer-events-none disabled:hover:ring-0"
           >
             {friend?.avatar ? (
-              <img src={friend.avatar} alt="" className="h-full w-full object-cover" />
+              <img src={mediaProxyUrl(friend.avatar, "image")} alt="" className="h-full w-full object-cover" />
             ) : (
               <UserRound className="h-4 w-4 text-text-muted" />
             )}
@@ -473,6 +474,6 @@ export function FriendsChatPanel({
           displayName={displayName}
         />
       </div>
-    </section>
+    </SectionSurface>
   );
 }

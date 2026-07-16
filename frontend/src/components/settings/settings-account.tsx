@@ -11,7 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AccountInfo } from "@/lib/tauri";
+import { mediaProxyUrl, type AccountInfo } from "@/lib/tauri";
 import type { AlertConfig } from "@/stores/app-store";
 import type { LoginStatus } from "./settings-utils";
 import { SettingGroup } from "./settings-components";
@@ -51,9 +51,13 @@ export function AccountListSection({
                 )}
               >
                 <img
-                  src={acc.avatar_thumb || "/default-avatar.svg"}
+                  src={acc.avatar_thumb ? mediaProxyUrl(acc.avatar_thumb, "image") : "/default-avatar.svg"}
                   alt={acc.nickname}
                   className="w-8 h-8 rounded-full border border-white/10 object-cover"
+                  onError={(event) => {
+                    event.currentTarget.onerror = null;
+                    event.currentTarget.src = "/default-avatar.svg";
+                  }}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">

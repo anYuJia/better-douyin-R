@@ -8,7 +8,7 @@ import { useAlertStore, useAppStore, useLoaderStore, useLogStore, useUpdateStore
 import { useSocket } from "@/lib/socket";
 import { useKeyboard } from "@/hooks/use-keyboard";
 import { useGlobalFriendsIm } from "@/hooks/use-global-friends-im";
-import { checkUpdate, downloadUpdate, getAccounts, getConfig, getFriendChatState, getRecommended, initClient, listenEvent, openExternalUrl, restartApp, verifyCookie } from "@/lib/tauri";
+import { checkUpdate, downloadUpdate, getAccounts, getConfig, getFriendChatState, getRecommended, initClient, listenEvent, restartApp, verifyCookie } from "@/lib/tauri";
 import { normalizeUpdateNotes } from "@/lib/update-notes";
 import { useRecommendedStore } from "@/stores/recommended-store";
 import { readAiAutomationConfig, rememberAutomationKey, runVideoAutomation } from "@/lib/ai-automation";
@@ -16,8 +16,6 @@ import { readAiAutomationConfig, rememberAutomationKey, runVideoAutomation } fro
 const BOOTSTRAP_STEP_TIMEOUT_MS = 8_000;
 const BOOTSTRAP_NETWORK_TIMEOUT_MS = 6_000;
 const BOOTSTRAP_COOKIE_TIMEOUT_MS = 10_000;
-const STAR_PROMPT_STORAGE_KEY = "better-douyin.starPrompt.dismissed.v1";
-const STAR_PROMPT_GITHUB_URL = "https://github.com/anYuJia/better-douyin-R";
 const UPDATE_PROMPT_DISMISSED_VERSION_KEY = "better-douyin.updatePrompt.dismissedVersion.v1";
 
 function feedVideoLogTitle(video: { desc?: string; aweme_id?: string } | null | undefined) {
@@ -156,47 +154,6 @@ export default function App() {
       updateInFlightRef.current = false;
     }
   }, [showAlert, showUpdateReadyPrompt]);
-
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(STAR_PROMPT_STORAGE_KEY) === "1") {
-        return;
-      }
-    } catch {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      // Mark as shown immediately so it never appears again regardless of how the user dismisses it.
-      try {
-        window.localStorage.setItem(STAR_PROMPT_STORAGE_KEY, "1");
-      } catch {
-        // Ignore storage failures.
-      }
-      showAlert({
-        title: "喜欢这个项目的话，给作者一个 Star 吧",
-        variant: "info",
-        description: (
-          <div>
-            <p>这个工具花了很多时间打磨和维护。如果它帮到了你，欢迎到 GitHub 点一个 Star 支持作者继续做下去。</p>
-            <p className="mt-2 text-text-muted">这个提示只会在首次使用时出现一次，后续版本更新也不会重复打扰。</p>
-          </div>
-        ),
-        cancelLabel: "稍后再说",
-        actionLabel: "去 GitHub 点 Star",
-        onCancel: () => {},
-        onAction: () => {
-          void openExternalUrl(STAR_PROMPT_GITHUB_URL).catch((error) => {
-            useLogStore
-              .getState()
-              .addLog(error instanceof Error ? error.message : "打开 GitHub 失败", "warning");
-          });
-        },
-      });
-    }, 1200);
-
-    return () => window.clearTimeout(timer);
-  }, [showAlert]);
 
   useEffect(() => {
     let disposed = false;

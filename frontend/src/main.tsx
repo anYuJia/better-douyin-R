@@ -2,6 +2,8 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { initTheme } from "./stores/app-store";
+import { configureMediaProxyBaseUrl } from "./lib/tauri-media";
+import { invokeLocal, isTauriRuntime } from "./lib/tauri-core";
 import "./index.css";
 
 type BootBridge = {
@@ -22,10 +24,8 @@ function reportBootError(title: string, error: unknown) {
 function BootReady() {
   useEffect(() => {
     window.__DY_BOOT__?.markReady();
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    void import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke("frontend_ready"))
-      .catch(() => undefined);
+    if (!isTauriRuntime()) return;
+    void invokeLocal("frontend_ready").catch(() => undefined);
   }, []);
 
   return null;
@@ -102,9 +102,18 @@ class ErrorBoundary extends React.Component<
 
 initTheme();
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <ErrorBoundary>
-    <App />
-    <BootReady />
-  </ErrorBoundary>
-);
+async function bootstrap() {
+  if (isTauriRuntime()) {
+    const mediaProxyBaseUrl = await invokeLocal<string>("get_media_proxy_base_url");
+    configureMediaProxyBaseUrl(mediaProxyBaseUrl);
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <ErrorBoundary>
+      <App />
+      <BootReady />
+    </ErrorBoundary>
+  );
+}
+
+void bootstrap().catch((error) => reportBootError("应用初始化失败", error));

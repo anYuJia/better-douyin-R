@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SectionSurface } from "@/components/common/surface";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore, useLogStore } from "@/stores/app-store";
@@ -300,7 +301,7 @@ export function AutomationView() {
             <SummaryItem label="最近" value={formatTime(lastLogTime)} />
       </div>
 
-      <section className="mb-2 rounded-[var(--radius-md)] bg-surface-solid/35 p-3">
+      <SectionSurface density="compact" tone="muted" className="mb-2 rounded-[var(--radius-md)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <PanelTitle icon={RefreshCw} title="推荐流自动刷视频" detail={feedAutomationRunning ? "运行中" : "已停止"} />
@@ -324,10 +325,10 @@ export function AutomationView() {
             {feedAutomationRunning ? "停止" : "开始"}
           </Button>
         </div>
-      </section>
+      </SectionSurface>
 
       <div className="mb-2 grid gap-2 lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="rounded-[var(--radius-md)] bg-surface-solid/35 p-3">
+        <SectionSurface density="compact" tone="muted" className="rounded-[var(--radius-md)]">
           <PanelTitle icon={Activity} title="运行通道" detail="后台任务" />
           <div className="grid gap-2 sm:grid-cols-2">
             {channels.map(({ title, description, active, icon: Icon }) => (
@@ -349,9 +350,9 @@ export function AutomationView() {
               </div>
             ))}
           </div>
-        </section>
+        </SectionSurface>
 
-        <section className="rounded-[var(--radius-md)] bg-surface-solid/35 p-3">
+        <SectionSurface density="compact" tone="muted" className="rounded-[var(--radius-md)]">
           <PanelTitle icon={Filter} title="规则摘要" detail="过滤与限流" />
           <div className="grid gap-2 text-xs">
             <div className="grid grid-cols-3 gap-1.5">
@@ -389,10 +390,10 @@ export function AutomationView() {
               )}
             </div>
           </div>
-        </section>
+        </SectionSurface>
       </div>
 
-      <section className="rounded-[var(--radius-md)] bg-surface-solid/35 p-3">
+      <SectionSurface density="compact" tone="muted" className="rounded-[var(--radius-md)]">
         <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <PanelTitle icon={Search} title="监测日志" detail={`${automationLogs.length} 条`} />
           <div className="flex flex-wrap items-center gap-2">
@@ -439,7 +440,7 @@ export function AutomationView() {
             )}
           </div>
         </ScrollArea>
-      </section>
+      </SectionSurface>
 
       <AutomationSettingsDialog
         open={settingsOpen}

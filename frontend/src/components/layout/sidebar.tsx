@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppStore, useDownloadStore } from "@/stores/app-store";
 import type { ViewType } from "@/types";
 import { Badge } from "@/components/ui/badge";
-import { getAccounts, switchAccount, deleteAccount, type AccountInfo } from "@/lib/tauri";
+import { getAccounts, switchAccount, deleteAccount, mediaProxyUrl, type AccountInfo } from "@/lib/tauri";
 import { ThemeLogo } from "@/components/common/theme-logo";
 import {
   Home,
@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { toggleWindowMaximize } from "./window-controls";
 
 interface NavItem {
   id: ViewType;
@@ -62,15 +61,30 @@ function SidebarHint({ children }: { children: React.ReactNode }) {
   );
 }
 
-async function startWindowDrag() {
-  if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__) return;
+function AccountAvatar({ account, className }: { account: AccountInfo; className: string }) {
+  const [failed, setFailed] = useState(false);
+  const source = account.avatar_thumb ? mediaProxyUrl(account.avatar_thumb, "image") : "";
 
-  try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().startDragging();
-  } catch {
-    // Dragging is available only in the Tauri desktop shell.
-  }
+  useEffect(() => {
+    setFailed(false);
+  }, [source]);
+
+  return (
+    <div className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent-soft", className)}>
+      {source && !failed ? (
+        <img
+          src={source}
+          alt={account.nickname}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="text-[0.62rem] font-bold text-accent">
+          {(account.nickname || "用").slice(0, 1).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar() {
@@ -84,7 +98,19 @@ export function Sidebar() {
   const [allAccounts, setAllAccounts] = useState<AccountInfo[]>([]);
   const [currentSecUid, setCurrentSecUid] = useState("");
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
+  const [compactViewport, setCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches
+  );
   const [showPopover, setShowPopover] = useState(false);
+  const isCollapsed = collapsed || compactViewport;
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)");
+    const syncViewport = () => setCompactViewport(media.matches);
+    syncViewport();
+    media.addEventListener("change", syncViewport);
+    return () => media.removeEventListener("change", syncViewport);
+  }, []);
 
   const fetchActiveAccount = useCallback(async () => {
     try {
@@ -154,24 +180,19 @@ export function Sidebar() {
     <motion.aside
       className="relative z-20 flex h-full shrink-0 flex-col overflow-visible bg-surface-solid/60 backdrop-blur-2xl shadow-[1px_0_0_0_var(--color-border),16px_0_40px_rgba(0,0,0,0.04)]"
       initial={false}
-      animate={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH }}
+      animate={{ width: isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH }}
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
     >
       {/* Brand */}
       <div
         className={cn(
           "flex items-center gap-3 pb-5 select-none cursor-default",
-          collapsed ? "justify-center px-3" : "px-4",
+          isCollapsed ? "justify-center px-3" : "px-4",
           isTauri && isMacOS ? "pt-12" : "py-5"
         )}
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties & { WebkitAppRegion: string }}
-        onPointerDown={(event) => {
-          if (event.detail > 1) return;
-          if (event.button === 0) void startWindowDrag();
-        }}
-        onDoubleClick={toggleWindowMaximize}
       >
-        {collapsed ? (
+        {isCollapsed ? (
           <button
             type="button"
             aria-label="展开侧边栏"
@@ -192,7 +213,7 @@ export function Sidebar() {
         <div
           className={cn(
             "flex min-w-0 flex-col overflow-hidden pointer-events-none transition-opacity duration-100",
-            collapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
+            isCollapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
           )}
         >
           <span className="truncate text-[0.9rem] font-[780] tracking-tight text-text">
@@ -208,11 +229,11 @@ export function Sidebar() {
       <nav
         className={cn(
           "flex-1 flex flex-col gap-1 overflow-visible px-[14px]",
-          collapsed && "items-center"
+          isCollapsed && "items-center"
         )}
       >
-        <div className={cn("mb-2 flex h-8 shrink-0 items-center", collapsed ? "justify-center" : "justify-between px-[3px]")}>
-          {collapsed ? (
+        <div className={cn("mb-2 flex h-8 shrink-0 items-center", isCollapsed ? "justify-center" : "justify-between px-[3px]")}>
+          {isCollapsed ? (
             <button
               type="button"
               aria-label="展开侧边栏"
@@ -252,35 +273,35 @@ export function Sidebar() {
               aria-label={item.label}
               className={cn(
                 "group relative flex h-[42px] items-center rounded-[14px] text-left transition-[background-color,color,box-shadow,transform] duration-[var(--duration-fast)] ease-[var(--ease-spring)] cursor-pointer",
-                collapsed ? "w-[44px] justify-center px-0" : "w-full gap-3 px-[13px]",
+                isCollapsed ? "w-[44px] justify-center px-0" : "w-full gap-3 px-[13px]",
                 isActive
                   ? "bg-accent-soft text-accent shadow-[0_8px_24px_rgba(254,44,85,0.10)]"
                   : "text-text-muted hover:text-text hover:bg-surface-raised"
               )}
             >
               <Icon className="w-[18px] h-[18px] shrink-0" />
-              {collapsed && <SidebarHint>{item.label}</SidebarHint>}
+              {isCollapsed && <SidebarHint>{item.label}</SidebarHint>}
               <span
                 className={cn(
                   "min-w-0 truncate text-[0.8125rem] font-semibold transition-opacity duration-100",
-                  collapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
+                  isCollapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
                 )}
               >
                 {item.label}
               </span>
 
               {item.id === "downloads" && activeCount > 0 && (
-                <Badge variant="default" size="sm" className={cn(collapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
+                <Badge variant="default" size="sm" className={cn(isCollapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
                   {activeCount}
                 </Badge>
               )}
               {item.id === "friends-status" && friendUnreadCount > 0 && (
-                <Badge variant="default" size="sm" className={cn(collapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
+                <Badge variant="default" size="sm" className={cn(isCollapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
                   {friendUnreadCount > 99 ? "99+" : friendUnreadCount}
                 </Badge>
               )}
               {item.id === "notices" && noticeUnreadCount > 0 && (
-                <Badge variant="default" size="sm" className={cn(collapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
+                <Badge variant="default" size="sm" className={cn(isCollapsed ? "absolute -right-1 -top-1" : "ml-auto")}>
                   {noticeUnreadCount > 99 ? "99+" : noticeUnreadCount}
                 </Badge>
               )}
@@ -293,7 +314,7 @@ export function Sidebar() {
       <div 
         onMouseEnter={() => setShowPopover(true)}
         onMouseLeave={() => setShowPopover(false)}
-        className={cn("relative px-[14px] py-3", collapsed && "flex justify-center")}
+        className={cn("relative px-[14px] py-3", isCollapsed && "flex justify-center")}
       >
         <AnimatePresence>
           {showPopover && (
@@ -304,12 +325,12 @@ export function Sidebar() {
               transition={{ duration: 0.15, ease: "easeOut" }}
               className={cn(
                 "absolute bottom-[calc(100%-4px)] left-[14px] z-50 rounded-2xl border border-white/[0.08] bg-surface-solid/95 p-3.5 shadow-[0_12px_36px_rgba(0,0,0,0.3)] backdrop-blur-xl text-left flex flex-col gap-3",
-                collapsed ? "w-[220px]" : "w-[172px]"
+                isCollapsed ? "w-[220px]" : "w-[172px]"
               )}
             >
               {cookieLoggedIn && activeAccount ? (
                 <div className="flex items-center gap-2.5 pb-2.5 border-b border-white/[0.06]">
-                  <img src={activeAccount.avatar_thumb} className="w-9 h-9 rounded-full object-cover border border-accent/20" />
+                  <AccountAvatar account={activeAccount} className="h-9 w-9 border border-accent/20" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[0.78rem] font-bold text-text truncate">{activeAccount.nickname}</div>
                     <div className="text-[0.62rem] text-success font-semibold flex items-center gap-1">
@@ -340,7 +361,7 @@ export function Sidebar() {
                         onClick={() => handleSwitchAccount(acc.sec_uid)}
                         className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-white/5 text-left transition-colors cursor-pointer"
                       >
-                        <img src={acc.avatar_thumb} className="w-6 h-6 rounded-full object-cover" />
+                        <AccountAvatar account={acc} className="h-6 w-6" />
                         <span className="text-[0.7rem] font-semibold text-text truncate flex-1">{acc.nickname}</span>
                       </button>
                     );
@@ -374,26 +395,18 @@ export function Sidebar() {
           onClick={() => setView("settings")}
           className={cn(
             "group relative flex h-[48px] items-center rounded-[14px] hover:bg-surface-raised active:scale-95 transition-[background-color,transform] cursor-pointer",
-            collapsed ? "w-[44px] justify-center px-0" : "w-full gap-3 px-[13px]"
+            isCollapsed ? "w-[44px] justify-center px-0" : "w-full gap-3 px-[13px]"
           )}
           title={cookieLoggedIn && activeAccount ? `当前账号: ${activeAccount.nickname} (点击进入设置)` : "需要登录 Cookie"}
         >
           {cookieLoggedIn && activeAccount ? (
             <>
-              <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-accent/20 shrink-0">
-                {activeAccount.avatar_thumb ? (
-                  <img src={activeAccount.avatar_thumb} alt={activeAccount.nickname} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-accent-soft text-accent text-[0.62rem] font-bold flex items-center justify-center">
-                    {activeAccount.nickname.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-              </div>
-              {collapsed && <SidebarHint>{activeAccount.nickname}</SidebarHint>}
+              <AccountAvatar account={activeAccount} className="h-7 w-7 border border-accent/20" />
+              {isCollapsed && <SidebarHint>{activeAccount.nickname}</SidebarHint>}
               <div
                 className={cn(
                   "flex min-w-0 items-center gap-1.5 overflow-hidden transition-opacity duration-100",
-                  collapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
+                  isCollapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
                 )}
               >
                 <span className="text-[0.72rem] font-semibold text-text truncate max-w-[100px]">
@@ -407,11 +420,11 @@ export function Sidebar() {
               <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center border border-white/10 bg-white/5 shrink-0">
                 <UserRound className="w-4 h-4 text-text-muted" />
               </div>
-              {collapsed && <SidebarHint>需要登录 Cookie</SidebarHint>}
+              {isCollapsed && <SidebarHint>需要登录 Cookie</SidebarHint>}
               <div
                 className={cn(
                   "flex min-w-0 items-center gap-1.5 overflow-hidden transition-opacity duration-100",
-                  collapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
+                  isCollapsed ? "w-0 opacity-0" : "flex-1 opacity-100"
                 )}
               >
                 <span className="text-[0.72rem] font-medium text-text-muted truncate max-w-[100px]">

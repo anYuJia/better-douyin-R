@@ -1,12 +1,13 @@
 {
   "name": "better-douyin-r-frontend",
   "private": true,
-  "version": "1.0.39",
+  "version": "1.0.43",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:app": "node ../scripts/run-tauri.mjs dev",
     "build": "tsc -b && vite build",
-    "tauri": "tauri",
+    "tauri": "node ../scripts/run-tauri.mjs",
     "check:api": "node ../scripts/check-api-surface.mjs",
     "check:parity": "node ../scripts/check-frontend-parity.mjs",
     "check:shared": "npm run check:parity && npm run check:api",
