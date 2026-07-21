@@ -1,6 +1,8 @@
 import { useCallback, useRef } from "react";
 import { finiteMediaTime, readMediaDuration } from "./player-utils";
 
+const VIDEO_PROGRESS_INTERVAL_MS = 50;
+
 interface UsePlayerProgressLoopProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   setCurrentTime: React.Dispatch<React.SetStateAction<number>>;
@@ -12,13 +14,13 @@ export function usePlayerProgressLoop({
   setCurrentTime,
   setDuration,
 }: UsePlayerProgressLoopProps) {
-  const videoProgressRafRef = useRef<number | null>(null);
+  const videoProgressTimerRef = useRef<number | null>(null);
   const progressSampleRef = useRef(0);
 
   const stopVideoProgressLoop = useCallback(() => {
-    if (videoProgressRafRef.current === null) return;
-    window.cancelAnimationFrame(videoProgressRafRef.current);
-    videoProgressRafRef.current = null;
+    if (videoProgressTimerRef.current === null) return;
+    window.clearTimeout(videoProgressTimerRef.current);
+    videoProgressTimerRef.current = null;
   }, []);
 
   const syncVideoProgress = useCallback((node: HTMLVideoElement) => {
@@ -37,36 +39,33 @@ export function usePlayerProgressLoop({
   }, [setCurrentTime, setDuration]);
 
   const startVideoProgressLoop = useCallback(() => {
-    if (videoProgressRafRef.current !== null) return;
+    if (videoProgressTimerRef.current !== null) return;
 
     const tick = () => {
       const node = videoRef.current;
       if (!node) {
-        videoProgressRafRef.current = null;
+        videoProgressTimerRef.current = null;
         return;
       }
 
-      const now = performance.now();
-      if (now - progressSampleRef.current >= 50 || node.paused || node.ended) {
-        progressSampleRef.current = now;
-        syncVideoProgress(node);
-      }
+      progressSampleRef.current = performance.now();
+      syncVideoProgress(node);
 
       if (!node.paused && !node.ended) {
-        videoProgressRafRef.current = window.requestAnimationFrame(tick);
+        videoProgressTimerRef.current = window.setTimeout(tick, VIDEO_PROGRESS_INTERVAL_MS);
       } else {
-        videoProgressRafRef.current = null;
+        videoProgressTimerRef.current = null;
       }
     };
 
-    videoProgressRafRef.current = window.requestAnimationFrame(tick);
+    videoProgressTimerRef.current = window.setTimeout(tick, 0);
   }, [syncVideoProgress, videoRef]);
 
   return {
     stopVideoProgressLoop,
     syncVideoProgress,
     startVideoProgressLoop,
-    videoProgressRafRef,
+    videoProgressTimerRef,
     progressSampleRef,
   };
 }

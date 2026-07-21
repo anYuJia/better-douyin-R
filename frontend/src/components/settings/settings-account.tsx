@@ -1,17 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { SyntheticEvent } from "react";
 import {
   CheckCircle2,
   ExternalLink,
   Globe,
   Key,
   Loader2,
+  UserRound,
   X,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mediaProxyUrl, type AccountInfo } from "@/lib/tauri";
+import { mediaProxyUrl, refreshAccountProfile, type AccountInfo } from "@/lib/tauri";
 import type { AlertConfig } from "@/stores/app-store";
 import type { LoginStatus } from "./settings-utils";
 import { SettingGroup } from "./settings-components";
@@ -22,7 +24,53 @@ interface AccountListSectionProps {
   startLogin: (cookie?: string) => void;
   switchAccount: (secUid: string) => Promise<void>;
   deleteAccount: (secUid: string) => Promise<void>;
+  onAccountsChanged?: () => Promise<void> | void;
   showAlert: (opts: AlertConfig) => void;
+}
+
+const avatarRefreshAttempts = new Set<string>();
+
+function AccountAvatar({
+  account,
+  className,
+  onRefreshed,
+}: {
+  account: AccountInfo;
+  className: string;
+  onRefreshed?: () => Promise<void> | void;
+}) {
+  const avatarSrc = account.avatar_thumb ? mediaProxyUrl(account.avatar_thumb, "image") : "";
+  const initial = (account.nickname || account.sec_uid || "?").slice(0, 1).toUpperCase();
+  const handleAvatarError = (event: SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    image.style.display = "none";
+    const refreshKey = `${account.sec_uid}:${account.avatar_thumb || ""}`;
+    if (!account.sec_uid || avatarRefreshAttempts.has(refreshKey)) return;
+    avatarRefreshAttempts.add(refreshKey);
+    void refreshAccountProfile(account.sec_uid)
+      .then((result) => {
+        if (result.success) return onRefreshed?.();
+        return undefined;
+      })
+      .catch(() => undefined);
+  };
+
+  return (
+    <div className={cn("relative overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-text-muted", className)}>
+      {avatarSrc ? (
+        <img
+          key={avatarSrc}
+          src={avatarSrc}
+          alt={account.nickname}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={handleAvatarError}
+        />
+      ) : null}
+      <div className="flex h-full w-full items-center justify-center text-[0.62rem] font-bold">
+        {initial ? initial : <UserRound className="h-3.5 w-3.5" />}
+      </div>
+    </div>
+  );
 }
 
 export function AccountListSection({
@@ -31,6 +79,7 @@ export function AccountListSection({
   startLogin,
   switchAccount,
   deleteAccount,
+  onAccountsChanged,
   showAlert,
 }: AccountListSectionProps) {
   return (
@@ -50,15 +99,7 @@ export function AccountListSection({
                     : "bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.04]"
                 )}
               >
-                <img
-                  src={acc.avatar_thumb ? mediaProxyUrl(acc.avatar_thumb, "image") : "/default-avatar.svg"}
-                  alt={acc.nickname}
-                  className="w-8 h-8 rounded-full border border-white/10 object-cover"
-                  onError={(event) => {
-                    event.currentTarget.onerror = null;
-                    event.currentTarget.src = "/default-avatar.svg";
-                  }}
-                />
+                <AccountAvatar account={acc} className="h-8 w-8 shrink-0" onRefreshed={onAccountsChanged} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[0.78rem] font-semibold text-text truncate">{acc.nickname}</span>

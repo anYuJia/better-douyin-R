@@ -1,9 +1,8 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
+import { MotionConfig } from "framer-motion";
 import App from "./App";
 import { initTheme } from "./stores/app-store";
-import { configureMediaProxyBaseUrl } from "./lib/tauri-media";
-import { invokeLocal, isTauriRuntime } from "./lib/tauri-core";
 import "./index.css";
 
 type BootBridge = {
@@ -24,8 +23,6 @@ function reportBootError(title: string, error: unknown) {
 function BootReady() {
   useEffect(() => {
     window.__DY_BOOT__?.markReady();
-    if (!isTauriRuntime()) return;
-    void invokeLocal("frontend_ready").catch(() => undefined);
   }, []);
 
   return null;
@@ -103,14 +100,11 @@ class ErrorBoundary extends React.Component<
 initTheme();
 
 async function bootstrap() {
-  if (isTauriRuntime()) {
-    const mediaProxyBaseUrl = await invokeLocal<string>("get_media_proxy_base_url");
-    configureMediaProxyBaseUrl(mediaProxyBaseUrl);
-  }
-
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
-      <App />
+      <MotionConfig reducedMotion="user">
+        <App />
+      </MotionConfig>
       <BootReady />
     </ErrorBoundary>
   );
