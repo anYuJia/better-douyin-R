@@ -10,7 +10,7 @@ import {
   waitForAiAutoSend,
 } from "@/lib/ai-automation";
 import { useAppStore, useLogStore } from "@/stores/app-store";
-import { autoReturnSharedMedia } from "@/lib/auto-return-shared-media";
+import { autoReturnSharedMedia, isSharedWorkPayload } from "@/lib/auto-return-shared-media";
 import {
   fallbackMessageText,
   messagePreviewText,
@@ -337,6 +337,11 @@ export function useGlobalFriendsIm() {
       const preview = messagePreviewText(result.message) || result.message.text;
       const displayName = readFriendDisplayName(currentSecUid, result.senderUid);
       useToastStore.getState().toast(preview ? `收到新私信：${preview}` : "收到新私信", "info", "好友私信");
+      if (isSharedWorkPayload(result.message.rawContent || result.message.text)) {
+        useLogStore.getState().addLog("好友分享作品已进入自动下载回传流程，已跳过 AI 自动回复", "info");
+        void maybeAutoReturnShare(result.senderUid, result.message, autoReturnedSharedMessageIdsRef.current);
+        return;
+      }
       void maybeAutoReply(
         result.senderUid,
         displayName,
@@ -346,7 +351,6 @@ export function useGlobalFriendsIm() {
         autoRepliedMessageIdsRef.current,
         recentOutgoingTextsRef.current,
       );
-      void maybeAutoReturnShare(result.senderUid, result.message, autoReturnedSharedMessageIdsRef.current);
     }).then((cleanup) => {
       unlisten = cleanup;
     });
