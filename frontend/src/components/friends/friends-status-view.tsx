@@ -146,6 +146,7 @@ export function FriendsStatusView() {
     chatMessages,
     unreadCounts,
     chatSummaries,
+    chatSessions,
     historyState,
     selectedFriendId,
     selectedFriend,
@@ -157,6 +158,8 @@ export function FriendsStatusView() {
     sendLocalImageMessage,
     loadHistoryMessages,
     selectFriend,
+    startNewChatSession,
+    compressChatSession,
   } = useFriendsChat(friends, currentSecUid, setError);
 
   const friendItems = useMemo<FriendListItem[]>(() => friends
@@ -639,6 +642,7 @@ export function FriendsStatusView() {
           friend={selectedFriend}
           draft={selectedFriend ? chatDrafts[selectedFriend.secUid] || "" : ""}
           messages={selectedMessages}
+          session={selectedFriend ? chatSessions[selectedFriend.secUid] : undefined}
           historyError={selectedHistory?.error || ""}
           historyLoading={Boolean(selectedHistory?.loading)}
           canLoadOlder={Boolean(selectedFriend && selectedHistory?.nextCursor && selectedHistory.hasMore !== false)}
@@ -646,6 +650,8 @@ export function FriendsStatusView() {
           onDraftChange={updateDraft}
           onSendMessage={sendLocalMessage}
           onSendImage={sendLocalImageMessage}
+          onStartNewSession={startNewChatSession}
+          onCompressSession={compressChatSession}
           onLoadOlder={() => selectedFriend && selectedHistory?.nextCursor ? loadHistoryMessages(selectedFriend, selectedHistory.nextCursor) : Promise.resolve()}
           onOpenProfile={openFriendProfile}
           onOpenSharedVideo={openSharedVideo}

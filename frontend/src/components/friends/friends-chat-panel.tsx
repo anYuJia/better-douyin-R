@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
-import { Loader2, UserRound } from "lucide-react";
+import { Archive, Loader2, RotateCcw, UserRound } from "lucide-react";
 import { SectionSurface } from "@/components/common/surface";
 import { Badge } from "@/components/ui/badge";
 import { ThemeLogo } from "@/components/common/theme-logo";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   MAX_SEND_IMAGE_BYTES,
   type FriendStatusItem,
+  type ChatSession,
   type LocalChatMessage,
   type PendingImageAttachment,
   type SharedMessageCard,
@@ -16,6 +17,7 @@ import {
   friendDisplayName,
   isSameMessageDate,
 } from "./friends-status-utils";
+import { buildPrivateMessageAiContext } from "./friends-chat-session";
 import { FriendsMessageList } from "./friends-message-list";
 import { FriendsChatInput } from "./friends-chat-input";
 import { ChatEmptyState } from "./friends-empty-state";
@@ -60,6 +62,7 @@ interface FriendsChatPanelProps {
   friend: FriendStatusItem | null;
   draft: string;
   messages: LocalChatMessage[];
+  session?: ChatSession;
   historyError: string;
   historyLoading: boolean;
   canLoadOlder: boolean;
@@ -67,6 +70,8 @@ interface FriendsChatPanelProps {
   onDraftChange: (secUid: string, value: string) => void;
   onSendMessage: (friend: FriendStatusItem, value: string) => Promise<void>;
   onSendImage: (friend: FriendStatusItem, file: File) => Promise<void>;
+  onStartNewSession: (friend: FriendStatusItem) => void;
+  onCompressSession: (friend: FriendStatusItem) => void;
   onLoadOlder: () => Promise<void>;
   onOpenProfile: (friend: FriendStatusItem) => Promise<void>;
   onOpenSharedVideo: (card: SharedMessageCard) => Promise<void>;
@@ -77,6 +82,7 @@ export function FriendsChatPanel({
   friend,
   draft,
   messages,
+  session,
   historyError,
   historyLoading,
   canLoadOlder,
@@ -84,6 +90,8 @@ export function FriendsChatPanel({
   onDraftChange,
   onSendMessage,
   onSendImage,
+  onStartNewSession,
+  onCompressSession,
   onLoadOlder,
   onOpenProfile,
   onOpenSharedVideo,
@@ -333,10 +341,7 @@ export function FriendsChatPanel({
     if (!friend || aiSuggesting) return;
     const recentMessages = messages.slice(-8);
     const latestIncoming = pickLatestIncomingMessage(recentMessages);
-    const context = trimAiText(recentMessages
-      .map((message) => `${message.direction === "in" ? displayName : "我"}：${message.text || message.rawContent || ""}`)
-      .filter(Boolean)
-      .join("\n"));
+    const context = buildPrivateMessageAiContext(session, messages, displayName);
 
     setAiSuggesting(true);
     setAiHint("正在生成 AI 回复候选...");
@@ -418,6 +423,16 @@ export function FriendsChatPanel({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {friend && (
+            <div className="hidden items-center gap-1 sm:flex">
+              <button type="button" onClick={() => onCompressSession(friend)} title="将较早消息压缩为本地 AI 上下文摘要" className="flex h-7 items-center gap-1 rounded px-2 text-[0.68rem] text-text-muted hover:bg-surface-raised">
+                <Archive className="h-3.5 w-3.5" />压缩上下文
+              </button>
+              <button type="button" onClick={() => onStartNewSession(friend)} title="开始新会话：保留聊天记录，但后续 AI 不再引用此前上下文" className="flex h-7 items-center gap-1 rounded px-2 text-[0.68rem] text-text-muted hover:bg-surface-raised">
+                <RotateCcw className="h-3.5 w-3.5" />新会话
+              </button>
+            </div>
+          )}
           <Badge variant={friend?.online ? "success" : "secondary"} size="sm">
             {friend?.online ? "在线" : "离线"}
           </Badge>
@@ -428,6 +443,11 @@ export function FriendsChatPanel({
         {historyError && (
           <div className="border-b border-white/[0.06] bg-danger-soft px-4 py-2 text-[0.72rem] text-danger">
             {historyError}
+          </div>
+        )}
+        {friend && (session?.summary || session?.compressedMessageCount) && (
+          <div className="border-b border-border bg-surface-raised/50 px-4 py-1.5 text-[0.68rem] text-text-muted">
+            当前 AI 会话已压缩 {session.compressedMessageCount} 条早期消息；生成回复时会连同最近往来一起使用。
           </div>
         )}
 
