@@ -10,7 +10,9 @@ import {
 } from "./friends-status-types";
 import {
   fallbackMessageText,
+  isRecord,
   numberField,
+  parseJsonContent,
   persistChatMessages,
   stringField,
 } from "./friends-status-utils";
@@ -21,6 +23,48 @@ interface HistoryProps {
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessages>>;
   currentSecUid: string;
   selectedFriend: FriendStatusItem | null;
+}
+
+function isNativeVideoRawContent(rawContent: string | undefined) {
+  const parsed = parseJsonContent(rawContent || "");
+  return Boolean(parsed && isRecord(parsed.video) && isRecord(parsed.poster));
+}
+
+// The realtime IM listener stores a server message ID in a conversation
+// namespace. Rich cards can fall back to `index_in_conversation`, which is
+// only unique within that conversation. History rows must use the same ID so
+// opening a chat cannot append a second copy of a card that realtime delivery
+// already persisted.
+export function buildHistoryMessageStorageId(
+  conversationNamespace: string,
+  serverMessageId: string,
+  createdAt: number,
+) {
+  const namespace = conversationNamespace.trim() || "unknown-conversation";
+  const stableId = serverMessageId.trim();
+  return stableId
+    ? `${namespace}:message:${stableId}`
+    : `${namespace}:received:${createdAt}`;
+}
+
+function historyConversationNamespace(item: JsonRecord, friend: FriendStatusItem, senderUid: string) {
+  const conversationId = stringField(item, ["conversation_id", "conversationId"]).trim();
+  if (conversationId) return `conversation:${conversationId}`;
+  const conversationShortId = stringField(item, ["conversation_short_id", "conversationShortId"]).trim();
+  if (conversationShortId) return `conversation-short:${conversationShortId}`;
+  return senderUid ? `uid:${senderUid}` : `friend:${friend.secUid}`;
+}
+
+function matchesLegacyHistoryMessageId(
+  existingId: string,
+  friend: FriendStatusItem,
+  senderUid: string,
+  messageId: string,
+  createdAt: number,
+) {
+  if (messageId && existingId === messageId) return true;
+  if (!messageId && existingId === `${friend.secUid}-${createdAt}`) return true;
+  return !messageId && Boolean(senderUid) && existingId === `uid:${senderUid}-${createdAt}`;
 }
 
 export function useFriendsMessageHistory({
@@ -47,7 +91,16 @@ export function useFriendsMessageHistory({
         const senderUid = stringField(item as JsonRecord, ["sender_uid", "senderUid"]);
         const rawContent = stringField(item as JsonRecord, ["raw_content", "rawContent"]) || undefined;
         const text = stringField(item as JsonRecord, ["content", "text"]) || fallbackMessageText(rawContent);
-        const messageId = stringField(item as JsonRecord, ["server_message_id", "message_id", "id"]);
+        const serverMessageId = stringField(item as JsonRecord, ["server_message_id", "serverMessageId"]);
+        const messageId = Number(serverMessageId) > 0
+          ? serverMessageId
+          : stringField(item as JsonRecord, [
+            "index_in_conversation",
+            "indexInConversation",
+            "message_id",
+            "messageId",
+            "id",
+          ]);
         if (!text) continue;
         if (text.trim().startsWith('{') && text.includes("command_type")) {
           continue;
@@ -61,8 +114,9 @@ export function useFriendsMessageHistory({
         const createdAt = rawCreatedAt > 0 && rawCreatedAt < 10_000_000_000
           ? rawCreatedAt * 1000
           : rawCreatedAt || Date.now();
+        const messageNamespace = historyConversationNamespace(item as JsonRecord, friend, senderUid);
         const message: LocalChatMessage = {
-          id: messageId || `${friend.secUid}-${createdAt}`,
+          id: buildHistoryMessageStorageId(messageNamespace, messageId, createdAt),
           text,
           rawContent,
           createdAt,
@@ -71,9 +125,10 @@ export function useFriendsMessageHistory({
           senderUid,
         };
         const currentMessages = next[friend.secUid] || [];
+        const isNativeVideo = isNativeVideoRawContent(message.rawContent);
         const localMatchIndex = currentMessages.findIndex((existing) =>
           existing.direction === "out" &&
-          existing.text === message.text &&
+          (existing.text === message.text || (isNativeVideo && Boolean(existing.videoPreviewUrl))) &&
           Math.abs(existing.createdAt - message.createdAt) < 60000 &&
           existing.id.includes(friend.secUid)
         );
@@ -82,13 +137,18 @@ export function useFriendsMessageHistory({
           matchedList[localMatchIndex] = {
             ...matchedList[localMatchIndex],
             id: message.id,
-            status: "sent"
+            text: message.text || matchedList[localMatchIndex].text,
+            rawContent: message.rawContent || matchedList[localMatchIndex].rawContent,
+            status: "sent",
           };
           next[friend.secUid] = matchedList.sort((a, b) => a.createdAt - b.createdAt);
           mergedCount += 1;
           continue;
         }
-        if (currentMessages.some((existing) => existing.id === message.id)) continue;
+        if (currentMessages.some((existing) =>
+          existing.id === message.id ||
+          matchesLegacyHistoryMessageId(existing.id, friend, senderUid, messageId, createdAt),
+        )) continue;
         next[friend.secUid] = [...currentMessages, message].sort((a, b) => a.createdAt - b.createdAt);
         mergedCount += 1;
       }

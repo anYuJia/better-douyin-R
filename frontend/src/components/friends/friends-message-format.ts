@@ -47,6 +47,9 @@ export function fallbackMessageText(rawContent: string | undefined) {
   const parsed = parseJsonContent(rawContent);
   if (!parsed) return "[未知类型消息]";
   const aweType = numberField(parsed, ["aweType", "awe_type", "type"]);
+  const awemeType = numberField(parsed, ["awemeType", "aweme_type"]);
+  const imageCount = numberField(parsed, ["image_count", "imageCount"]);
+  if (awemeType === 68 || imageCount > 1) return "[图集分享]";
   if (aweType === 800 || aweType === 2701 || aweType === 5 || aweType === 8) return "[视频分享]";
   if (aweType === 2702 || aweType === 6) return "[评论分享]";
   if (aweType === 2704 || aweType === 7) return "[图片分享]";
@@ -64,9 +67,16 @@ export function normalizeLikeNoticeText(value: string) {
 export function messagePreviewText(message: LocalChatMessage | undefined) {
   if (!message) return "";
   if (message.imagePreviewUrl) return "[图片]";
+  if (message.videoPreviewUrl) return "[视频]";
   const shared = parseSharedMessage(message);
   if (shared) {
-    return shared.kind === "video" ? "[视频分享]" : shared.kind === "image" ? "[图片分享]" : "[分享卡片]";
+    return shared.kind === "video"
+      ? "[视频分享]"
+      : shared.kind === "gallery"
+        ? `[图集${shared.mediaCount && shared.mediaCount > 1 ? ` × ${shared.mediaCount}` : ""}]`
+        : shared.kind === "image"
+          ? "[图片分享]"
+          : "[分享卡片]";
   }
   return normalizeLikeNoticeText(message.text);
 }

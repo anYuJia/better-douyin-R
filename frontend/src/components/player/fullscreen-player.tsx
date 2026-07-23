@@ -198,6 +198,8 @@ export function FullscreenPlayer({
   const mediaTransitionDirection = mediaTransition.direction;
   const activeMediaIndex = isOpeningRender ? safeInitialMediaIndexForOpen : mediaIndex;
   const currentMedia = mediaItems[activeMediaIndex] || mediaItems[0] || null;
+  const isLocalMedia = !currentVideo?.aweme_id || /^(?:blob|data):/i.test(currentMedia?.url || "");
+  const showWorkActions = !isLocalMedia;
   const qualityOptions = useMemo(
     () => currentMedia?.type === "video" ? collectVideoQualityOptions(currentVideo, currentMedia.url) : [],
     [currentMedia?.type, currentMedia?.url, currentVideo]
@@ -1580,6 +1582,7 @@ export function FullscreenPlayer({
               />
 
               <PlayerActionButtons
+                showWorkActions={showWorkActions}
                 liked={liked}
                 favorited={favorited}
                 likeCount={likeCount}

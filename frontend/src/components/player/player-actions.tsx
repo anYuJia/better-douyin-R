@@ -23,6 +23,7 @@ import { SharePanel } from "./player-share-menu";
 import { DownloadPanel, MusicPanel } from "./player-more-menu";
 
 interface RelationButtonsProps {
+  showWorkActions: boolean;
   liked: boolean;
   favorited: boolean;
   likeCount: number;
@@ -35,6 +36,7 @@ interface RelationButtonsProps {
 }
 
 function RelationButtons({
+  showWorkActions,
   liked,
   favorited,
   likeCount,
@@ -56,35 +58,39 @@ function RelationButtons({
         <ListVideo className={cn("h-4 w-4", autoPlayNextVideo && "text-accent")} />
       </InlinePlayerButton>
 
-      <InlinePlayerButton
-        label="点赞"
-        count={likeCount}
-        active={liked}
-        activeClassName="fill-accent text-accent"
-        disabled={relationSubmitting !== null}
-        onClick={onToggleLike}
-      >
-        {relationSubmitting === "like" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Heart className={cn("h-4 w-4", liked && "fill-accent text-accent")} />
-        )}
-      </InlinePlayerButton>
+      {showWorkActions && (
+        <>
+          <InlinePlayerButton
+            label="点赞"
+            count={likeCount}
+            active={liked}
+            activeClassName="fill-accent text-accent"
+            disabled={relationSubmitting !== null}
+            onClick={onToggleLike}
+          >
+            {relationSubmitting === "like" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Heart className={cn("h-4 w-4", liked && "fill-accent text-accent")} />
+            )}
+          </InlinePlayerButton>
 
-      <InlinePlayerButton
-        label="收藏"
-        count={favoriteCount}
-        active={favorited}
-        activeClassName="fill-warning text-warning"
-        disabled={relationSubmitting !== null}
-        onClick={onToggleCollect}
-      >
-        {relationSubmitting === "collect" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Star className={cn("h-4 w-4", favorited && "fill-warning text-warning")} />
-        )}
-      </InlinePlayerButton>
+          <InlinePlayerButton
+            label="收藏"
+            count={favoriteCount}
+            active={favorited}
+            activeClassName="fill-warning text-warning"
+            disabled={relationSubmitting !== null}
+            onClick={onToggleCollect}
+          >
+            {relationSubmitting === "collect" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Star className={cn("h-4 w-4", favorited && "fill-warning text-warning")} />
+            )}
+          </InlinePlayerButton>
+        </>
+      )}
     </>
   );
 }
@@ -92,6 +98,7 @@ function RelationButtons({
 
 
 interface PlayerActionButtonsProps {
+  showWorkActions: boolean;
   liked: boolean;
   favorited: boolean;
   likeCount: number;
@@ -179,6 +186,7 @@ interface PlayerActionButtonsProps {
 }
 
 export function PlayerActionButtons({
+  showWorkActions,
   liked,
   favorited,
   likeCount,
@@ -264,6 +272,7 @@ export function PlayerActionButtons({
   return (
     <div className="flex min-w-0 max-w-[66vw] items-center gap-1 overflow-visible pb-0.5">
       <RelationButtons
+        showWorkActions={showWorkActions}
         liked={liked}
         favorited={favorited}
         likeCount={likeCount}
@@ -316,120 +325,128 @@ export function PlayerActionButtons({
         onOpenPanelOnPointerDown={onOpenPanelOnPointerDown}
       />
 
-      <div
-        className="relative shrink-0"
-        onPointerEnter={(event) => {
-          if (event.pointerType !== "touch") onOpenCommentsPanel(event);
-        }}
-        onMouseEnter={() => onOpenCommentsPanel()}
-        onPointerLeave={(event) => {
-          if (event.pointerType !== "touch") onScheduleTransientCommentsClose(event);
-        }}
-        onMouseLeave={() => onScheduleTransientCommentsClose()}
-      >
-        <PlayerIconButton
-          label="评论区"
-          onClick={(event) => {
-            event.stopPropagation();
-            onClearPanelCloseTimer();
-            if (commentsOpen) {
-              onCloseCommentsPanel(event);
-            } else {
-              onOpenCommentsPanel(event, { sticky: true });
-            }
+      {showWorkActions && (
+        <div
+          className="relative shrink-0"
+          onPointerEnter={(event) => {
+            if (event.pointerType !== "touch") onOpenCommentsPanel(event);
           }}
-          active={commentsOpen}
+          onMouseEnter={() => onOpenCommentsPanel()}
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "touch") onScheduleTransientCommentsClose(event);
+          }}
+          onMouseLeave={() => onScheduleTransientCommentsClose()}
         >
-          <MessageCircle className="h-4 w-4" />
-        </PlayerIconButton>
-        <AnimatePresence>
-          {commentsOpen && (
-            <CommentsPanel
-              comments={comments}
-              commentsLoading={commentsLoading}
-              commentsError={commentsError}
-              commentsHasMore={commentsHasMore}
-              commentsTotal={commentsTotal}
-              commentReplies={commentReplies}
-              expandedCommentReplyIds={expandedCommentReplyIds}
-              commentDiggingIds={commentDiggingIds}
-              commentDraft={commentDraft}
-              commentSubmitting={commentSubmitting}
-              commentAiSuggesting={commentAiSuggesting}
-              commentAiSuggestions={commentAiSuggestions}
-              commentAiHint={commentAiHint}
-              commentReplyTarget={commentReplyTarget}
-              currentVideoCommentCount={currentVideoCommentCount}
-              currentCommentCount={comments.length}
-              onCommentsScroll={onCommentsScroll}
-              onToggleCommentReplies={onToggleCommentReplies}
-              onToggleCommentLike={onToggleCommentLike}
-              onSetCommentReplyTarget={onSetCommentReplyTarget}
-              onCommentDraftChange={onCommentDraftChange}
-              onSubmitComment={onSubmitComment}
-              onSuggestCommentDraft={onSuggestCommentDraft}
-              onApplyCommentAiSuggestion={onApplyCommentAiSuggestion}
-              onLoadCommentReplies={onLoadCommentReplies}
-              onLoadMoreComments={onLoadMoreComments}
-              onClose={onCloseCommentsPanel}
-              onMarkSticky={onMarkCommentsPanelSticky}
-              registerCommentRef={registerCommentRef}
-              registerReplyRef={registerReplyRef}
-              highlightCid={highlightCid}
-              locatePrompt={locatePrompt}
-              onDismissLocatePrompt={onDismissLocatePrompt}
-            />
-          )}
-        </AnimatePresence>
-      </div>
+          <PlayerIconButton
+            label="评论区"
+            onClick={(event) => {
+              event.stopPropagation();
+              onClearPanelCloseTimer();
+              if (commentsOpen) {
+                onCloseCommentsPanel(event);
+              } else {
+                onOpenCommentsPanel(event, { sticky: true });
+              }
+            }}
+            active={commentsOpen}
+          >
+            <MessageCircle className="h-4 w-4" />
+          </PlayerIconButton>
+          <AnimatePresence>
+            {commentsOpen && (
+              <CommentsPanel
+                comments={comments}
+                commentsLoading={commentsLoading}
+                commentsError={commentsError}
+                commentsHasMore={commentsHasMore}
+                commentsTotal={commentsTotal}
+                commentReplies={commentReplies}
+                expandedCommentReplyIds={expandedCommentReplyIds}
+                commentDiggingIds={commentDiggingIds}
+                commentDraft={commentDraft}
+                commentSubmitting={commentSubmitting}
+                commentAiSuggesting={commentAiSuggesting}
+                commentAiSuggestions={commentAiSuggestions}
+                commentAiHint={commentAiHint}
+                commentReplyTarget={commentReplyTarget}
+                currentVideoCommentCount={currentVideoCommentCount}
+                currentCommentCount={comments.length}
+                onCommentsScroll={onCommentsScroll}
+                onToggleCommentReplies={onToggleCommentReplies}
+                onToggleCommentLike={onToggleCommentLike}
+                onSetCommentReplyTarget={onSetCommentReplyTarget}
+                onCommentDraftChange={onCommentDraftChange}
+                onSubmitComment={onSubmitComment}
+                onSuggestCommentDraft={onSuggestCommentDraft}
+                onApplyCommentAiSuggestion={onApplyCommentAiSuggestion}
+                onLoadCommentReplies={onLoadCommentReplies}
+                onLoadMoreComments={onLoadMoreComments}
+                onClose={onCloseCommentsPanel}
+                onMarkSticky={onMarkCommentsPanelSticky}
+                registerCommentRef={registerCommentRef}
+                registerReplyRef={registerReplyRef}
+                highlightCid={highlightCid}
+                locatePrompt={locatePrompt}
+                onDismissLocatePrompt={onDismissLocatePrompt}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
-      <SharePanel
-        openPanel={openPanel}
-        shareFriends={shareFriends}
-        shareFriendsLoading={shareFriendsLoading}
-        shareFriendsError={shareFriendsError}
-        shareSendingFriendKey={shareSendingFriendKey}
-        shareSentFriendKeys={shareSentFriendKeys}
-        onShareFriendClick={onShareFriendClick}
-        onTogglePanel={onTogglePanel}
-        onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
-        onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
-        onOpenToolPanel={onOpenToolPanel}
-        onSchedulePanelClose={onSchedulePanelClose}
-        onOpenPanelOnPointerDown={onOpenPanelOnPointerDown}
-      />
+      {showWorkActions && (
+        <SharePanel
+          openPanel={openPanel}
+          shareFriends={shareFriends}
+          shareFriendsLoading={shareFriendsLoading}
+          shareFriendsError={shareFriendsError}
+          shareSendingFriendKey={shareSendingFriendKey}
+          shareSentFriendKeys={shareSentFriendKeys}
+          onShareFriendClick={onShareFriendClick}
+          onTogglePanel={onTogglePanel}
+          onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
+          onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
+          onOpenToolPanel={onOpenToolPanel}
+          onSchedulePanelClose={onSchedulePanelClose}
+          onOpenPanelOnPointerDown={onOpenPanelOnPointerDown}
+        />
+      )}
 
-      <DownloadPanel
-        openPanel={openPanel}
-        downloadSubmitting={downloadSubmitting}
-        hasDownloadHandler={hasDownloadHandler}
-        onDownloadCurrent={onDownloadCurrent}
-        onCopyCurrentMediaUrl={onCopyCurrentMediaUrl}
-        onTogglePanel={onTogglePanel}
-        onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
-        onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
-        onOpenToolPanel={onOpenToolPanel}
-        onSchedulePanelClose={onSchedulePanelClose}
-      />
+      {showWorkActions && (
+        <DownloadPanel
+          openPanel={openPanel}
+          downloadSubmitting={downloadSubmitting}
+          hasDownloadHandler={hasDownloadHandler}
+          onDownloadCurrent={onDownloadCurrent}
+          onCopyCurrentMediaUrl={onCopyCurrentMediaUrl}
+          onTogglePanel={onTogglePanel}
+          onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
+          onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
+          onOpenToolPanel={onOpenToolPanel}
+          onSchedulePanelClose={onSchedulePanelClose}
+        />
+      )}
 
-      <MusicPanel
-        openPanel={openPanel}
-        musicUrl={musicUrl}
-        bgmPlaying={bgmPlaying}
-        bgmProxyUrl={bgmProxyUrl}
-        bgmDownloadSubmitting={bgmDownloadSubmitting}
-        canDownloadBgm={canDownloadBgm}
-        onToggleBgm={onToggleBgm}
-        onDownloadBgm={onDownloadBgm}
-        onTogglePanel={onTogglePanel}
-        onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
-        onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
-        onOpenToolPanel={onOpenToolPanel}
-        onSchedulePanelClose={onSchedulePanelClose}
-        onOpenPanelOnPointerDown={onOpenPanelOnPointerDown}
-      />
+      {showWorkActions && (
+        <MusicPanel
+          openPanel={openPanel}
+          musicUrl={musicUrl}
+          bgmPlaying={bgmPlaying}
+          bgmProxyUrl={bgmProxyUrl}
+          bgmDownloadSubmitting={bgmDownloadSubmitting}
+          canDownloadBgm={canDownloadBgm}
+          onToggleBgm={onToggleBgm}
+          onDownloadBgm={onDownloadBgm}
+          onTogglePanel={onTogglePanel}
+          onOpenPanelOnPointerEnter={onOpenPanelOnPointerEnter}
+          onClosePanelOnPointerLeave={onClosePanelOnPointerLeave}
+          onOpenToolPanel={onOpenToolPanel}
+          onSchedulePanelClose={onSchedulePanelClose}
+          onOpenPanelOnPointerDown={onOpenPanelOnPointerDown}
+        />
+      )}
 
-      {onShowDetail && (
+      {showWorkActions && onShowDetail && (
         <PlayerIconButton
           label="查看详情"
           onClick={(event) => {

@@ -35,7 +35,13 @@ export const mediaMotionVariants: Variants = {
 export const SESSION_CACHE_BUSTER = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
 export function playerMediaProxyUrl(url: string | null | undefined, mediaType: "video" | "image" | "audio", retryKey = 0): string {
-  const proxied = mediaProxyUrl(url, mediaType);
+  const source = String(url || "").trim();
+  // Blob and data URLs are renderer-local opaque resources. Appending a query
+  // string creates a different (and invalid) URL, so they must bypass both the
+  // media proxy and the player cache buster.
+  if (/^(?:blob|data):/i.test(source)) return source;
+
+  const proxied = mediaProxyUrl(source, mediaType);
   if (!proxied) return "";
   if (mediaType === "video" || mediaType === "audio") {
     const sep = proxied.includes("?") ? "&" : "?";

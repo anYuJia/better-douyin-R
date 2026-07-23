@@ -229,6 +229,7 @@ export function useFriendsChat(
   const {
     sendLocalMessage,
     sendLocalImageMessage,
+    sendLocalVideoMessage,
   } = useFriendsMessageSender({
     currentSecUid,
     setChatMessages,
@@ -330,6 +331,7 @@ export function useFriendsChat(
     updateDraft,
     sendLocalMessage,
     sendLocalImageMessage,
+    sendLocalVideoMessage,
     loadHistoryMessages,
     clearUnread,
     selectFriend,

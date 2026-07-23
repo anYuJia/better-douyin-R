@@ -70,11 +70,13 @@ interface FriendsChatPanelProps {
   onDraftChange: (secUid: string, value: string) => void;
   onSendMessage: (friend: FriendStatusItem, value: string) => Promise<void>;
   onSendImage: (friend: FriendStatusItem, file: File) => Promise<void>;
+  onSendVideo: (friend: FriendStatusItem, file: File) => Promise<void>;
   onStartNewSession: (friend: FriendStatusItem) => void;
   onCompressSession: (friend: FriendStatusItem) => void;
   onLoadOlder: () => Promise<void>;
   onOpenProfile: (friend: FriendStatusItem) => Promise<void>;
   onOpenSharedVideo: (card: SharedMessageCard) => Promise<void>;
+  onOpenLocalVideo: (message: LocalChatMessage) => void;
   sharedPlayerLoadingId: string;
 }
 
@@ -90,11 +92,13 @@ export function FriendsChatPanel({
   onDraftChange,
   onSendMessage,
   onSendImage,
+  onSendVideo,
   onStartNewSession,
   onCompressSession,
   onLoadOlder,
   onOpenProfile,
   onOpenSharedVideo,
+  onOpenLocalVideo,
   sharedPlayerLoadingId,
 }: FriendsChatPanelProps) {
   const displayName = friendDisplayName(friend);
@@ -111,6 +115,7 @@ export function FriendsChatPanel({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const preserveScrollOffsetRef = useRef<number | null>(null);
   const preserveScrollUntilRef = useRef(0);
   const olderLoadArmedRef = useRef(false);
@@ -250,6 +255,12 @@ export function FriendsChatPanel({
   const handlePickImage = () => {
     if (!friend) return;
     imageInputRef.current?.click();
+  };
+  const handlePickVideo = () => { if (friend) videoInputRef.current?.click(); };
+  const handleVideoInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (friend && file) void onSendVideo(friend, file);
   };
 
   const addPendingImageFiles = useCallback((files: File[]) => {
@@ -458,6 +469,7 @@ export function FriendsChatPanel({
             historyLoading={historyLoading}
             currentUserAvatar={currentUserAvatar}
             onOpenSharedVideo={onOpenSharedVideo}
+            onOpenLocalVideo={onOpenLocalVideo}
             sharedPlayerLoadingId={sharedPlayerLoadingId}
             onMediaSettled={handleMediaSettled}
             onOpenProfile={onOpenProfile}
@@ -479,9 +491,12 @@ export function FriendsChatPanel({
           onDraftChange={onDraftChange}
           onSendMessage={handleSendMessage}
           onPickImage={handlePickImage}
+          onPickVideo={handlePickVideo}
           onSuggestReply={() => void handleAiSuggest()}
           imageInputRef={imageInputRef}
+          videoInputRef={videoInputRef}
           onImageInputChange={handleImageInputChange}
+          onVideoInputChange={handleVideoInputChange}
           pendingImages={pendingImages}
           onRemovePendingImage={removePendingImage}
           onDraftKeyDown={handleDraftKeyDown}

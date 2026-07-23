@@ -89,4 +89,3 @@ export function buildPrivateMessageAiContext(session: ChatSession | undefined, m
   const context = [session?.summary ? `【已压缩的早期会话】\n${session.summary}` : "", recent ? `【最近往来】\n${recent}` : ""].filter(Boolean).join("\n\n");
   return context.length > CONTEXT_LIMIT ? context.slice(-CONTEXT_LIMIT) : context;
 }
-

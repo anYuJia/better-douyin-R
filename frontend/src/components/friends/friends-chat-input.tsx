@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from "react";
-import { ImagePlus, Loader2, Send, Sparkles, X } from "lucide-react";
+import { Film, ImagePlus, Loader2, Send, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -13,9 +13,12 @@ interface FriendsChatInputProps {
   onDraftChange: (secUid: string, value: string) => void;
   onSendMessage: () => void;
   onPickImage: () => void;
+  onPickVideo: () => void;
   onSuggestReply: () => void;
   imageInputRef: React.RefObject<HTMLInputElement | null>;
+  videoInputRef: React.RefObject<HTMLInputElement | null>;
   onImageInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onVideoInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   pendingImages: PendingImageAttachment[];
   onRemovePendingImage: (id: string) => void;
   onDraftKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -36,9 +39,12 @@ export function FriendsChatInput({
   onDraftChange,
   onSendMessage,
   onPickImage,
+  onPickVideo,
   onSuggestReply,
   imageInputRef,
+  videoInputRef,
   onImageInputChange,
+  onVideoInputChange,
   pendingImages,
   onRemovePendingImage,
   onDraftKeyDown,
@@ -63,6 +69,7 @@ export function FriendsChatInput({
           className="hidden"
           onChange={onImageInputChange}
         />
+        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={onVideoInputChange} />
         {pendingImages.length > 0 && (
           <div className="col-span-3 mb-1 flex max-h-28 gap-2 overflow-x-auto rounded-[14px] border border-border bg-surface-solid p-2">
             {pendingImages.map((image) => (
@@ -93,6 +100,9 @@ export function FriendsChatInput({
             title="发送图片"
           >
             <ImagePlus className="h-3.5 w-3.5" />
+          </Button>
+          <Button type="button" variant="outline" disabled={!friend} onClick={onPickVideo} className="h-10 w-10 px-0" title="发送视频（最大 20MB）">
+            <Film className="h-3.5 w-3.5" />
           </Button>
           <Button
             type="button"

@@ -29,6 +29,7 @@ import {
   STORAGE_KEY,
   type FriendListItem,
   type FriendStatusItem,
+  type LocalChatMessage,
   type SharedMessageCard,
 } from "./friends-status-types";
 import {
@@ -66,6 +67,67 @@ function mergeFriendStatusResponse(current: any, result: any, append: boolean) {
     all_sec_user_ids: result.all_sec_user_ids || current.all_sec_user_ids,
     user_info: mergeSection(current.user_info, result.user_info),
     active_status: mergeSection(current.active_status, result.active_status),
+  };
+}
+
+function buildLocalVideoPlayerItem(message: LocalChatMessage): VideoInfo | null {
+  const source = String(message.videoPreviewUrl || "").trim();
+  if (!source) return null;
+  const poster = String(message.videoPosterUrl || "").trim();
+
+  return {
+    // Keep this blank intentionally. FullscreenPlayer treats a non-empty aweme id
+    // as a remote work and would fetch relation/detail data for it.
+    aweme_id: "",
+    desc: "本机发送的视频",
+    create_time: Math.floor(message.createdAt / 1000),
+    author: {
+      uid: "",
+      sec_uid: "",
+      nickname: "本机视频",
+      avatar_thumb: "",
+      avatar_medium: "",
+      signature: "",
+      follower_count: 0,
+      following_count: 0,
+      aweme_count: 0,
+      favoriting_count: 0,
+      is_follow: false,
+      follow_status: 0,
+      verify_status: 0,
+      unique_id: "",
+    },
+    video: {
+      preview_addr: source,
+      play_addr: source,
+      play_addr_candidates: [source],
+      dash_addr: null,
+      audio_addr: null,
+      play_addr_h264: null,
+      play_addr_lowbr: null,
+      download_addr: null,
+      cover: poster,
+      dynamic_cover: poster,
+      origin_cover: poster,
+      width: 0,
+      height: 0,
+      duration: 0,
+      duration_unit: "seconds",
+      ratio: "",
+    },
+    statistics: {
+      play_count: 0,
+      digg_count: 0,
+      comment_count: 0,
+      share_count: 0,
+      collect_count: 0,
+      forward_count: 0,
+    },
+    media_urls: [{ type: "video", url: source }],
+    image_urls: [],
+    is_image: false,
+    media_type: "video",
+    music: null,
   };
 }
 
@@ -156,6 +218,7 @@ export function FriendsStatusView() {
     updateDraft,
     sendLocalMessage,
     sendLocalImageMessage,
+    sendLocalVideoMessage,
     loadHistoryMessages,
     selectFriend,
     startNewChatSession,
@@ -228,19 +291,32 @@ export function FriendsStatusView() {
     if (!card.itemId || sharedPlayerLoadingId) return;
     setSharedPlayerLoadingId(card.itemId);
     setError("");
+    const workLabel = card.kind === "gallery" ? "图集" : "分享视频";
     try {
       const result = await getVideoDetail(card.itemId);
       if (!result.success || !result.video) {
-        throw new Error(result.message || "无法加载分享视频");
+        throw new Error(result.message || `无法加载${workLabel}`);
       }
       setSharedPlayerVideos([result.video]);
       setSharedPlayerOpen(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "无法加载分享视频");
+      setError(caught instanceof Error ? caught.message : `无法加载${workLabel}`);
     } finally {
       setSharedPlayerLoadingId("");
     }
   }, [sharedPlayerLoadingId]);
+
+  const openLocalVideo = useCallback((message: LocalChatMessage) => {
+    if (message.status !== "sent") return;
+    const video = buildLocalVideoPlayerItem(message);
+    if (!video) {
+      setError("本机视频预览已失效，请重新发送视频");
+      return;
+    }
+    setError("");
+    setSharedPlayerVideos([video]);
+    setSharedPlayerOpen(true);
+  }, []);
 
   const query = useCallback(async (overrideIds?: string[], options?: { background?: boolean; retryCookie?: boolean; append?: boolean; offset?: number }) => {
     const background = Boolean(options?.background);
@@ -650,11 +726,13 @@ export function FriendsStatusView() {
           onDraftChange={updateDraft}
           onSendMessage={sendLocalMessage}
           onSendImage={sendLocalImageMessage}
+          onSendVideo={sendLocalVideoMessage}
           onStartNewSession={startNewChatSession}
           onCompressSession={compressChatSession}
           onLoadOlder={() => selectedFriend && selectedHistory?.nextCursor ? loadHistoryMessages(selectedFriend, selectedHistory.nextCursor) : Promise.resolve()}
           onOpenProfile={openFriendProfile}
           onOpenSharedVideo={openSharedVideo}
+          onOpenLocalVideo={openLocalVideo}
           sharedPlayerLoadingId={sharedPlayerLoadingId}
         />
       </div>
@@ -663,7 +741,7 @@ export function FriendsStatusView() {
         initialIndex={0}
         open={sharedPlayerOpen}
         onClose={() => setSharedPlayerOpen(false)}
-        onDownload={(video) => downloadVideo(video)}
+        onDownload={sharedPlayerVideos[0]?.aweme_id ? (video) => downloadVideo(video) : undefined}
       />
     </div>
   );
